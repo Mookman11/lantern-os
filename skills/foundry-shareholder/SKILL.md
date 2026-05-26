@@ -29,6 +29,10 @@ Read `manifests/FOUNDRY-MATRIX-RAG-DOLLHOUSE.md` when the user asks for local
 RAG, server-farm expansion, iPhone edge-node work, son-PC dual boot, or a
 matrix/dollhouse view.
 
+Use `skills/comet-leap-agile/SKILL.md` when the user asks to update the master
+COMET LEAP PDF, turn past convergences into next agile methodology, or prepare
+the next sprint packet.
+
 ## Token Policy
 
 Offline-only/local/server-farm Foundry tokens are unmetered internal capacity.
