@@ -17,6 +17,13 @@ reports/LANTERN-OS-WHITEPAPER-v0.1.md
 artifacts/LANTERN-OS-WHITEPAPER-v0.1.pdf
 ```
 
+Canonical ADS architecture review:
+
+```text
+reports/ADS-ARCHITECTURE-REVIEW-v0.1.md
+artifacts/ADS-ARCHITECTURE-REVIEW-v0.1.pdf
+```
+
 ## 0. Truth State
 
 This file is the flat index. It does not claim that all repos were mass-cloned.
@@ -144,6 +151,11 @@ Whitepaper Room: `reports/LANTERN-OS-WHITEPAPER-v0.1.md` is the canonical
 Lantern OS whitepaper. It compresses RAG dollhouse, COMET LEAP, local wallet,
 dual boot, One World Leader, token policy, governance, and v1.0.0 gates into
 one printable artifact.
+
+ADS Room: `reports/ADS-ARCHITECTURE-REVIEW-v0.1.md` is the architecture
+decision-system review. It maps control plane, memory plane, evidence plane,
+decision plane, money plane, execution plane, device plane, product plane,
+learning plane, and commons plane into promote/hold/candidate decisions.
 
 ## 7. Retrieval Metadata Policy
 
@@ -287,6 +299,7 @@ The latest convergence pass moved scattered work into these durable surfaces:
 | Ethereum evidence | `manifests/evidence/ethereum-whitepaper-pdf.md` | `local_asset_copied` | validated local PDF, copied into RAG assets |
 | Ethereum governance | `manifests/evidence/ethereum-governance.md` | `operator_asserted` | governance page excerpt provided by operator |
 | Lantern whitepaper | `reports/LANTERN-OS-WHITEPAPER-v0.1.md` | `local_inspected` | canonical whitepaper source |
+| ADS architecture review | `reports/ADS-ARCHITECTURE-REVIEW-v0.1.md` | `local_inspected` | architecture decision-system review |
 
 ## 15. Dual Boot Current Reality
 
