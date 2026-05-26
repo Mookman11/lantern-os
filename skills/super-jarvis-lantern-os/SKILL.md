@@ -20,8 +20,10 @@ Use this as the top-level router from `C:\tmp\lantern-os`.
 7. Use `skills/foundry-shareholder/SKILL.md` for shareholder/repo surfaces.
 8. Use `skills/archive-commons-batch/SKILL.md` for Archive.org, Wayback, OSS,
    public-domain, Creative Commons, free music, movies, software, and games.
-9. Fix the first 2-4 concrete issues before expanding.
-10. Validate, commit, and push.
+9. Use `skills/one-world-leader-app/SKILL.md` when compressing the product
+   atlas into the leadership/learning app.
+10. Fix the first 2-4 concrete issues before expanding.
+11. Validate, commit, and push.
 
 ## Operating Posture
 
