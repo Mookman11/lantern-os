@@ -301,6 +301,11 @@ The latest convergence pass moved scattered work into these durable surfaces:
 | Lantern whitepaper | `reports/LANTERN-OS-WHITEPAPER-v0.1.md` | `local_inspected` | canonical whitepaper source |
 | ADS architecture review | `reports/ADS-ARCHITECTURE-REVIEW-v0.1.md` | `local_inspected` | architecture decision-system review |
 | Blocker fix pass | `manifests/BLOCKER-FIX-2026-05-26.md` | `local_inspected` | dual-boot prep, cash send, orchestrator dirty fix, rights gate |
+| Tony Garage cockpit | `surfaces/tony-garage/index.html` | `local_inspected` | Movie 1 operator workbench surface |
+| Store release lanes | `manifests/STORE-RELEASE-LANES.md` | `local_inspected` | local store now, Steam candidate later |
+| Free SDK lane | `manifests/FREE-SDKS-ONLINE.md` | `local_inspected` | free online SDK/tool choices for store-flexible builds |
+| v1 readiness test | `reports/V1-READINESS-TEST-2026-05-26.md` | `local_inspected` | gate test and Movie confidence |
+| Old workstreams/repo map | `manifests/OLD-WORKSTREAMS-AND-REPOS.md` | `local_inspected` | old repos and workstreams added to surface list |
 
 ## 18. Latest Blocker Fix Pass
 
@@ -312,6 +317,62 @@ Four blockers were converted into concrete states:
 | cash sprint has no cleared cash | send-ready packet and factual ledger writer | `data/cash-loop/OUTREACH-SEND-PACKET.md`, `scripts/Add-WalletLedgerEvent.ps1` |
 | orchestrator repo dirty | dirty health-check fix committed and pushed | `gm-agent-orchestrator` commit `f4eb6b5` |
 | Archive media rights unclear | explicit rights gate; downloads disabled by default | `data/archive-commons/RIGHTS-REVIEW-GATE.md`, `scripts/Invoke-ArchiveCommonsBatch.ps1` |
+
+## 19. Tony Garage Surface
+
+The Movie 1 Tony Stark metaphor now has a local cockpit:
+
+```text
+surfaces/tony-garage/index.html
+scripts/Open-TonyGarage.ps1
+manifests/TONY-GARAGE-UPGRADE.md
+```
+
+It centralizes whitepaper, ADS, RAG house, wallet, dual-boot prep, cash sprint,
+and next actions into one first-screen workbench. It remains bounded: no v1.0.0
+claim, no fake revenue, no automatic disk mutation, no automatic media download.
+
+## 20. Store And Old Workstream Surfaces
+
+Store lane:
+
+```text
+manifests/STORE-RELEASE-LANES.md
+```
+
+Immediate store is local/direct invoice through Tony Garage. Itch is the next
+public store lane because it fits early creative/game/tool packets and supports
+`butler` upload workflows. Steam is a future candidate with official Steam
+Direct fee and review requirements. GOG is a later curated DRM-free lane after
+product proof.
+
+Free SDK/tool lane:
+
+```text
+manifests/FREE-SDKS-ONLINE.md
+```
+
+Old workstreams and repos are now mapped in:
+
+```text
+manifests/OLD-WORKSTREAMS-AND-REPOS.md
+```
+
+Added workstream lanes:
+
+- COMET LEAP reports and PDFs;
+- Lantern RAG dollhouse and asset hashes;
+- Tony Garage cockpit;
+- dual boot and local OS prep;
+- orchestrator/MCP services;
+- symbolic Lantern language sandbox;
+- school art/math packet;
+- cash sprint and local wallet;
+- Archive/Wayback/commons metadata lane;
+- store release lanes;
+- GameMaker game and room editor lane;
+- legacy Java product lane;
+- retired Seven validation lane.
 
 ## 15. Dual Boot Current Reality
 

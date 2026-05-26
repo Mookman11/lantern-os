@@ -35,6 +35,10 @@ explicitly marked held by the operator.
 
 - Windows desktop/start-menu launcher bundle
 - Shareholder HTML index at `surfaces/shareholder-index/index.html`
+- Tony Garage operator cockpit at `surfaces/tony-garage/index.html`
+- Store release lanes at `manifests/STORE-RELEASE-LANES.md`
+- v1 readiness test at `reports/V1-READINESS-TEST-2026-05-26.md`
+- Old workstreams/repo map at `manifests/OLD-WORKSTREAMS-AND-REPOS.md`
 - Printable Super Jarvis front page at `artifacts/SUPER-JARVIS-LANTERN-OS-FRONT-PAGE.pdf`
 - Gage school art packet at `school-packets/gage-high-intel-art/GAGE-HIGH-INTEL-ART-PACKET.zip`
 - COMET LEAP 11-day cash sprint at `reports/COMET-LEAP-11-DAY-CASH-SPRINT.md`
@@ -81,4 +85,12 @@ Run the convergence loop:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Invoke-LanternConvergenceLoop.ps1
+```
+
+## Garage Command
+
+Open the Movie 1 operator cockpit:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Open-TonyGarage.ps1
 ```
