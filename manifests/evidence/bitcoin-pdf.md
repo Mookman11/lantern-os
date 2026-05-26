@@ -10,6 +10,12 @@ Local file:
 C:\Users\alexp\Downloads\bitcoin.pdf
 ```
 
+Copied RAG-house asset:
+
+```text
+skills/lantern-rag-dollhouse/assets/pdfs/bitcoin.pdf
+```
+
 ## Validation
 
 ```text
@@ -18,7 +24,8 @@ Size:    184292 bytes
 SHA256:  B1674191A88EC5CDD733E4240A81803105DC412D6C6708D53AB94FC248F4F553
 ```
 
-Status: local PDF exists and has a valid PDF header.
+Status: local PDF exists, has a valid PDF header, and is copied into the
+Lantern RAG dollhouse asset bundle.
 
 ## Use In Lantern OS
 

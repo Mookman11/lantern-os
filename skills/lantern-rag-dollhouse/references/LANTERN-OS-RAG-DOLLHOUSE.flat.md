@@ -10,6 +10,13 @@ Remote control plane: `https://github.com/alex-place/lantern-os`
 
 Local control plane: `C:\tmp\lantern-os`
 
+Canonical Lantern OS whitepaper:
+
+```text
+reports/LANTERN-OS-WHITEPAPER-v0.1.md
+artifacts/LANTERN-OS-WHITEPAPER-v0.1.pdf
+```
+
 ## 0. Truth State
 
 This file is the flat index. It does not claim that all repos were mass-cloned.
@@ -20,9 +27,11 @@ Current local inspected git repos: 4.
 
 Current named GitHub repo universe: 9.
 
-Current copied RAG-house assets: 8 PDF files, 32 PNG images, 1 SHA256 manifest.
+Current copied RAG-house assets: 10 PDF files, 32 PNG images, 1 SHA256 manifest.
 
-Asset bytes copied into skill at creation: about 1.2 MB.
+Current asset bytes in skill bundle: 2,332,571 bytes.
+
+Latest pushed control-plane commit: `0119beb feat: add local wallet and dual boot workforward`.
 
 ## 1. Local Inspected Repos
 
@@ -62,6 +71,8 @@ Skill asset root: `skills/lantern-rag-dollhouse/assets/pdfs`
 | `local_asset_copied` | `assets/pdfs/COMET-LEAP-TOKEN-BURN-REVENUE-CONVERGENCE-v1.pdf` | `C:\tmp\lantern-os\artifacts\COMET-LEAP-TOKEN-BURN-REVENUE-CONVERGENCE-v1.pdf` | Lantern token/revenue convergence PDF |
 | `local_asset_copied` | `assets/pdfs/COMET-LEAPER-FOUNDER-MONEY-CONFIDENCE-REPORT-v1.pdf` | `C:\tmp\human-flourishing-frameworks-scan\COMET-LEAPER-FOUNDER-MONEY-CONFIDENCE-REPORT-v1.pdf` | founder money/confidence PDF |
 | `local_asset_copied` | `assets/pdfs/COMET-LEAPER-FOUNDER-TRUTH-ONLY-REPORT-v2.pdf` | `C:\tmp\human-flourishing-frameworks-scan\COMET-LEAPER-FOUNDER-TRUTH-ONLY-REPORT-v2.pdf` | truth-only PDF |
+| `local_asset_copied` | `assets/pdfs/bitcoin.pdf` | `C:\Users\alexp\Downloads\bitcoin.pdf` | peer-to-peer cash / local wallet evidence anchor |
+| `local_asset_copied` | `assets/pdfs/Ethereum_Whitepaper_-_Buterin_2014.pdf` | `C:\Users\alexp\Downloads\Ethereum_Whitepaper_-_Buterin_2014.pdf` | programmable ledger / state-machine evidence anchor |
 
 ## 4. Copied Literal Image Assets
 
@@ -94,6 +105,10 @@ Chart images copied:
 | `0d3befe` | GitHub repo surface | public/private repo presentation |
 | `8a7a349` | latest workflow adds converged | CI and release boundary |
 | `0257091` | COMET LEAP agile methodology skill | master PDF update method |
+| `fefe127` | Super Jarvis Lantern OS skill system | top-level routing spine |
+| `cf7bb26` | Gage school art print packet | printable education/art asset |
+| `9dcd27c` | validated cash sprint loop | 11-day money sprint |
+| `0119beb` | local wallet and dual boot workforward | cash ledger and install prep state |
 
 ## 6. Dollhouse Rooms
 
@@ -117,6 +132,18 @@ Phone Edge Room: iPhone and second phone as edge capture/control nodes first.
 
 Shareholder Room: repo universe, confidence tables, money streams, release
 readiness gates.
+
+Wallet Room: local cash wallet JSON, append-only ledger JSONL, invoice drafts,
+Satoshi-style wallet principles, Bitcoin PDF evidence, Ethereum whitepaper
+evidence.
+
+One World Leader Room: product atlas, 11-day cash sprint, local wallet, one paid
+packet, learning packets, commons metadata, and Bayesian belief feedback.
+
+Whitepaper Room: `reports/LANTERN-OS-WHITEPAPER-v0.1.md` is the canonical
+Lantern OS whitepaper. It compresses RAG dollhouse, COMET LEAP, local wallet,
+dual boot, One World Leader, token policy, governance, and v1.0.0 gates into
+one printable artifact.
 
 ## 7. Retrieval Metadata Policy
 
@@ -242,3 +269,88 @@ Durable claim ledger:
 Boundary overrides still win: physical disk actions, true phone boot, public
 media rights, and v1.0.0 release approval can remain held even with high
 posterior confidence.
+
+## 14. Latest Workforward Compression
+
+The latest convergence pass moved scattered work into these durable surfaces:
+
+| Surface | Path | State | Use |
+|---|---|---|---|
+| Cash sprint orch packet | `data/cash-loop/ORCH-ONESHOT-EXECUTION.md` | `local_inspected` | one-shot execution instructions for the local orchestrator |
+| Local wallet state | `data/wallet/local-cash-wallet.json` | `local_inspected` | factual cash snapshot; cleared cash remains `$0` until funds clear |
+| Local wallet ledger | `data/wallet/ledger.jsonl` | `local_inspected` | append-only event stream for wallet creation and invoice drafting |
+| First invoice draft | `data/wallet/invoices/INV-COMET-LEAP-RAG-001.md` | `local_inspected` | `$199` Local RAG / Repo Cleanup Sprint pilot |
+| Dual boot readiness | `data/dual-boot/latest-readiness.json` | `local_inspected` | current PC is prep-ready, not install-ready |
+| Dual boot workforward | `dual-boot/WORKFORWARD-2026-05-26.md` | `local_inspected` | 12-minute physical sprint to create unallocated space |
+| Dual boot validation | `manifests/validation/DUAL-BOOT-READINESS-2026-05-26.json` | `local_inspected` | saved readiness result |
+| Bitcoin evidence | `manifests/evidence/bitcoin-pdf.md` | `local_asset_copied` | validated local PDF, copied into RAG assets |
+| Ethereum evidence | `manifests/evidence/ethereum-whitepaper-pdf.md` | `local_asset_copied` | validated local PDF, copied into RAG assets |
+| Ethereum governance | `manifests/evidence/ethereum-governance.md` | `operator_asserted` | governance page excerpt provided by operator |
+| Lantern whitepaper | `reports/LANTERN-OS-WHITEPAPER-v0.1.md` | `local_inspected` | canonical whitepaper source |
+
+## 15. Dual Boot Current Reality
+
+The current PC is dual-boot-capable but not installer-ready:
+
+```text
+readyForPrep:    true
+readyForInstall: false
+failures:        0
+primary blocker: 0.0 GB unallocated install space
+```
+
+Observed install-prep signal:
+
+```text
+UEFI: present
+EFI partition: present
+D: free: 1636.9 GB of 1863.0 GB
+```
+
+Next physical action is to run the readiness script elevated, back up recovery
+keys, then shrink D: by 100-250GB in Windows Disk Management and leave that
+space unallocated.
+
+## 16. Wallet Current Reality
+
+The wallet is not a bank, crypto wallet, Stripe account, or fake balance. It is
+a local operating ledger for the 11-day sprint.
+
+```text
+clearedCashUsd:       0
+pendingInvoiceUsd:    199
+draftInvoiceUsd:      199
+firstInvoice:         INV-COMET-LEAP-RAG-001
+firstOffer:           Local RAG / Repo Cleanup Sprint
+```
+
+Wallet rules:
+
+- existing offers only;
+- do not mark payment until funds clear;
+- keep private customer/payment secrets out of Git;
+- record draft, sent, promised, cleared, refund, and objection as separate
+  events.
+
+## 17. Crypto Evidence Anchors
+
+Bitcoin PDF:
+
+```text
+source:  C:\Users\alexp\Downloads\bitcoin.pdf
+asset:   skills/lantern-rag-dollhouse/assets/pdfs/bitcoin.pdf
+sha256:  B1674191A88EC5CDD733E4240A81803105DC412D6C6708D53AB94FC248F4F553
+use:     peer-to-peer cash and ledger discipline
+```
+
+Ethereum whitepaper PDF:
+
+```text
+source:  C:\Users\alexp\Downloads\Ethereum_Whitepaper_-_Buterin_2014.pdf
+asset:   skills/lantern-rag-dollhouse/assets/pdfs/Ethereum_Whitepaper_-_Buterin_2014.pdf
+sha256:  4CC15F99F5DF56C8A7156188A9B9290C71E7DFD9A92093B028213C9A185C0A15
+use:     programmable ledger and wallet state-machine design
+```
+
+Boundary: these are architecture and evidence anchors only. They do not create
+investment advice, custody, token issuance, or payment-provider integration.
