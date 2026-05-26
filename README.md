@@ -37,6 +37,9 @@ explicitly marked held by the operator.
 - Shareholder HTML index at `surfaces/shareholder-index/index.html`
 - Printable Super Jarvis front page at `artifacts/SUPER-JARVIS-LANTERN-OS-FRONT-PAGE.pdf`
 - Gage school art packet at `school-packets/gage-high-intel-art/GAGE-HIGH-INTEL-ART-PACKET.zip`
+- COMET LEAP 11-day cash sprint at `reports/COMET-LEAP-11-DAY-CASH-SPRINT.md`
+- Product universe atlas at `reports/LANTERN-PRODUCT-UNIVERSE-ATLAS.md`
+- One World Leader app skill at `skills/one-world-leader-app/SKILL.md`
 - COMET LEAP agile methodology skill at `skills/comet-leap-agile/SKILL.md`
 - Flat Lantern RAG dollhouse skill at `skills/lantern-rag-dollhouse/SKILL.md`
 - Super Jarvis Lantern OS router skill at `skills/super-jarvis-lantern-os/SKILL.md`

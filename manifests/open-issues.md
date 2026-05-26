@@ -169,3 +169,28 @@ The convergence loop fixes the first 2-4 actionable issues before expansion.
    - Fix: added `GAGE-SCHOOL-COVER-LETTER.md/.pdf` and
      `GAGE-HIGH-INTEL-ART-INFO-PAGE.md/.pdf`.
    - Status: fixed.
+
+## Fixed in 11-Day Cash Sprint Loop
+
+1. `MONEY-CASH-001`: Convergence frames 7-12 were under-validated and mixed
+   manual cash paths with speculative scale.
+   - Fix: added `reports/COMET-LEAP-11-DAY-CASH-SPRINT.md` with web-validated
+     confidence reset and an 11-day cash plan.
+   - Status: fixed.
+
+2. `PRODUCT-ATLAS-001`: Product ideas were not compressed into one world-model
+   product atlas.
+   - Fix: added `reports/LANTERN-PRODUCT-UNIVERSE-ATLAS.md`.
+   - Status: fixed.
+
+3. `ONE-WORLD-APP-001`: The product atlas was not yet captured as an app skill.
+   - Fix: added `skills/one-world-leader-app/SKILL.md`.
+   - Status: fixed.
+
+4. `CASH-LOOP-001`: The 11-day cash plan had not been started as a live loop.
+   - Fix: added `data/cash-loop/DAY-01-CASH-LOOP.md`.
+   - Status: fixed.
+
+5. `CASH-LOOP-002`: Cash loop language still implied creating new offers.
+   - Fix: tightened Day 1 and sprint language to execute existing offers only.
+   - Status: fixed.
