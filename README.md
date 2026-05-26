@@ -35,6 +35,7 @@ explicitly marked held by the operator.
 
 - Windows desktop/start-menu launcher bundle
 - Shareholder HTML index at `surfaces/shareholder-index/index.html`
+- COMET LEAP agile methodology skill at `skills/comet-leap-agile/SKILL.md`
 - NixOS dual-boot configuration path
 - COMET LEAP 30-day model artifact manifest
 - Buffett/COMET LEAP planning document references

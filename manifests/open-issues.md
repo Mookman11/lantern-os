@@ -90,3 +90,15 @@ The convergence loop fixes the first 2-4 actionable issues before expansion.
    v1.0.0 approval.
    - Fix: made provenance manual-only and disabled release asset upload.
    - Status: fixed.
+
+## Fixed in COMET LEAP Agile Skill Loop
+
+1. `COMET-LEAP-SKILL-001`: Master PDF update method was not captured as a
+   dedicated reusable skill.
+   - Fix: added `skills/comet-leap-agile/SKILL.md`.
+   - Status: fixed.
+
+2. `COMET-LEAP-SKILL-002`: Past convergence decisions were scattered across
+   manifests and commits.
+   - Fix: added `skills/comet-leap-agile/references/past-convergences.md`.
+   - Status: fixed.
