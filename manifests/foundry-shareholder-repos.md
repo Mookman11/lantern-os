@@ -44,6 +44,9 @@ reported separately.
 | Second phone | second phone edge node | candidate | identify device/OS before any boot claim |
 | Server farm | Foundry local inference pool | candidate | inventory nodes, power, GPUs/NPUs, network, storage |
 
+Matrix RAG architecture:
+`manifests/FOUNDRY-MATRIX-RAG-DOLLHOUSE.md`
+
 ## iPhone Boundary
 
 Apple documents an iPhone/iPad secure boot chain where startup components are

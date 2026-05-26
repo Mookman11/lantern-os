@@ -25,6 +25,10 @@ Read `manifests/foundry-shareholder-repos.md` before making shareholder claims.
 Treat named repositories as evidence sources unless the operator explicitly
 asks to mutate them.
 
+Read `manifests/FOUNDRY-MATRIX-RAG-DOLLHOUSE.md` when the user asks for local
+RAG, server-farm expansion, iPhone edge-node work, son-PC dual boot, or a
+matrix/dollhouse view.
+
 ## Token Policy
 
 Offline-only/local/server-farm Foundry tokens are unmetered internal capacity.
@@ -40,6 +44,17 @@ pricing.
   exact model, backup, boot path, risk, and rollback are verified.
 - Server farm: local inference pool; inventory nodes, GPUs/NPUs, storage,
   power, cooling, network, and remote access before capacity claims.
+
+## Matrix RAG Dollhouse
+
+Build the matrix as rooms and lanes:
+
+- rooms: repos, PDFs/docs, Windows surfaces, dual boot, server farm, phones,
+  shareholders;
+- lanes: ingest, normalize, chunk, embed, index, retrieve, rerank, compress,
+  handoff;
+- metadata: source path, repo, commit, page, line, hash, evidence class,
+  confidence, and operator boundary.
 
 ## Evidence Classes
 
