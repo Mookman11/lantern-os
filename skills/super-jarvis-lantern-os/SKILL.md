@@ -1,6 +1,6 @@
 ---
 name: super-jarvis-lantern-os
-description: Single canonical Lantern OS skill. Use for all Lantern OS work: repo inspection, PDF/report generation, RAG dollhouse memory, COMET LEAP / COMETSHOT / Founder / Patient A updates, Bayesian confidence, Clean Storm sprints, Tony Garage, wallet/cash ledgers, archive/commons intake, shareholder packets, dual boot/device/server-farm boundaries, MCP/tool verification, and v1 readiness. Legacy subskill folders remain as references, but this file is the one operator entrypoint.
+description: Single canonical Lantern OS skill. Use for all Lantern OS work: repo inspection, PDF/report generation, RAG dollhouse memory, COMET LEAP / COMETSHOT / Founder / Patient A updates, Bayesian confidence, Clean Storm sprints, Tony Garage, wallet/cash ledgers, archive/commons intake, shareholder packets, dual boot/device/server-farm boundaries, MCP/tool verification, per-user license wallet setup, and v1 readiness. Legacy subskill folders remain as references, but this file is the one operator entrypoint.
 ---
 
 # Super Jarvis Lantern OS - Unified Skill
@@ -84,7 +84,7 @@ This one skill owns all Lantern OS domains:
 | Founder / Patient A | privacy-safe operator/founder reports, patient-style evidence gates | `reports/`, `data/world-model/` |
 | Tony Garage / Arc Reactor | power score, cockpit, proof ladder, readiness | `surfaces/tony-garage/`, `reports/ARC-*`, `data/arc-reactor/` |
 | Bayesian world model | priors, evidence weights, promote/hold/reject | `data/world-model/belief-ledger.jsonl` |
-| Wallet/cash | cleared-cash ledger, invoice states, no fake revenue | `data/wallet/` |
+| Wallet/cash/license | cleared-cash ledger, license wallet schema, invoice states, no fake revenue | `data/wallet/` |
 | Archive/commons | metadata-first public-domain/CC/OSS intake | `data/archive-commons/`, `scripts/Invoke-ArchiveCommonsBatch.ps1` |
 | One World Leader app | product atlas, learning packets, ethical service app | `reports/LANTERN-PRODUCT-UNIVERSE-ATLAS.md` |
 | Devices/server farm | dual boot, phone edge nodes, local/offline capacity | `dual-boot/`, inventory docs |
@@ -151,18 +151,19 @@ Use this lane for Mookman11 or other creator dossiers.
 - Public copy may sanitize explicit creator voice.
 - Raw explicit quotes go only into private/internal appendices with approval.
 
-## 7. Wallet and Trading Boundary
+## 7. Wallet, License Wallet, and Trading Boundary
 
-This skill can design ledgers, experiments, paper-trading frameworks, and risk controls.
+This skill can design ledgers, experiments, paper-trading frameworks, license entitlements, redacted wallet examples, and risk controls.
 
 This skill must not:
 
 - access PayPal or bank accounts;
 - move money;
-- load wallets;
+- load wallets with real funds;
 - create pass-through/founder-controlled payment routes;
 - guarantee returns;
-- present projection as cleared cash.
+- present projection as cleared cash;
+- store Apple Pay tokens, card data, PayPal secrets, Stripe secrets, seed phrases, or raw PIID in Git.
 
 Wallet rule:
 
@@ -170,6 +171,29 @@ Wallet rule:
 cleared cash only after factual receipt
 invoice draft != sent invoice != paid invoice != cleared cash
 ```
+
+### Per-user license wallet setup
+
+When the operator asks to create a Lantern wallet for a user/license:
+
+1. Use `data/wallet/license-wallet.schema.json`.
+2. Create only redacted examples or local-only records unless a live processor is integrated.
+3. Model the wallet as `internal_entitlement_ledger_not_stored_value`.
+4. Require these invariants:
+
+```json
+{
+  "transferable": false,
+  "withdrawable": false,
+  "redeemableForCash": false
+}
+```
+
+5. Record user identity as a redacted internal `userId`, never raw PIID.
+6. Use `paymentProvider: "none"` or `"manual_invoice"` until live Stripe/PayPal setup is verified.
+7. Only `payment_cleared` events can raise `clearedCashUsd`.
+8. Apple Pay is a processor intake option, not an in-house wallet balance.
+9. Keep Alex/operator and Mookman/creator examples in `data/wallet/examples/license-wallets.sample.json` unless/until local encrypted private records exist.
 
 ## 8. Archive / Commons / Media Boundary
 
