@@ -3,7 +3,7 @@
 **Status:** published flat-file report  
 **Branch:** `master`  
 **Repo:** `alex-place/lantern-os`  
-**Revision:** v4 flat-file convergence  
+**Revision:** v5 real-image candidate convergence  
 **Prepared:** 2026-05-26 America/New_York  
 **Subject handle:** `Mookman11`  
 **Prior alias correction:** request began as `mookman1111`; operator-provided search evidence indicates the likely public handle is `mookman11` / `Mookman11`.
@@ -16,12 +16,15 @@ This flat file converges the prior `!perfect` PDF work into a repository-native 
 
 The strongest evidence currently available in-session is the operator-provided Google results page for `mookman11`, which surfaced public-facing platform signals for YouTube, Twitch, TikTok, OP.GG, and Limitless. The report treats those results as a search snapshot, not as independently verified identity proof.
 
+A later operator update supplied a portrait image and the profile URL `facebook.com/micah.shively.1#`. That evidence is logged here as an operator-supplied real-image/profile candidate. It is not treated as independent proof that the depicted person owns or operates `Mookman11`; no identity claim is made from the image.
+
 The safest current assessment is:
 
 - `Mookman11` appears to be a gaming/content creator handle.
 - The visible platform footprint is centered on Battlefield 6 clips/streaming plus adjacent gaming activity.
 - YouTube, Twitch, and TikTok appear to be the primary public creator surfaces from the operator-provided SERP.
 - OP.GG and Limitless appear to provide secondary competitive/game-profile signals.
+- A candidate Facebook profile URL and portrait have been supplied by the operator, but the link between that profile/image and `Mookman11` requires direct confirmation.
 - Real images should be added only from verified public screenshots or account-owned assets, with source URL, capture date, caption, alt text, and usage note.
 
 No private identity, real name, location, affiliation, or personal biography is claimed here.
@@ -38,7 +41,9 @@ No private identity, real name, location, affiliation, or personal biography is 
 | Exact `mookman11` platform URLs | Partially available | YouTube, Twitch, TikTok, and OP.GG were visible in the pasted results; some URLs were truncated by the search page format. |
 | Independent social-page crawl | Not available | Live social/profile pages were not independently fetched in this session. |
 | Battlefield 6 market context | Available | Reuters reported EA's Battlefield 6 launch sales/engagement statement. |
-| Real profile/project images | Not embedded | Screenshots are still pending direct capture/approval. |
+| Operator-supplied Facebook URL | Available but unverified | User supplied `facebook.com/micah.shively.1#`; direct public fetch/corroborating web search did not verify a `Mookman11` link in-session. |
+| Operator-supplied portrait image | Available but unverified | Uploaded JPEG: 504 x 504 px, 30,110 bytes, SHA-256 `366b30285d82090df573c800735af0715903ef1830de0460a0a35788edba346b`. |
+| Real profile/project images | Partially staged | The portrait is staged as a candidate image, not embedded as verified documentary identity evidence. |
 
 ### Publication rule
 
@@ -46,8 +51,11 @@ Every claim below is either:
 
 1. sourced to the operator-provided SERP snapshot,
 2. sourced to a current public web source,
-3. framed as a hypothesis, or
-4. marked as requiring direct refresh before public release.
+3. sourced to operator-supplied evidence,
+4. framed as a hypothesis, or
+5. marked as requiring direct refresh before public release.
+
+The uploaded portrait must not be used to identify a person by name. It can only be used if the operator or the subject confirms that it is approved for this report and connected to the Mookman11 creator identity.
 
 ---
 
@@ -232,8 +240,9 @@ Refresh needed:
 |---|---|---|
 | High | Directly fetched from a public source in-session or supplied as canonical by owner | Reuters Battlefield 6 market context |
 | Medium | Visible in operator-provided SERP with clear handle match | YouTube, Twitch, TikTok `Mookman11` results |
-| Medium-low | Handle match exists, but cross-platform ownership not confirmed | OP.GG `Mookman11#Cyphr` |
+| Medium-low | Handle match exists, but cross-platform ownership not confirmed | OP.GG `Mookman11#Cyphr`; operator-supplied Facebook profile URL |
 | Low-medium | Search result visible, but URL truncated or platform context needs refresh | Limitless `Mookman11` ranking |
+| Unverified operator asset | Supplied directly by operator but not independently corroborated | Uploaded portrait image and `facebook.com/micah.shively.1#` |
 | Unknown | Not evidenced | Real name, location, age, private affiliations, exact cross-platform ownership |
 
 ---
@@ -250,16 +259,45 @@ No documentary images are embedded in this flat file. The following real-image a
 | 4 | YouTube Battlefield 6 videos | Direct screenshot of channel videos/search results | “Battlefield 6 video results on Mookman11 channel, captured YYYY-MM-DD.” | “Screenshot showing Battlefield 6 videos associated with Mookman11.” |
 | 5 | OP.GG profile | Direct screenshot of confirmed `Mookman11#Cyphr` profile | “Possible related OP.GG profile snapshot, captured YYYY-MM-DD.” | “Screenshot of OP.GG summoner profile Mookman11#Cyphr.” |
 | 6 | Limitless ranking | Direct screenshot of exact ranking page | “Possible related Limitless ranking snapshot, captured YYYY-MM-DD.” | “Screenshot of Limitless ranking entry for Mookman11.” |
+| 7 | Operator-supplied Facebook profile/portrait candidate | Direct confirmation from subject/operator that this profile and uploaded portrait are approved and connected to `Mookman11` | “Operator-supplied portrait/profile candidate for Mookman11 report, captured/provided YYYY-MM-DD; identity connection pending confirmation.” | “Operator-supplied portrait of a seated person in a restaurant setting; identity connection to Mookman11 not independently verified.” |
 
 Usage rule:
 
 - Real screenshots must include visible source URL or be logged with source URL separately.
 - Decorative/generative art must be labeled “Illustrative art — not a documentary image.”
 - Do not use unrelated stock imagery as a stand-in for the creator.
+- Do not infer identity from a face image. The portrait can only be used if the subject/operator confirms usage rights and the connection to the `Mookman11` creator profile.
 
 ---
 
-## 10. Visual / Art Direction
+## 10. Candidate Facebook/Profile Image Evidence
+
+The operator supplied:
+
+- URL text: `facebook.com/micah.shively.1#`
+- Uploaded file: `428366336_7169843566438588_5384744157287473751_n.jpg`
+- File type: JPEG
+- Dimensions: 504 x 504 px
+- Size: 30,110 bytes
+- SHA-256: `366b30285d82090df573c800735af0715903ef1830de0460a0a35788edba346b`
+
+Session verification result:
+
+- Public web search did not surface a reliable corroborating link between `Mookman11` and the supplied Facebook URL/profile slug.
+- A direct public fetch of the supplied Facebook URL was not available through the current browsing path.
+- The uploaded portrait is therefore recorded as an operator-provided candidate asset, not as verified identity evidence.
+
+Required verification before using this as a real image in a public report:
+
+1. Capture the Facebook profile page with visible URL and date.
+2. Confirm that the profile owner is the same person/entity as the `Mookman11` creator account.
+3. Confirm permission to use the portrait in this report.
+4. Add a credit row with source URL, capture date, uploader/source, usage permission, caption, and alt text.
+5. If permission or identity linkage cannot be confirmed, keep the image out of the public report.
+
+---
+
+## 11. Visual / Art Direction
 
 The PDF design direction can be preserved in future assets:
 
@@ -274,10 +312,11 @@ Suggested future flat assets:
 - `reports/assets/mookman11/timeline.svg`
 - `reports/assets/mookman11/source-matrix.svg`
 - `reports/assets/mookman11/screenshots/README.md`
+- `reports/assets/mookman11/screenshots/facebook-profile-candidate.md`
 
 ---
 
-## 11. Publication Checklist
+## 12. Publication Checklist
 
 Before public release beyond this repository:
 
@@ -286,14 +325,17 @@ Before public release beyond this repository:
 - [ ] Directly open and screenshot TikTok profile.
 - [ ] Directly confirm whether OP.GG `Mookman11#Cyphr` belongs to the same person/entity.
 - [ ] Directly confirm whether Limitless `Mookman11` belongs to the same person/entity.
+- [ ] Directly open the operator-supplied Facebook profile URL and capture a screenshot with visible URL/date.
+- [ ] Confirm whether the supplied Facebook profile/portrait belongs to or is approved by the same person/entity operating `Mookman11`.
+- [ ] Confirm permission to use the uploaded portrait image in the report.
 - [ ] Refresh all follower/subscriber/view counts on publication day.
 - [ ] Add image credits and capture dates.
 - [ ] Remove any uncertain platform match that cannot be verified.
-- [ ] Keep all private identity claims out unless explicitly provided by the subject.
+- [ ] Keep all private identity claims out unless explicitly provided and approved by the subject.
 
 ---
 
-## 12. Rejected / Unsafe Claims
+## 13. Rejected / Unsafe Claims
 
 The following claims are not supported and should not be added without direct evidence:
 
@@ -303,16 +345,24 @@ The following claims are not supported and should not be added without direct ev
 - employer/school
 - private Discord membership details
 - ownership of OP.GG or Limitless profiles without confirmation
+- ownership of the supplied Facebook profile without confirmation
+- claim that the uploaded portrait depicts the `Mookman11` creator without subject/operator confirmation
 - revenue, income, sponsorship, or partnership claims
 - any claim that a generated illustration depicts the real person
 
 ---
 
-## 13. Source Appendix
+## 14. Source Appendix
 
 ### Operator-provided SERP evidence
 
 Pasted by operator in the active ChatGPT session for query `mookman11`. Visible result categories included YouTube, Twitch, TikTok, OP.GG, Twitch clips, YouTube clips, TikTok clips, and Limitless.
+
+### Operator-provided Facebook/profile candidate evidence
+
+- URL text supplied by operator: `facebook.com/micah.shively.1#`
+- Uploaded portrait file supplied by operator: `428366336_7169843566438588_5384744157287473751_n.jpg`
+- In-session file metadata: JPEG, 504 x 504 px, 30,110 bytes, SHA-256 `366b30285d82090df573c800735af0715903ef1830de0460a0a35788edba346b`
 
 ### Public web source used for category context
 
@@ -325,16 +375,17 @@ Pasted by operator in the active ChatGPT session for query `mookman11`. Visible 
 - https://www.twitch.tv/Mookman11
 - https://www.tiktok.com/@mookman11
 - https://op.gg/lol/summoners/na/Mookman11-Cyphr
+- https://www.facebook.com/micah.shively.1
 
 ---
 
-## 14. Convergence Notes
+## 15. Convergence Notes
 
 This flat file supersedes the session PDFs as the repository-native text version:
 
 - `mookman1111_perfect_report.pdf` — initial evidence audit for the original handle spelling.
 - `mookman11_perfect_report_v2.pdf` — corrected to `Mookman11` using operator SERP evidence.
 - `mookman11_perfect_report_v3.pdf` — stronger creator dossier with Battlefield 6 context and publication checklist.
-- `reports/mookman11_perfect_report.md` — current master-published flat file.
+- `reports/mookman11_perfect_report.md` — current master-published flat file with operator-supplied Facebook/profile candidate evidence.
 
-Next safe step is to add verified screenshots and optional lightweight SVG art assets in a separate commit, after direct source capture.
+Next safe step is to add verified screenshots and optional lightweight SVG art assets in a separate commit, after direct source capture and permission confirmation.
