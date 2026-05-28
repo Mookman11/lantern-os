@@ -27,6 +27,17 @@ The convergence loop fixes the first 2-4 actionable issues before expansion.
    - Reason: requires physical operator action and disk/bootloader mutation.
    - Status: held.
 
+2. `LANTERN-OS-LIVE-FLEET-001`: Live 36-agent / 64-worker runtime proof.
+   - Reason: remote GitHub can store the design contract and validation receipt, but cannot prove local worker process counts.
+   - Status: held until operator-machine orchestrator count report exists.
+
+## Open
+
+1. `LANTERN-OS-PROMOTE-001`: Promote selected COMET LEAP artifacts into
+   `artifacts/` after operator approval.
+   - Status: candidate.
+   - Next: Review artifacts using Innovator Evidence Method.
+
 ## Fixed in Loop 2
 
 1. `LANTERN-OS-WINDOWS-001`: Convert installed Windows shortcut bundle into a
@@ -43,13 +54,6 @@ The convergence loop fixes the first 2-4 actionable issues before expansion.
      - NIXOS-CONFIGS.md (config usage guide)
      - README.md (overview and structure)
    - Status: fixed.
-
-## Open
-
-1. `LANTERN-OS-PROMOTE-001`: Promote selected COMET LEAP artifacts into
-   `artifacts/` after operator approval.
-   - Status: candidate.
-   - Next: Review artifacts using Innovator Evidence Method.
 
 ## Fixed in Loop 3
 
@@ -236,3 +240,21 @@ The convergence loop fixes the first 2-4 actionable issues before expansion.
      table, verified-vs-unknown split, and real-image boundary.
    - Status: fixed as safe evidence audit; richer profile requires canonical
      owner links.
+
+## Fixed in Fleet Remote Merge Pass
+
+1. `LANTERN-OS-FLEET-001`: 12x3 convergence ring was not present on remote master.
+   - Fix: added `manifests/CONVERGENCE-LOOP-AGENT-FLEET.md`.
+   - Status: fixed as design contract; live runtime proof remains held.
+
+2. `LANTERN-OS-MCP-002`: MCP work split was not present on remote master.
+   - Fix: added `manifests/MCP-WORK-SPLIT.md` and linked it from `docs/MCP-CONNECTOR.md`.
+   - Status: fixed.
+
+3. `LANTERN-OS-FLEET-COUNT-001`: Fleet count validator and latest count receipt were missing.
+   - Fix: added `scripts/Test-ConvergenceAgentFleet.py` and `manifests/validation/CONVERGENCE-FLEET-LATEST.json`.
+   - Status: fixed for designed counts: 12 loop steps, 36 ring slots, 64 pool target.
+
+4. `LANTERN-OS-CALL-LIST-001`: Receptionist outreach lacked a public-safe call sheet.
+   - Fix: added `docs/LANTERN-OS-RECEPTIONIST-CALL-LIST.md` with public organization routing numbers and call receipts.
+   - Status: fixed; numbers must be rechecked against official pages before call campaigns.
