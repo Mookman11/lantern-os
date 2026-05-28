@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="Cache-Control" content="no-store">
   <title>Lantern OS</title>
-  <link rel="stylesheet" href="styles.css?v=20260526-2018">
-  <script defer src="app.js?v=20260526-2018"></script>
+  <link rel="stylesheet" href="styles.css?v=20260528-1250">
+  <script defer src="app.js?v=20260528-1250"></script>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to controls</a>
@@ -89,6 +89,38 @@
       </article>
     </section>
 
+    <section class="evidence-strip" aria-label="Evidence matrix">
+      <article class="evidence-panel fleet-panel">
+        <div class="evidence-header">
+          <h2>Agent Fleet</h2>
+          <span class="badge badge-live" id="fleetBadge">CHECKING</span>
+        </div>
+        <table class="evidence-table" id="fleetTable">
+          <thead><tr><th>Slot</th><th>State</th><th>Task</th><th>Confidence</th></tr></thead>
+          <tbody id="fleetBody"><tr><td colspan="4" class="muted">Loading...</td></tr></tbody>
+        </table>
+        <div class="evidence-footer">
+          <span id="fleetCounts">Q:-- A:-- D:-- F:--</span>
+          <button type="button" id="dispatchAll" class="action-chip">Dispatch All</button>
+        </div>
+      </article>
+      <article class="evidence-panel hff-panel">
+        <div class="evidence-header">
+          <h2>HFF Scores</h2>
+          <span class="badge badge-candidate" id="hffBadge">LOCAL</span>
+        </div>
+        <div class="score-grid" id="hffScores">
+          <div class="score-card"><div class="score-value" id="hffHumans">--</div><div class="score-label">Humans</div></div>
+          <div class="score-card"><div class="score-value" id="hffAnimals">--</div><div class="score-label">Animals</div></div>
+          <div class="score-card"><div class="score-value" id="hffEco">--</div><div class="score-label">Ecosystems</div></div>
+          <div class="score-card"><div class="score-value" id="hffUniverse">--</div><div class="score-label">Universe</div></div>
+        </div>
+        <div class="evidence-footer">
+          <span id="hffMeta">-- beliefs | -- sensors | -- domains</span>
+        </div>
+      </article>
+    </section>
+
     <section class="wide">
       <article class="panel flat-rag-panel">
         <h2>Flat RAG House</h2>
@@ -158,21 +190,22 @@
         <ul id="operatorQueue" class="operator-queue"></ul>
       </article>
 
-      <article class="panel conversation-panel">
-        <h2>Local Conversations</h2>
-        <form id="conversationForm" class="conversation-form">
-          <label for="conversationRole">Role</label>
-          <select id="conversationRole" name="role">
-            <option value="operator">Operator</option>
-            <option value="lantern">Lantern</option>
-            <option value="note">Note</option>
-            <option value="system">System</option>
-          </select>
-          <label for="conversationText">Message</label>
-          <textarea id="conversationText" name="text" rows="4" maxlength="4000" placeholder="Store a local conversation note..."></textarea>
-          <button type="submit">Store Locally</button>
+      <article class="panel chat-panel" id="chatPanel">
+        <div class="chat-header">
+          <span class="chat-title">Lantern OS</span>
+          <span class="chat-status" id="chatStatus">local</span>
+        </div>
+        <div class="chat-messages" id="chatMessages">
+          <div class="chat-empty" id="chatEmpty">Start a conversation. Messages stay local.</div>
+        </div>
+        <div class="chat-quick" id="chatQuick"></div>
+        <form id="conversationForm" class="chat-input-bar">
+          <input type="hidden" id="conversationRole" value="operator">
+          <textarea id="conversationText" name="text" rows="1" maxlength="4000" placeholder="Message Lantern OS..." class="chat-textarea"></textarea>
+          <button type="submit" class="chat-send" aria-label="Send">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13"/><path d="M22 2L15 22L11 13L2 9L22 2Z"/></svg>
+          </button>
         </form>
-        <ul id="conversationList" class="conversation-list"></ul>
       </article>
       <article class="panel log-panel">
         <h2>Action Log</h2>
