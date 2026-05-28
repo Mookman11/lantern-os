@@ -105,6 +105,45 @@ sequenceDiagram
     OS-->>Gate: gate-ready, gate-held, or fault
 ```
 
+## Orion Watch MK1 engineering boundary
+
+The uploaded Orion Watch MK1 intake is now treated as the safety standard for MK1 wearable work.
+
+MK1 should remain an existing-watch-platform prototype:
+
+- existing round smartwatch donor platform;
+- Orion / Lantern OS watchface;
+- phone-side or local companion layer;
+- push-to-talk as the default audio gate;
+- haptic confirmation;
+- wellness-only sensor language;
+- custom strap, box, and presentation only;
+- no custom PCB for MK1;
+- no custom RF design for MK1;
+- no custom battery for MK1;
+- no medical claims;
+- no payment NFC claim;
+- no water-resistance claim beyond supplier-proven certification.
+
+The ring concept can remain a future control-surface / docking / accessory lane, but it must not be confused with a build-ready custom electronics plan.
+
+## Supplier evidence gate
+
+Before any sample payment or batch-of-2 lead action, request supplier evidence:
+
+1. exact model number;
+2. SoC / chipset family if available;
+3. display type and resolution;
+4. battery capacity and battery safety documentation;
+5. charger specs;
+6. FCC / CE / RoHS / UN38.3 documents if available;
+7. Bluetooth declaration or qualification information if available;
+8. documented water-resistance support if any IP / ATM claim is made;
+9. watchface customization method;
+10. app / firmware customization limits;
+11. sample lead time and shipping method;
+12. unit quote at 2 / 10 / 50 / 100 / 500.
+
 ## Public-safe boundaries
 
 Allowed in this artifact:
@@ -113,6 +152,7 @@ Allowed in this artifact:
 - functional routing;
 - symbolic stone positions;
 - public-safe optical self-loop explanation;
+- Orion Watch MK1 donor-platform requirements;
 - validation gates;
 - MCP/handoff status language.
 
@@ -139,6 +179,8 @@ Battery safety is treated as a gate, not a solved feature. MK1 cannot be called 
 - user-contact safety;
 - transport/storage handling;
 - compliance path for any real device.
+
+For Orion Watch MK1, the safest path is factory-certified battery/charger only. Do not design a custom Li-ion pack for MK1.
 
 Audio safety is also gated:
 
@@ -174,6 +216,10 @@ Current status for this artifact:
 - [x] NFC pairing cue included.
 - [x] Off-ring speaker route included.
 - [x] Optical self-loop with coded pulse return to 12 o'clock sensor included.
+- [x] Orion Watch MK1 donor-platform boundary included.
+- [x] No custom PCB / RF / battery claim for MK1.
+- [x] Wellness-only sensor language boundary included.
+- [x] Supplier evidence checklist included.
 - [x] Public-safe boundary included.
 - [x] No merge performed by this report.
 - [x] No production, shipment, certification, or fabrication claim.
