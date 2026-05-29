@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="Cache-Control" content="no-store">
   <title>Lantern OS</title>
-  <link rel="stylesheet" href="styles.css?v=20260529-dashboard">
-  <script defer src="app.js?v=20260529-dashboard"></script>
+  <link rel="stylesheet" href="styles.css?v=20260529-dashboard-fix">
+  <script defer src="app.js?v=20260529-dashboard-fix"></script>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to controls</a>
@@ -46,6 +46,9 @@
       <form id="conversationForm" class="chat-input-bar">
         <input type="hidden" id="conversationRole" value="operator">
         <textarea id="conversationText" name="text" rows="1" maxlength="4000" placeholder="Message Lantern OS..." class="chat-textarea"></textarea>
+        <button type="button" id="voiceInput" class="chat-voice" aria-label="Dictate message" aria-pressed="false" title="Dictate message">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></svg>
+        </button>
         <button type="submit" class="chat-send" aria-label="Send">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13"/><path d="M22 2L15 22L11 13L2 9L22 2Z"/></svg>
         </button>
@@ -53,21 +56,21 @@
     </article>
 
     <section class="actions" aria-label="Primary controls">
-      <button id="refresh" type="button">Refresh Status</button>
-      <button id="runLoop" type="button">Converge Loop</button>
-      <button id="flatRagIngest" type="button">Ingest Repos</button>
-      <button id="autoUpdate" type="button" aria-pressed="false">Auto Update</button>
-      <button id="localControls" type="button">Local Controls</button>
+      <button id="refresh" type="button" title="Pull live status from local files and APIs">Refresh</button>
+      <button id="runLoop" type="button" title="Run the Lantern convergence check">Run Check</button>
+      <button id="flatRagIngest" type="button" title="Rebuild the evidence/RAG source list">Sync Evidence</button>
+      <button id="autoUpdate" type="button" aria-pressed="false" title="Toggle 30 second read-only refresh">Live Refresh</button>
+      <button id="localControls" type="button" title="Open the Windows local controls bridge">Open Controls</button>
       <a target="_blank" rel="noopener noreferrer" href="/outreach.html">Outreach</a>
-      <a target="_blank" rel="noopener noreferrer" href="/repo/artifacts/LANTERN-OS-WHITEPAPER-v0.1.pdf">Whitepaper</a>
-      <a target="_blank" rel="noopener noreferrer" href="/repo/artifacts/ADS-ARCHITECTURE-REVIEW-v0.1.pdf">ADS</a>
-      <a target="_blank" rel="noopener noreferrer" href="/view?path=reports/ARC-REACTOR-12-STEP-CONVERGENCE-MODEL.md">Arc Model</a>
-      <a target="_blank" rel="noopener noreferrer" href="/repo/artifacts/ARC-REACTOR-MKII-CONVERGENCE-UPDATE-2026-05-26.pdf">MK II PDF</a>
+      <a target="_blank" rel="noopener noreferrer" href="/repo/artifacts/LANTERN-OS-WHITEPAPER-v0.1.pdf" title="Open the operator whitepaper PDF">Operator Brief</a>
+      <a target="_blank" rel="noopener noreferrer" href="/repo/artifacts/ADS-ARCHITECTURE-REVIEW-v0.1.pdf" title="Open the architecture TLDR PDF">Ad TLDR</a>
+      <a target="_blank" rel="noopener noreferrer" href="/view?path=reports/ARC-REACTOR-12-STEP-CONVERGENCE-MODEL.md" title="Open the formatted Tony arc model">Tony Arc</a>
+      <a target="_blank" rel="noopener noreferrer" href="/repo/artifacts/ARC-REACTOR-MKII-CONVERGENCE-UPDATE-2026-05-26.pdf" title="Open the MK II operator PDF">MK II Operator</a>
     </section>
 
     <section class="grid" aria-label="System panels">
       <article class="panel">
-        <h2>Power</h2>
+        <h2>Arc Scores</h2>
         <dl>
           <div><dt>Movie 1</dt><dd id="m1">--</dd></div>
           <div><dt>Movie 2</dt><dd id="m2">--</dd></div>
@@ -157,7 +160,7 @@
       </article>
       <article class="evidence-panel hff-panel">
         <div class="evidence-header">
-          <h2>HFF Scores</h2>
+          <h2>HFF Sensors</h2>
           <span class="badge badge-candidate" id="hffBadge">LOCAL</span>
         </div>
         <div class="score-grid" id="hffScores">

@@ -12,9 +12,14 @@ const flatRagHousePath = path.join(repoRoot, "data", "rag-house", "flat-rag-hous
 const flatRagHouseManifestPath = path.join(repoRoot, "manifests", "FLAT-RAG-HOUSE-LATEST.md");
 const orchestratorQueueDir = path.join("C:\\Users\\alexp\\Documents\\gm-agent-orchestrator", "tasks", "queue");
 const operatorNotesPath = path.join(repoRoot, "data", "operator-notes", "notes.jsonl");
+const agentDispatchStatePath = path.join(repoRoot, "data", "operator-notes", "agent-dispatch-state.json");
 const cloudMirrorsPath = path.join(repoRoot, "manifests", "cloud-mirrors.json");
 const maxConversationTextLength = 4000;
+const agentDispatchSlots = ["gemini-flash", "gemini-main", "codex-main", "gpt-web"];
+const agentDispatchCooldownMs = 300000;
+const agentDispatchDelayMs = 1500;
 const writeQueues = new Map();
+let activeAgentDispatch = null;
 
 function enqueueFileWrite(filePath, operation) {
   const previous = writeQueues.get(filePath) || Promise.resolve();
@@ -129,6 +134,270 @@ async function appendExternalRagItem(input) {
   const cachePath = path.join(repoRoot, "data", "rag-intake", "external-llm-web-cache", "cache.jsonl");
   await appendJsonlQueued(cachePath, record);
   return record;
+}
+
+async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 8000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    const text = await response.text();
+    let body = null;
+    if (text) {
+      try {
+        body = JSON.parse(text);
+      } catch {
+        body = { raw: text };
+      }
+    }
+    if (!response.ok) {
+      throw new Error(body?.error || body?.raw || `HTTP ${response.status}`);
+    }
+    return body;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function callMcpTool(name, args = {}, timeoutMs = 8000) {
+  return fetchJsonWithTimeout("http://127.0.0.1:8787/mcp", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: Date.now(),
+      method: "tools/call",
+      params: { name, arguments: args },
+    }),
+  }, timeoutMs);
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function readAgentDispatchState() {
+  try {
+    return JSON.parse(fs.readFileSync(agentDispatchStatePath, "utf8"));
+  } catch {
+    return { lastDispatchAt: 0, running: false, results: [] };
+  }
+}
+
+async function writeAgentDispatchState(state) {
+  await writeTextQueued(agentDispatchStatePath, `${JSON.stringify(state, null, 2)}\n`);
+}
+
+function parseMcpToolContent(data) {
+  const text = data?.result?.content?.find((item) => item.type === "text")?.text
+    || data?.result?.content?.[0]?.text
+    || "";
+  if (!text) return data;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { text };
+  }
+}
+
+async function getFleetSnapshot() {
+  try {
+    const data = await callMcpTool("get_agent_status", {}, 8000);
+    const parsed = parseMcpToolContent(data);
+    return {
+      ok: true,
+      generatedAt: new Date().toISOString(),
+      agents: Array.isArray(parsed.agents) ? parsed.agents : [],
+      counts: parsed.counts || {},
+      raw: parsed,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      generatedAt: new Date().toISOString(),
+      agents: [],
+      counts: {},
+      error: error.message,
+    };
+  }
+}
+
+async function runAgentDispatchBatch(startedAt) {
+  const results = [];
+  for (const slot of agentDispatchSlots) {
+    try {
+      const data = await callMcpTool("start_agent", { slot }, 12000);
+      const parsed = parseMcpToolContent(data);
+      results.push({ slot, ok: parsed.ok === true, result: parsed });
+    } catch (error) {
+      results.push({ slot, ok: false, error: error.message });
+    }
+    await writeAgentDispatchState({
+      lastDispatchAt: startedAt,
+      running: true,
+      updatedAt: new Date().toISOString(),
+      results,
+    });
+    if (slot !== agentDispatchSlots[agentDispatchSlots.length - 1]) {
+      await sleep(agentDispatchDelayMs);
+    }
+  }
+  const state = {
+    lastDispatchAt: startedAt,
+    running: false,
+    updatedAt: new Date().toISOString(),
+    code: results.every((item) => item.ok) ? 0 : 1,
+    results,
+  };
+  await writeAgentDispatchState(state);
+  return state;
+}
+
+async function dispatchAllAgents() {
+  const now = Date.now();
+  const state = readAgentDispatchState();
+  const staleRunning = state.running === true && now - Number(state.lastDispatchAt || 0) > 300000;
+  if (activeAgentDispatch || (state.running === true && !staleRunning)) {
+    return {
+      code: 2,
+      active: true,
+      retryAfterMs: 10000,
+      message: "Agent dispatch is already running. Refresh Fleet in a few seconds.",
+      results: state.results || [],
+    };
+  }
+  const lastDispatchAt = staleRunning ? 0 : Number(state.lastDispatchAt || 0);
+  const retryAfterMs = Math.max(0, agentDispatchCooldownMs - (now - lastDispatchAt));
+  if (retryAfterMs > 0) {
+    return {
+      code: 2,
+      rateLimited: true,
+      retryAfterMs,
+      message: `Dispatch is rate-limited. Try again in ${Math.ceil(retryAfterMs / 1000)} seconds.`,
+      results: [],
+    };
+  }
+  await writeAgentDispatchState({
+    lastDispatchAt: now,
+    running: true,
+    updatedAt: new Date().toISOString(),
+    results: [],
+  });
+  activeAgentDispatch = runAgentDispatchBatch(now).finally(() => {
+    activeAgentDispatch = null;
+  });
+  return {
+    code: 0,
+    accepted: true,
+    message: "Agent dispatch started as a rate-limited background batch.",
+    rateLimited: false,
+    cooldownMs: agentDispatchCooldownMs,
+    delayMs: agentDispatchDelayMs,
+    slots: agentDispatchSlots,
+    results: [],
+  };
+}
+
+async function getHffSensorStatus() {
+  try {
+    const data = await fetchJsonWithTimeout("https://human-flourishing-frameworks.onrender.com/api/status", {}, 12000);
+    return {
+      ok: true,
+      status: data.status || "unknown",
+      dataSource: data.data_source || "unknown",
+      liveSensorsEnabled: data.outbound_sync?.live_sensors_enabled === true,
+      verifiedNodes: Number(data.verified_nodes || 0),
+      securityNodes: Number(data.security_nodes || 0),
+      minConsensusNodes: Number(data.min_consensus_nodes || 0),
+      timestamp: data.timestamp || "",
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      status: "unreachable",
+      dataSource: "cached",
+      liveSensorsEnabled: false,
+      verifiedNodes: 0,
+      securityNodes: 0,
+      minConsensusNodes: 0,
+      error: error.message,
+    };
+  }
+}
+
+function buildDashboardReply(message, provider = "local-rag") {
+  const lower = message.toLowerCase();
+  if (lower.includes("mine") || lower.includes("mining") || lower.includes("monero") || lower.includes("btc") || lower.includes("rock and stone")) {
+    return "Rock and stone, safely. CPU goes to the Monero learning lane, GPU stays experimental for RVN or ETC, and BTC belongs only on owned SHA-256 ASIC hardware or a clearly labeled lottery path. Next useful step: run hardware intake, set power cost, then compare net/day before any miner starts. No wallet cracking, no hidden signing, no fake one-shot ROI.";
+  }
+  if (lower.includes("dispatch") || lower.includes("fleet") || lower.includes("agent")) {
+    return "Fleet work now routes through the Lantern server instead of browser-to-MCP calls. Refresh Fleet checks the local orchestrator, and Dispatch Agents asks the local MCP service to start the known slots. If MCP is offline, the button should report that honestly instead of pretending it worked.";
+  }
+  if (lower.includes("refresh") || lower.includes("works")) {
+    return "Refresh pulls the current wallet, readiness, RAG, mining lab, cloud mirror, queue, fleet, and HFF sensor status. It is a read-only status pull; the higher-impact actions are separated into their own buttons.";
+  }
+  if (lower.includes("sync") || lower.includes("evidence") || lower.includes("ingest") || lower.includes("repo") || lower.includes("rag")) {
+    return "Sync Evidence rebuilds the flat RAG house from the configured local source repos. It should answer who/what by listing sources and records, not by dropping you into raw notes.";
+  }
+  if (lower.includes("sensor") || lower.includes("hff")) {
+    return "HFF needs real installed polling nodes to earn live confidence. This dashboard now reports the Render sensor switch, verified node count, consensus target, and whether the data source is still mock/cached.";
+  }
+  if (lower.includes("mic") || lower.includes("voice")) {
+    return "Mic input is a browser feature: tap the mic button by the composer, speak, review the text, then send. If the browser blocks speech recognition, Lantern will say so in the action log.";
+  }
+  if (lower.includes("operator") || lower.includes("tony")) {
+    return "Tony is operator material here: short action labels, formatted reader pages, and evidence panels first. The dashboard should make the next move obvious without requiring someone to decode internal project names.";
+  }
+  return `I am on the ${provider} path. I can help with the dashboard, mining lane choices, repo evidence, wallet receipts, cloud mirrors, or local fleet controls. Ask in plain language and I will route it to the safest visible lane.`;
+}
+
+async function tryLocalModelReply(message) {
+  const tags = await fetchJsonWithTimeout("http://127.0.0.1:11434/api/tags", {}, 1000);
+  const model = process.env.LANTERN_CHAT_MODEL || tags?.models?.[0]?.name;
+  if (!model) return null;
+  const data = await fetchJsonWithTimeout("http://127.0.0.1:11434/api/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model,
+      stream: false,
+      messages: [
+        {
+          role: "system",
+          content: "You are Lantern OS inside a local-first operator dashboard. Be concise, practical, truthful, and do not promise hidden wallet actions, brute force, or fake ROI.",
+        },
+        { role: "user", content: message },
+      ],
+    }),
+  }, 3000);
+  const reply = String(data?.message?.content || data?.response || "").trim();
+  return reply ? { reply, provider: `ollama:${model}` } : null;
+}
+
+async function handleChatMessage(input) {
+  const message = String(input.message || input.text || "").trim().slice(0, maxConversationTextLength);
+  if (!message) throw new Error("message_required");
+  const operatorEntry = normalizeConversationEntry({ surface: "lantern-garage", role: "operator", text: message });
+  await appendConversationEntry(operatorEntry);
+
+  let provider = "local-rag";
+  let reply = "";
+  try {
+    const localModel = await tryLocalModelReply(message);
+    if (localModel) {
+      provider = localModel.provider;
+      reply = localModel.reply;
+    }
+  } catch {
+    provider = "local-rag";
+  }
+  if (!reply) {
+    reply = buildDashboardReply(message, provider);
+  }
+
+  const lanternEntry = normalizeConversationEntry({ surface: "lantern-garage", role: "lantern", text: reply });
+  await appendConversationEntry(lanternEntry);
+  return { ok: true, provider, reply, entries: [operatorEntry, lanternEntry] };
 }
 
 function normalizeRagCacheItem(input) {
@@ -705,6 +974,31 @@ async function route(req, res) {
     return;
   }
 
+  if (url.pathname === "/api/fleet") {
+    sendJson(res, await getFleetSnapshot());
+    return;
+  }
+
+  if (url.pathname === "/api/agent-dispatch-status") {
+    sendJson(res, readAgentDispatchState());
+    return;
+  }
+
+  if (url.pathname === "/api/hff-sensors") {
+    sendJson(res, await getHffSensorStatus());
+    return;
+  }
+
+  if (url.pathname === "/api/chat" && req.method === "POST") {
+    try {
+      const body = await collectRequestBody(req);
+      sendJson(res, await handleChatMessage(JSON.parse(body || "{}")), 201);
+    } catch (error) {
+      sendJson(res, { error: error.message }, 400);
+    }
+    return;
+  }
+
   if (url.pathname === "/api/rag-cache" && req.method === "GET") {
     sendJson(res, readJsonl("data/rag-intake/external-llm-web-cache/cache.jsonl", 50));
     return;
@@ -779,6 +1073,12 @@ async function route(req, res) {
   if (url.pathname === "/api/actions/local-controls" && req.method === "POST") {
     const result = await runPowerShell("scripts/Start-LanternLocalControls.ps1");
     sendJson(res, result, result.code === 0 ? 200 : 500);
+    return;
+  }
+
+  if (url.pathname === "/api/actions/dispatch-all" && req.method === "POST") {
+    const result = await dispatchAllAgents();
+    sendJson(res, result, result.code === 0 ? 200 : 207);
     return;
   }
 

@@ -30,6 +30,21 @@ function readJsonl(relativePath, limit = 20) {
   }
 }
 
+function collectRequestBody(req, maxBytes = 64000) {
+  return new Promise((resolve, reject) => {
+    let body = "";
+    req.on("data", (chunk) => {
+      body += chunk.toString();
+      if (Buffer.byteLength(body, "utf8") > maxBytes) {
+        reject(new Error("request_body_too_large"));
+        req.destroy();
+      }
+    });
+    req.on("end", () => resolve(body));
+    req.on("error", reject);
+  });
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -285,6 +300,20 @@ function getCloudMirrorStatus(reqHost = "") {
   };
 }
 
+function buildRenderChatReply(message) {
+  const lower = String(message || "").toLowerCase();
+  if (lower.includes("mine") || lower.includes("mining") || lower.includes("monero") || lower.includes("btc") || lower.includes("rock and stone")) {
+    return "Rock and stone, safely. In public Render mode I can explain the lane split: CPU to Monero learning checks, GPU to RVN or ETC experiments, and BTC only with owned SHA-256 ASIC hardware or a labeled lottery path. Real mining, wallets, and dispatch stay local.";
+  }
+  if (lower.includes("fleet") || lower.includes("dispatch") || lower.includes("local controls")) {
+    return "Those controls are local-only. Use the local dashboard at http://127.0.0.1:4177 for MCP fleet status, dispatch, and PowerShell actions; Render only shows safe read-only mirrors.";
+  }
+  if (lower.includes("sensor") || lower.includes("hff")) {
+    return "HFF sensor truth needs installed polling nodes and verified readings. This public mirror can describe the path, but verified sensor counts must come from the live HFF service and local receipts.";
+  }
+  return "I am the Render mirror assistant. I can explain the dashboard, formatted reports, safe mining lanes, cloud mirror status, and what must be opened locally for real controls.";
+}
+
 async function route(req, res) {
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
 
@@ -319,6 +348,31 @@ async function route(req, res) {
     return;
   }
 
+  if (url.pathname === "/api/fleet") {
+    sendJson(res, {
+      ok: false,
+      generatedAt: new Date().toISOString(),
+      agents: [],
+      counts: {},
+      error: "Local MCP fleet is available only from http://127.0.0.1:4177",
+    });
+    return;
+  }
+
+  if (url.pathname === "/api/hff-sensors") {
+    sendJson(res, {
+      ok: true,
+      status: "render_read_only",
+      dataSource: "public-mirror",
+      liveSensorsEnabled: false,
+      verifiedNodes: 0,
+      securityNodes: 0,
+      minConsensusNodes: 3,
+      timestamp: new Date().toISOString(),
+    });
+    return;
+  }
+
   if (url.pathname === "/api/rag-cache") {
     sendJson(res, readJsonl("data/rag-intake/external-llm-web-cache/cache.jsonl", 50));
     return;
@@ -326,6 +380,23 @@ async function route(req, res) {
 
   if (url.pathname === "/api/conversations") {
     sendJson(res, { path: "render_public_static", conversations: [] });
+    return;
+  }
+
+  if (url.pathname === "/api/chat" && req.method === "POST") {
+    try {
+      const body = await collectRequestBody(req);
+      const input = JSON.parse(body || "{}");
+      const message = String(input.message || input.text || "").trim();
+      if (!message) throw new Error("message_required");
+      sendJson(res, {
+        ok: true,
+        provider: "render-read-only",
+        reply: buildRenderChatReply(message),
+      }, 201);
+    } catch (error) {
+      sendJson(res, { error: error.message }, 400);
+    }
     return;
   }
 

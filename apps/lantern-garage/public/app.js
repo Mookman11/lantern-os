@@ -1,6 +1,5 @@
 const $ = (id) => document.getElementById(id);
 const LOCAL_APP_ORIGIN = "http://127.0.0.1:4177";
-const CLOUD_TRUTH_DEPLOY_MARKER = "2026-05-29-master-refresh";
 
 function appOrigin() {
   return window.location.protocol === "file:" ? LOCAL_APP_ORIGIN : window.location.origin;
@@ -289,3 +288,307 @@ const quickSets = {
     { label: "Refresh status", text: "Refresh the full system status." },
     { label: "Dispatch agents", text: "Dispatch all available agents on queued work." },
     { label: "Add P0 note", text: "I need to flag a P0 item." },
+  ],
+};
+
+function showQuickReplies(context) {
+  const bar = $("chatQuick");
+  bar.innerHTML = "";
+  const chips = quickSets[context] || quickSets["follow-up"];
+  chips.forEach((chip) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "chat-chip";
+    btn.textContent = chip.label;
+    btn.addEventListener("click", () => sendChat(chip.text));
+    bar.appendChild(btn);
+  });
+}
+
+function renderBootGate(readiness) {
+  const installReady = readiness.readyForInstall === true;
+  const prepReady = readiness.readyForPrep === true;
+  $("launchRule").textContent = installReady
+    ? "Install gate is ready for operator-reviewed physical action. The app still will not mutate boot settings."
+    : "Local app first. Disk, bootloader, firmware, and default-boot changes remain operator-held.";
+  $("nextBoot").textContent = installReady
+    ? "Review the install checklist, backup keys, recovery media, and boot USB before changing the machine."
+    : prepReady
+      ? "Prep is ready, but install is held until unallocated disk space and elevated checks pass."
+      : "Windows remains the host until readiness evidence improves.";
+  $("memoryRule").textContent = "RAG cache and local conversations are source-labeled. Private notes stay local.";
+}
+
+async function sendChat(text) {
+  if (!text || !text.trim()) return;
+  text = text.trim();
+  appendBubble("operator", text);
+  $("conversationText").value = "";
+  autoGrow($("conversationText"));
+  $("chatStatus").textContent = "thinking";
+  try {
+    const result = await api("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ message: text }),
+    });
+    appendBubble("lantern", result.reply || generateLocalReply(text));
+    $("chatStatus").textContent = result.provider || "local";
+    showQuickReplies("respond");
+  } catch (err) {
+    const reply = generateLocalReply(text);
+    appendBubble("lantern", reply);
+    $("chatStatus").textContent = "local fallback";
+    try {
+      await api("/api/conversations", {
+        method: "POST",
+        body: JSON.stringify({ surface: "lantern-garage", role: "operator", text }),
+      });
+      await api("/api/conversations", {
+        method: "POST",
+        body: JSON.stringify({ surface: "lantern-garage", role: "lantern", text: reply }),
+      });
+    } catch {
+      log(`Chat stored on-screen only: ${err.message}`);
+    }
+    showQuickReplies("respond");
+  }
+}
+
+function generateLocalReply(input) {
+  const lower = input.toLowerCase();
+  if (lower.includes("mine") || lower.includes("mining") || lower.includes("monero") || lower.includes("btc") || lower.includes("rock and stone"))
+    return "Rock and stone, safely: CPU routes to Monero learning/P2Pool checks, GPUs stay experimental for RVN or ETC, and BTC only belongs on owned SHA-256 ASIC hardware or a clearly labeled lottery path. No wallet cracking, no hidden signing, no fake one-shot ROI.";
+  if (lower.includes("fleet") || lower.includes("agent") || lower.includes("status"))
+    return "Checking agent fleet status via MCP orchestrator at 127.0.0.1:8787. Use Refresh Status to pull live queue and slot evidence.";
+  if (lower.includes("next task") || lower.includes("queue"))
+    return "Queue is managed by the orchestrator. Use the operator queue panel above or hit Refresh to see current state.";
+  if (lower.includes("sync") || lower.includes("evidence") || lower.includes("ingest") || lower.includes("repo") || lower.includes("rag"))
+    return "Sync Evidence rebuilds the flat RAG house from configured local source repos and then shows source and record counts on the dashboard.";
+  if (lower.includes("converge") || lower.includes("loop"))
+    return "Running convergence loop. This executes the Lantern convergence script and updates RAG + status.";
+  if (lower.includes("dispatch"))
+    return "To dispatch agents, use start_agent MCP tool for each slot: gemini-flash, gemini-main, codex-main, gpt-web.";
+  if (lower.includes("hold"))
+    return "Holding. Current action paused for operator review.";
+  if (lower.includes("approve") || lower.includes("proceed"))
+    return "Acknowledged. Proceeding with current action path.";
+  if (lower.includes("p0") || lower.includes("flag") || lower.includes("urgent"))
+    return "Use the Operator Lane note form above to add a P0 item. It will appear at the top of the queue.";
+  return "Message stored locally. Use quick-reply buttons or type for more context.";
+}
+
+function appendBubble(role, text) {
+  const container = $("chatMessages");
+  const empty = $("chatEmpty");
+  empty.style.display = "none";
+  const div = document.createElement("div");
+  div.className = `chat-bubble ${role}`;
+  const span = document.createElement("span");
+  span.textContent = text;
+  div.appendChild(span);
+  const time = document.createElement("span");
+  time.className = "chat-time";
+  time.textContent = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  div.appendChild(time);
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+}
+
+function autoGrow(el) {
+  el.style.height = "auto";
+  el.style.height = `${Math.min(el.scrollHeight, 150)}px`;
+}
+
+async function storeConversation(event) {
+  event.preventDefault();
+  const text = $("conversationText").value.trim();
+  if (!text) return;
+  await sendChat(text);
+}
+
+async function storeRagItem(event) {
+  event.preventDefault();
+  const claim = $("ragClaim").value.trim();
+  if (!claim) {
+    log("RAG claim required.");
+    return;
+  }
+  await api("/api/rag-cache", {
+    method: "POST",
+    body: JSON.stringify({
+      topic: $("ragTopic").value || "Lantern OS form intake",
+      claim,
+      decision: $("ragDecision").value,
+      compressedSummary: claim,
+      sourceTitle: "Lantern OS Garage form",
+      sourceType: "operator_asserted",
+      confidence: 0.66,
+    }),
+  });
+  $("ragClaim").value = "";
+  log("RAG item stored.");
+  await refresh();
+}
+
+function toggleAutoUpdate() {
+  if (autoUpdateTimer) {
+    clearInterval(autoUpdateTimer);
+    autoUpdateTimer = null;
+    $("autoUpdate").setAttribute("aria-pressed", "false");
+    $("autoUpdateState").textContent = "off";
+    log("Auto update off.");
+    return;
+  }
+  autoUpdateTimer = setInterval(() => refresh().catch((error) => log(error.message)), 30000);
+  $("autoUpdate").setAttribute("aria-pressed", "true");
+  $("autoUpdateState").textContent = "30s refresh";
+  log("Auto update on: 30s refresh only.");
+}
+
+async function refreshFleet() {
+  try {
+    const data = await api("/api/fleet");
+    if (!data.ok) throw new Error(data.error || "fleet unavailable");
+    renderFleet(data);
+  } catch (error) {
+    $("fleetBadge").textContent = "OFFLINE";
+    $("fleetBadge").className = "badge badge-blocked";
+    $("fleetCounts").textContent = `MCP offline: ${error.message}`;
+  }
+}
+
+function renderFleet(data) {
+  const body = $("fleetBody");
+  body.innerHTML = "";
+  const agents = data.agents || [];
+  const activeCount = agents.filter((agent) => agent.currentTask).length;
+  $("fleetBadge").textContent = activeCount > 0 ? `${activeCount} ACTIVE` : "IDLE";
+  $("fleetBadge").className = activeCount > 0 ? "badge badge-live" : "badge badge-medium";
+  agents.forEach((agent) => {
+    if (agent.slot === "operator-intake") return;
+    const tr = document.createElement("tr");
+    const stateClass = agent.currentTask ? "active" : agent.available ? "idle" : "blocked";
+    const taskText = agent.currentTask ? agent.currentTask.replace(/__/g, " ").replace(/\.md$/, "") : "--";
+    const confidence = agent.currentTask ? "running" : agent.available ? "ready" : agent.reason;
+    tr.innerHTML = `<td><strong>${agent.slot}</strong></td>`
+      + `<td><span class="slot-state ${stateClass}">${stateClass}</span></td>`
+      + `<td style="font-size:0.82rem">${taskText}</td>`
+      + `<td><span class="badge badge-${stateClass === "active" ? "live" : stateClass === "idle" ? "high" : "blocked"}">${String(confidence || "unknown").toUpperCase()}</span></td>`;
+    body.appendChild(tr);
+  });
+  const counts = data.counts || {};
+  $("fleetCounts").textContent = `Q:${counts.queue ?? "--"} A:${counts.active ?? "--"} D:${counts.done ?? "--"} F:${counts.failed ?? "--"}`;
+}
+
+async function refreshHff() {
+  try {
+    const data = await api("/api/hff-sensors");
+    if (!data.ok) throw new Error(data.error || "HFF sensor poll unavailable");
+    $("hffBadge").textContent = data.liveSensorsEnabled ? "SENSORS ON" : "HOLD";
+    $("hffBadge").className = data.liveSensorsEnabled ? "badge badge-live" : "badge badge-candidate";
+    renderScores({ humans: 54, animals: 43, ecosystems: 52, universe: 50 });
+    $("hffMeta").textContent = `${data.verifiedNodes} verified nodes | ${data.securityNodes} security nodes | consensus target ${data.minConsensusNodes} | source: ${data.dataSource}`;
+  } catch (error) {
+    $("hffBadge").textContent = "LOCAL";
+    $("hffBadge").className = "badge badge-candidate";
+    renderScores({ humans: 54, animals: 43, ecosystems: 52, universe: 50 });
+    $("hffMeta").textContent = `sensor poll held: ${error.message}`;
+  }
+}
+
+function startVoiceInput() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    log("Mic input is not available in this browser.");
+    return;
+  }
+  const recognition = new SpeechRecognition();
+  recognition.lang = "en-US";
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
+  $("voiceInput").setAttribute("aria-pressed", "true");
+  log("Listening...");
+  recognition.onresult = (event) => {
+    const transcript = event.results?.[0]?.[0]?.transcript || "";
+    if (transcript) {
+      $("conversationText").value = transcript;
+      autoGrow($("conversationText"));
+      $("conversationText").focus();
+    }
+  };
+  recognition.onerror = (event) => log(`Mic input stopped: ${event.error || "unknown error"}`);
+  recognition.onend = () => $("voiceInput").setAttribute("aria-pressed", "false");
+  recognition.start();
+}
+
+function sparkline(canvasId, values) {
+  const canvas = $(canvasId);
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  const width = canvas.width;
+  const height = canvas.height;
+  ctx.clearRect(0, 0, width, height);
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  values.forEach((value, index) => {
+    const x = (index / Math.max(values.length - 1, 1)) * width;
+    const y = height - (value / 100) * height;
+    if (index === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+}
+
+function renderScores(scores) {
+  $("hffHumans").textContent = `${scores.humans}%`;
+  $("hffAnimals").textContent = `${scores.animals}%`;
+  $("hffEco").textContent = `${scores.ecosystems}%`;
+  $("hffUniverse").textContent = `${scores.universe}%`;
+  sparkline("scoreChart", [scores.humans, scores.animals, scores.ecosystems, scores.universe]);
+}
+
+async function init() {
+  normalizeInternalLinks();
+  $("dispatchAll").addEventListener("click", async () => {
+    log("Dispatching local MCP agent slots...");
+    const result = await api("/api/actions/dispatch-all", { method: "POST", body: "{}" });
+    if (result.rateLimited) {
+      log(`Dispatch held: retry in ${Math.ceil((result.retryAfterMs || 0) / 1000)} seconds.`);
+      return;
+    }
+    if (result.active) {
+      log(result.message || "Dispatch already running.");
+      return;
+    }
+    if (result.accepted) {
+      log(result.message || "Dispatch started.");
+      setTimeout(() => refreshFleet().catch((error) => log(error.message)), 5000);
+      return;
+    }
+    (result.results || []).forEach((item) => log(`${item.slot}: ${item.ok ? "DISPATCHED" : item.error || item.result?.error || "held"}`));
+    await refreshFleet();
+  });
+  $("refresh").addEventListener("click", () => { refresh(); refreshFleet(); refreshHff(); });
+  $("runLoop").addEventListener("click", () => postAction("/api/actions/run-loop", "Loop").catch((error) => log(error.message)));
+  $("localControls").addEventListener("click", () => postAction("/api/actions/local-controls", "Local controls").catch((error) => log(error.message)));
+  $("flatRagIngest").addEventListener("click", () => ingestFlatRagHouse().catch((error) => log(error.message)));
+  $("autoUpdate").addEventListener("click", toggleAutoUpdate);
+  $("conversationForm").addEventListener("submit", (event) => storeConversation(event).catch((error) => log(error.message)));
+  $("ragForm").addEventListener("submit", (event) => storeRagItem(event).catch((error) => log(error.message)));
+  $("noteForm").addEventListener("submit", (event) => storeNote(event).catch((error) => log(error.message)));
+  $("voiceInput").addEventListener("click", startVoiceInput);
+  $("conversationText").addEventListener("input", function () { autoGrow(this); });
+  $("conversationText").addEventListener("keydown", function (event) {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      $("conversationForm").dispatchEvent(new Event("submit", { cancelable: true }));
+    }
+  });
+  renderScores({ humans: 43, animals: 52, ecosystems: 50, universe: 54 });
+  showQuickReplies("greeting");
+  refresh().catch((error) => log(error.message));
+  refreshFleet().catch(() => {});
+  refreshHff().catch(() => {});
+}
+
+init();
