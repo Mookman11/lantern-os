@@ -1,0 +1,17 @@
+.git
+.github
+**/node_modules
+**/.env
+**/.env.*
+**/credentials/**
+**/secrets/**
+data/private/**
+data/conversations/**
+data/rag-intake/**/assets/**
+data/validation/*.log
+artifacts/**/*.zip
+artifacts/**/*.png
+artifacts/**/*.jpg
+artifacts/**/*.jpeg
+artifacts/**/*.webp
+artifacts/**/*.mp4

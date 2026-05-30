@@ -1,25 +1,29 @@
 {
   "schema": "lantern.cloud_mirrors.v1",
-  "deployProvider": "Render",
+  "deployProvider": "AWS ECS Fargate",
   "deployBranch": "master",
-  "mirrorPolicy": "Local is primary; cloud URLs are mirrors and must not create separate dashboards.",
+  "mirrorPolicy": "Local is primary; AWS cloud URLs are mirrors and must not create separate dashboards. No AWS URL is verified until /, /api/health, and /api/cloud-mirrors pass.",
   "lastChecked": "2026-05-29",
-  "cloudMirrors": [
+  "awsRuntime": {
+    "target": "ECS Fargate or compatible AWS container service",
+    "imageSource": "apps/lantern-garage/Dockerfile",
+    "containerPort": 8080,
+    "startCommand": "npm run start:cloud",
+    "status": "aws_service_url_pending_operator_deploy"
+  },
+  "cloudMirrors": [],
+  "retiredMirrors": [
     {
       "name": "Lantern OS Render",
       "url": "https://lantern-os.onrender.com",
-      "role": "Canonical Render mirror for alex-place/lantern-os after master deploy.",
-      "status": "candidate_404_until_render_route_confirmed",
-      "healthPath": "/api/health",
-      "source": "master auto-deploy target"
+      "retiredAt": "2026-05-29",
+      "reason": "Live route returned HTTP 404 for /, /api/health, and /demo-1000.html; operator requested Render be gutted."
     },
     {
       "name": "HFF Render",
       "url": "https://human-flourishing-frameworks.onrender.com",
-      "role": "Existing cloud mirror/status reference for the broader Lantern/HFF surface.",
-      "status": "verified_status_200_on_2026-05-29",
-      "healthPath": "/api/status",
-      "source": "direct HTTP check"
+      "retiredAt": "2026-05-29",
+      "reason": "Removed from Lantern cloud mirror truth board to avoid onrender dependency split-brain."
     }
   ]
 }
