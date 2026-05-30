@@ -30,6 +30,21 @@ function readJsonl(relativePath, limit = 20) {
   }
 }
 
+function collectRequestBody(req, maxBytes = 64000) {
+  return new Promise((resolve, reject) => {
+    let body = "";
+    req.on("data", (chunk) => {
+      body += chunk.toString();
+      if (Buffer.byteLength(body, "utf8") > maxBytes) {
+        reject(new Error("request_body_too_large"));
+        req.destroy();
+      }
+    });
+    req.on("end", () => resolve(body));
+    req.on("error", reject);
+  });
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -134,23 +149,31 @@ function renderMarkdownDocument(markdown, sourcePath) {
 }
 
 function sendJson(res, data, status = 200) {
-  res.writeHead(status, {
+  res.writeHead(status, responseHeaders({
     "Content-Type": "application/json; charset=utf-8",
-    "Cache-Control": "no-store",
-    "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
-  });
+  }));
   res.end(JSON.stringify(data, null, 2));
 }
 
 function sendText(res, text, status = 200, contentType = "text/plain; charset=utf-8") {
-  res.writeHead(status, {
+  res.writeHead(status, responseHeaders({
     "Content-Type": contentType,
+  }));
+  res.end(text);
+}
+
+function responseHeaders(extra = {}) {
+  return {
     "Cache-Control": "no-store",
     "Access-Control-Allow-Origin": "*",
-  });
-  res.end(text);
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+    "X-Frame-Options": "DENY",
+    "Permissions-Policy": "camera=(), geolocation=(), microphone=(self)",
+    ...extra,
+  };
 }
 
 function sendHtml(res, html, status = 200) {
@@ -176,7 +199,7 @@ function sendFile(res, filePath) {
       sendJson(res, { error: "not_found" }, 404);
       return;
     }
-    res.writeHead(200, { "Content-Type": type, "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*" });
+    res.writeHead(200, responseHeaders({ "Content-Type": type }));
     res.end(data);
   });
 }
@@ -188,8 +211,8 @@ function getStatus() {
   return {
     generatedAt: new Date().toISOString(),
     app: "Lantern Garage",
-    mode: "render_public_static",
-    boundary: "Public Render mode serves safe program pages and read-only status only. Local MCP, local controls, and agent dispatch stay local-held.",
+    mode: "aws_public_static",
+    boundary: "Public AWS cloud mode serves safe program pages and read-only status only. Local MCP, local controls, and agent dispatch stay local-held.",
     arc,
     wallet: {
       clearedCashUsd: wallet.clearedCashUsd ?? 0,
@@ -200,7 +223,7 @@ function getStatus() {
       dashboardOk: false,
       mcpOk: false,
       accessXExists: false,
-      boundary: "local_only_not_available_on_render",
+      boundary: "local_only_not_available_on_aws_cloud",
     },
     readiness,
   };
@@ -225,7 +248,7 @@ function getMiningLabStatus() {
   }));
   return {
     ready: present.every((item) => item.exists),
-    mode: "render_read_only",
+    mode: "aws_read_only",
     shortcutRule: "single_lantern_shortcut",
     routeSummary: {
       cpu: "XMR learning lane",
@@ -260,59 +283,6 @@ function parseMirrorEnv() {
     }));
 }
 
-
-function getAccessModel() {
-  return {
-    generatedAt: new Date().toISOString(),
-    audienceTarget: "dozens_of_users",
-    activeUserSoftCap: 48,
-    authBoundary: "This is an access contract for the dashboard surface. Real identity, billing, and founder authorization must be wired before private or paid actions leave local mode.",
-    tiers: [
-      {
-        id: "public",
-        label: "Public",
-        priceUsdMonthly: null,
-        authRequired: false,
-        summary: "Always-on public proof, health checks, public reports, cloud mirrors, and safe documentation.",
-        features: ["/api/health", "/api/status", "public PDFs", "read-only readiness"]
-      },
-      {
-        id: "auth_0",
-        label: "$0 Auth",
-        priceUsdMonthly: 0,
-        authRequired: true,
-        summary: "Free signed-in workspace for saved notes, RAG intake, and user preference continuity.",
-        features: ["saved notes", "RAG intake", "workspace continuity"]
-      },
-      {
-        id: "auth_20",
-        label: "$20 Auth",
-        priceUsdMonthly: 20,
-        authRequired: true,
-        summary: "Supporter workspace for queue visibility, report packets, and a weekly operator digest.",
-        features: ["queue visibility", "report packets", "weekly digest"]
-      },
-      {
-        id: "auth_200",
-        label: "$200 Auth",
-        priceUsdMonthly: 200,
-        authRequired: true,
-        summary: "Pilot workspace for guided cleanup sessions, report review, and direct operator scheduling.",
-        features: ["pilot review", "cleanup session", "operator scheduling"]
-      },
-      {
-        id: "founder",
-        label: "Founder",
-        priceUsdMonthly: null,
-        authRequired: true,
-        founderOnly: true,
-        summary: "Founder-only controls for local dispatch, release promotion, secrets, billing setup, and boot-sensitive decisions.",
-        features: ["local controls", "agent dispatch", "release gates", "private receipts"]
-      }
-    ]
-  };
-}
-
 function getCloudMirrorStatus(reqHost = "") {
   const manifest = readJson(path.relative(repoRoot, cloudMirrorsPath), {});
   const manifestMirrors = Array.isArray(manifest.cloudMirrors) ? manifest.cloudMirrors : [];
@@ -329,31 +299,71 @@ function getCloudMirrorStatus(reqHost = "") {
   return {
     generatedAt: new Date().toISOString(),
     localPrimary: "http://127.0.0.1:4177",
-    renderHost: reqHost,
+    cloudHost: reqHost,
     deployBranch: manifest.deployBranch || "master",
-    deployProvider: manifest.deployProvider || "Render",
+    deployProvider: manifest.deployProvider || "AWS ECS Fargate",
     mirrorPolicy: manifest.mirrorPolicy || "Local is primary; cloud URLs are mirrors and must not create separate dashboards.",
     cloudMirrorCount: cloudMirrors.length,
     cloudMirrors,
   };
 }
 
+const cloudCommands = {
+  "!one": "One IDE status is local-held. Open http://127.0.0.1:4177/ and run !one there for the read-only preflight.",
+  "!converge": "Convergence is local-held. Open http://127.0.0.1:4177/ and run !converge there so local repos, MCP, and dirty worktrees are visible.",
+  "!superjarvis": "Super Jarvis diagnostics are local-held. Open http://127.0.0.1:4177/ and run !superjarvis there; AWS cloud mode will not run PowerShell or local MCP.",
+};
+
+function normalizeCloudCommand(value) {
+  const token = String(value || "").trim().split(/\s+/)[0].toLowerCase();
+  return cloudCommands[token] ? token : "";
+}
+
+function renderHeldCommandReply(command) {
+  return `${command} is routed through /api/command, but this AWS cloud mirror is read-only. ${cloudCommands[command]}`;
+}
+
+function buildCloudChatReply(message) {
+  const lower = String(message || "").toLowerCase();
+  const command = normalizeCloudCommand(message);
+  if (command) {
+    return renderHeldCommandReply(command);
+  }
+  if (lower.includes("mine") || lower.includes("mining") || lower.includes("monero") || lower.includes("btc") || lower.includes("rock and stone")) {
+    return "Rock and stone, safely. In public AWS cloud mode I can explain the lane split: CPU to Monero learning checks, GPU to RVN or ETC experiments, and BTC only with owned SHA-256 ASIC hardware or a labeled lottery path. Real mining, wallets, and dispatch stay local.";
+  }
+  if (lower.includes("fleet") || lower.includes("dispatch") || lower.includes("local controls")) {
+    return "Those controls stay local to the machine running Lantern Garage and the MCP fleet. This public mirror stays read-only for chat, reports, and mirror status.";
+  }
+  if (lower.includes("sensor") || lower.includes("hff")) {
+    return "HFF sensor truth needs installed polling nodes and verified readings. This public mirror can describe the path, but verified sensor counts must come from the live HFF service and local receipts.";
+  }
+  return "I am the AWS cloud mirror assistant. I can explain the dashboard, formatted reports, safe mining lanes, cloud mirror status, and what must be opened locally for real controls.";
+}
+
 async function route(req, res) {
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
 
   if (req.method === "OPTIONS") {
-    res.writeHead(204, {
-      "Access-Control-Allow-Origin": "*",
+    res.writeHead(204, responseHeaders({
       "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type",
-      "Cache-Control": "no-store",
-    });
+    }));
     res.end();
     return;
   }
 
+  const cloudWriteAllowed =
+    (url.pathname === "/api/chat" && req.method === "POST") ||
+    (url.pathname === "/api/command" && req.method === "POST") ||
+    (url.pathname.startsWith("/api/actions/") && req.method === "POST");
+  if (!["GET", "HEAD"].includes(req.method) && !cloudWriteAllowed) {
+    sendJson(res, { error: "cloud_read_only_method_not_allowed" }, 405);
+    return;
+  }
+
   if (url.pathname === "/health" || url.pathname === "/api/health") {
-    sendJson(res, { ok: true, service: "lantern-garage", mode: "render", generatedAt: new Date().toISOString() });
+    sendJson(res, { ok: true, service: "lantern-garage", mode: "aws-cloud", generatedAt: new Date().toISOString() });
     return;
   }
 
@@ -367,13 +377,33 @@ async function route(req, res) {
     return;
   }
 
-  if (url.pathname === "/api/access-model") {
-    sendJson(res, getAccessModel());
+  if (url.pathname === "/api/cloud-mirrors") {
+    sendJson(res, getCloudMirrorStatus(req.headers.host || ""));
     return;
   }
 
-  if (url.pathname === "/api/cloud-mirrors") {
-    sendJson(res, getCloudMirrorStatus(req.headers.host || ""));
+  if (url.pathname === "/api/fleet") {
+    sendJson(res, {
+      ok: false,
+      generatedAt: new Date().toISOString(),
+      agents: [],
+      counts: {},
+      error: "Local MCP fleet is not exposed on the public mirror. Open Lantern Garage on the local machine for dispatch and queue control.",
+    });
+    return;
+  }
+
+  if (url.pathname === "/api/hff-sensors") {
+    sendJson(res, {
+      ok: true,
+      status: "aws_read_only",
+      dataSource: "public-mirror",
+      liveSensorsEnabled: false,
+      verifiedNodes: 0,
+      securityNodes: 0,
+      minConsensusNodes: 3,
+      timestamp: new Date().toISOString(),
+    });
     return;
   }
 
@@ -383,44 +413,91 @@ async function route(req, res) {
   }
 
   if (url.pathname === "/api/conversations") {
-    sendJson(res, { path: "render_public_static", conversations: [] });
+    sendJson(res, { path: "aws_public_static", conversations: [] });
+    return;
+  }
+
+  if (url.pathname === "/api/command" && req.method === "GET") {
+    sendJson(res, {
+      entrypoint: "/api/command",
+      mode: "aws-read-only",
+      commands: Object.keys(cloudCommands),
+    });
+    return;
+  }
+
+  if (url.pathname === "/api/command" && req.method === "POST") {
+    try {
+      const body = await collectRequestBody(req);
+      const input = JSON.parse(body || "{}");
+      const command = normalizeCloudCommand(input.command || input.message || input.text);
+      if (!command) throw new Error("unknown_lantern_command");
+      sendJson(res, {
+        ok: false,
+        code: 423,
+        entrypoint: "/api/command",
+        command,
+        mode: "aws-read-only",
+        error: "local_command_held_on_aws_cloud",
+        reply: renderHeldCommandReply(command),
+      }, 423);
+    } catch (error) {
+      sendJson(res, { error: error.message }, 400);
+    }
+    return;
+  }
+
+  if (url.pathname === "/api/chat" && req.method === "POST") {
+    try {
+      const body = await collectRequestBody(req);
+      const input = JSON.parse(body || "{}");
+      const message = String(input.message || input.text || "").trim();
+      if (!message) throw new Error("message_required");
+      sendJson(res, {
+        ok: true,
+        provider: "aws-read-only",
+        reply: buildCloudChatReply(message),
+      }, 201);
+    } catch (error) {
+      sendJson(res, { error: error.message }, 400);
+    }
     return;
   }
 
   if (url.pathname === "/api/flat-rag-house") {
     sendJson(res, {
       generatedAt: new Date().toISOString(),
-      purpose: "Render-safe public Lantern OS surface.",
-      boundary: "No local source repo or MCP access from Render.",
+      purpose: "AWS-safe public Lantern OS surface.",
+      boundary: "No local source repo or MCP access from AWS cloud mode.",
       sources: [],
       ragRecordCount: readJsonl("data/rag-intake/external-llm-web-cache/cache.jsonl", 200).length,
-      windowsSurface: { host: "render", defaultBootMutation: "blocked" },
+      windowsSurface: { host: "aws-cloud", defaultBootMutation: "blocked" },
     });
     return;
   }
 
   if (url.pathname === "/api/operator-queue") {
-    sendJson(res, { items: [], generatedAt: new Date().toISOString(), boundary: "local orchestrator queue is not exposed on Render" });
+    sendJson(res, { items: [], generatedAt: new Date().toISOString(), boundary: "local orchestrator queue is not exposed on AWS cloud mode" });
     return;
   }
 
   if (url.pathname.startsWith("/api/actions/")) {
     sendJson(res, {
       code: 2,
-      stdout: "Action held in Render mode.",
+      stdout: "Action held in AWS cloud mode.",
       stderr: "Local MCP, PowerShell, local controls, and agent dispatch are local-only.",
     }, 202);
     return;
   }
 
   if (url.pathname === "/os") {
-    res.writeHead(302, { Location: "/" });
+    res.writeHead(302, responseHeaders({ Location: "/" }));
     res.end();
     return;
   }
 
   if (url.pathname === "/outreach") {
-    res.writeHead(302, { Location: "/outreach.html" });
+    res.writeHead(302, responseHeaders({ Location: "/outreach.html" }));
     res.end();
     return;
   }
@@ -469,5 +546,5 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(port, host, () => {
-  console.log(`Lantern Garage Render app listening on http://${host}:${port}`);
+  console.log(`Lantern Garage AWS cloud app listening on http://${host}:${port}`);
 });
