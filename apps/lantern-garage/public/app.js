@@ -201,7 +201,7 @@ function renderKalshiPaperPl(result) {
   const payout = Number(pl.totalPaperPayoutUsd || 0).toFixed(2);
   setText(
     "kalshiPaperPlSummary",
-    `Paper P/L $${pnl} on $${cost} paper cost; payout $${payout}; settled ${pl.settledCount || 0}, open ${pl.openCount || 0}, unknown ${pl.unknownCount || 0}; real spend $${Number(pl.realMoneyUsd || 0).toFixed(2)}.`
+    `Paper P/L $${pnl} on $${cost} paper cost; payout $${payout}; settled ${pl.settledCount || 0}, open ${pl.openCount || 0}, unknown ${pl.unknownCount || 0}; real spend $${Number(pl.realMoneyUsd || 0).toFixed(2)}.${pl.nextCheckAfterUtc ? ` Next check after ${pl.nextCheckAfterUtc}.` : ""}`
   );
   if (result.receiptPath) {
     const receipt = $("kalshiBlockReceipt");

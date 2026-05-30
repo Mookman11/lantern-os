@@ -1,6 +1,6 @@
 {
     "schema":  "lantern.kalshi.near_term_paper_pl.v1",
-    "resolvedAt":  "2026-05-30T05:53:16.5718127Z",
+    "resolvedAt":  "2026-05-30T05:56:45.5029436Z",
     "sourceGeneratedAt":  "2026-05-30T05:51:00.4298915Z",
     "boundary":  "Paper P/L only. Public Kalshi market data, no authenticated request, no real order, no custody, no guaranteed profit, no investment advice.",
     "liveTradingStatus":  "blocked",
@@ -12,6 +12,7 @@
     "totalPaperCostUsd":  4.79,
     "totalPaperPayoutUsd":  0,
     "totalPaperPnlUsd":  0,
+    "nextCheckAfterUtc":  "2026-05-30T06:00:00.0000000Z",
     "orders":  [
                    {
                        "ticker":  "KXHYPED-26MAY3002-T63.9999",

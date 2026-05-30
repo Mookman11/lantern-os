@@ -45,6 +45,7 @@ $unknownCount = 0
 $totalPaperCostUsd = 0.0
 $totalPaperPayoutUsd = 0.0
 $totalPaperPnlUsd = 0.0
+$nextCheckAfterUtc = $null
 
 foreach ($order in @($block.orders)) {
     $detail = $null
@@ -80,6 +81,18 @@ foreach ($order in @($block.orders)) {
     } elseif ($marketStatus -in @("active", "initialized")) {
         $openCount += 1
         $paperOutcome = "unsettled"
+        $candidateTime = $null
+        foreach ($field in @("soonestKnownTime", "expectedExpirationTime", "closeTime")) {
+            if ($order.$field) {
+                try {
+                    $candidateTime = ([datetimeoffset]::Parse([string]$order.$field)).UtcDateTime
+                    break
+                } catch {}
+            }
+        }
+        if ($candidateTime -and ($null -eq $nextCheckAfterUtc -or $candidateTime -lt $nextCheckAfterUtc)) {
+            $nextCheckAfterUtc = $candidateTime
+        }
     } else {
         $unknownCount += 1
         $paperOutcome = "unknown"
@@ -117,6 +130,7 @@ $summary = [ordered]@{
     totalPaperCostUsd = [math]::Round($totalPaperCostUsd, 2)
     totalPaperPayoutUsd = [math]::Round($totalPaperPayoutUsd, 2)
     totalPaperPnlUsd = [math]::Round($totalPaperPnlUsd, 2)
+    nextCheckAfterUtc = if ($nextCheckAfterUtc) { $nextCheckAfterUtc.ToString("o") } else { $null }
     orders = $rows
 }
 
@@ -142,6 +156,9 @@ $lines.Add(("| Paper cost | `${0:N2}` |" -f $totalPaperCostUsd))
 $lines.Add(("| Paper payout | `${0:N2}` |" -f $totalPaperPayoutUsd))
 $lines.Add(("| Paper P/L | `${0:N2}` |" -f $totalPaperPnlUsd))
 $lines.Add(("| Real money spent | `${0:N2}` |" -f 0))
+if ($nextCheckAfterUtc) {
+    $lines.Add(("| Next check after | {0} |" -f $nextCheckAfterUtc.ToString("o")))
+}
 $lines.Add("")
 $lines.Add("## Boundary")
 $lines.Add("")

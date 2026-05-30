@@ -18,6 +18,7 @@ def test_near_term_paper_pl_resolver_is_public_data_only() -> None:
         "No authenticated Kalshi request was made",
         "No real order was submitted",
         "totalPaperPnlUsd",
+        "nextCheckAfterUtc",
     ]
     missing = [phrase for phrase in required if phrase not in text]
     assert missing == []
@@ -33,5 +34,6 @@ def test_near_term_paper_pl_json_if_present_is_blocked() -> None:
     assert data["realMoneyUsd"] == 0
     assert data["paperOrderCount"] == len(data["orders"])
     assert "totalPaperPnlUsd" in data
+    assert "nextCheckAfterUtc" in data
     for order in data["orders"]:
         assert order["paperOutcome"] in {"paper_win", "paper_loss", "unsettled", "unknown"}

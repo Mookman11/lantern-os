@@ -14,6 +14,7 @@ Status: paper-only public-data settlement check; live trading remains blocked.
 | Paper payout | $0.00 |
 | Paper P/L | $0.00 |
 | Real money spent | $0.00 |
+| Next check after | 2026-05-30T06:00:00.0000000Z |
 
 ## Boundary
 
