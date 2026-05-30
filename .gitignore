@@ -11,6 +11,8 @@ manifests/evidence/kalshi-live-order-receipt-*.md
 # Secrets and local environment
 .env
 .env.*
+!.env.example
+!**/.env.example
 *.pem
 *.key
 *.p12
@@ -32,3 +34,10 @@ artifacts/*
 # Node modules
 node_modules/
 **/node_modules/
+
+# Trading runtime artifacts (live ledger is written at runtime)
+data/kalshi/kalshi-live-ledger.jsonl
+apps/lantern-trade-chat/.venv/
+
+# Python build artifacts
+*.egg-info/
