@@ -1,22 +1,60 @@
 {
     "schema":  "lantern.kalshi.event_paper_orders.v1",
-    "generatedAt":  "2026-05-30T02:53:30.7330434Z",
+    "generatedAt":  "2026-05-31T21:00:00Z",
     "eventTicker":  "KXMLBGAME-26MAY311435KCTEX",
-    "marketUrl":  "https://kalshi.com/markets/kxmlbgame/professional-baseball-game/kxmlbgame-26may311435kctex",
-    "boundary":  "Paper maker orders only. No authenticated Kalshi request, no real order, no custody, no guaranteed profit, no investment advice.",
+    "blockLabel":  "best_trade_block_2026-05-31",
+    "boundary":  "Paper orders only. No authenticated Kalshi request, no real order, no custody, no guaranteed profit, no investment advice.",
     "liveTradingStatus":  "blocked",
+    "killSwitchActive":  true,
     "realMoneyUsd":  0,
+    "walletState":  {
+                        "ibkrCashUsd":  10.00,
+                        "lanternClearedCashUsd":  0,
+                        "lanternPendingInvoiceUsd":  199,
+                        "paperBankrollUsd":  50,
+                        "paperAllocatedTodayUsd":  4.71,
+                        "paperRemainingTodayUsd":  0.29
+                    },
     "budgetPolicy":  {
                          "bankrollUsd":  50,
                          "maxDailyPaperLossPct":  0.1,
                          "maxDailyPaperLossUsd":  5,
                          "maxPerOrderPaperLossPct":  0.02,
                          "maxPerOrderPaperLossUsd":  1,
-                         "allocatedPaperRiskUsd":  0.98,
-                         "remainingDailyPaperRiskUsd":  4,
+                         "allocatedPaperRiskUsd":  4.71,
+                         "remainingDailyPaperRiskUsd":  0.29,
                          "liveSpendUsd":  0
                      },
     "paperOrderCount":  2,
+    "candidatesRanked":  [
+                             {
+                                 "rank":  1,
+                                 "ticker":  "KXFRENCHTENNISM-26MAY31RUDFON-RUD",
+                                 "title":  "Ruud wins French Open R16 vs Fonseca",
+                                 "yesMid":  0.64,
+                                 "maxLossUsd":  0.64,
+                                 "selected":  true,
+                                 "edge":  "Ruud 3x RG finalist, clay win% ~68%. Market 64% = fair-to-underline. Fee-adjusted break-even ~67%."
+                             },
+                             {
+                                 "rank":  2,
+                                 "ticker":  "KXFRENCHTENNISM-26MAY31MENRUB-MEN",
+                                 "title":  "Mensik wins French Open R16 vs Rublev",
+                                 "yesMid":  0.58,
+                                 "maxLossUsd":  0.58,
+                                 "selected":  false,
+                                 "edge":  "Mensik up a set at screenshot. In-play price harder to model without live score feed."
+                             },
+                             {
+                                 "rank":  3,
+                                 "ticker":  "KXMLBTOTAL-26MAY301610LAATB-8",
+                                 "title":  "LA vs Tampa Bay Total Runs >8",
+                                 "yesMid":  0.445,
+                                 "maxLossUsd":  0.45,
+                                 "selected":  false,
+                                 "edge":  "Tight 1-cent spread, $11K vol. No independent run total model — pure market-following, no edge."
+                             }
+                         ],
     "orders":  [
                    {
                        "rank":  1,
@@ -38,8 +76,6 @@
                        "volume24h":  63.66,
                        "closeTime":  "2026-06-03T18:35:00Z",
                        "expectedExpirationTime":  "2026-05-31T21:35:00Z",
-                       "rulesPrimary":  "If Kansas City wins the Kansas City vs Texas professional baseball game originally scheduled for May 31, 2026 at 2:35 PM EDT, then the market resolves to Yes.",
-                       "rulesSecondary":  "The following market refers to the Kansas City vs Texas professional baseball game originally scheduled for May 31, 2026 at 2:35 PM EDT. If this game is postponed or delayed, the market will remain open and close after the rescheduled game has finished (within two days). If the game is cancelled or rescheduled to over two days away, the market will resolve to a fair price in accordance with the rules.",
                        "liveOrderStatus":  "not_submitted",
                        "realMoneyUsd":  0,
                        "outcomeConfidence":  "not_estimated",
@@ -65,12 +101,16 @@
                        "volume24h":  438.09,
                        "closeTime":  "2026-06-03T18:35:00Z",
                        "expectedExpirationTime":  "2026-05-31T21:35:00Z",
-                       "rulesPrimary":  "If Texas wins the Kansas City vs Texas professional baseball game originally scheduled for May 31, 2026 at 2:35 PM EDT, then the market resolves to Yes.",
-                       "rulesSecondary":  "The following market refers to the Kansas City vs Texas professional baseball game originally scheduled for May 31, 2026 at 2:35 PM EDT. If this game is postponed or delayed, the market will remain open and close after the rescheduled game has finished (within two days). If the game is cancelled or rescheduled to over two days away, the market will resolve to a fair price in accordance with the rules.",
                        "liveOrderStatus":  "not_submitted",
                        "realMoneyUsd":  0,
                        "outcomeConfidence":  "not_estimated",
                        "blocker":  "no_independent_posterior_probability_no_live_execution"
                    }
-               ]
+               ],
+    "walletActionRequired":  {
+                                 "priority":  "HIGH",
+                                 "action":  "Send invoice INV-COMET-LEAP-RAG-001 for $199 to unlock real cash flow",
+                                 "invoicePath":  "data/wallet/invoices/INV-COMET-LEAP-RAG-001.md",
+                                 "impact":  "Once cleared: fund real Kalshi bankroll, move from paper to live"
+                             }
 }
