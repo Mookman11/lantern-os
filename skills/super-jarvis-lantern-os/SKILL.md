@@ -83,7 +83,7 @@ This one skill owns all Lantern OS domains:
 | COMET LEAP / COMETSHOT | master report, token/revenue, founder/patient updates, agile sprint | `reports/COMET-*`, `manifests/` |
 | Founder / Patient A | privacy-safe operator/founder reports, patient-style evidence gates | `reports/`, `data/world-model/` |
 | Tony Garage / Arc Reactor | power score, cockpit, proof ladder, readiness | `surfaces/tony-garage/`, `reports/ARC-*`, `data/arc-reactor/` |
-| Bayesian world model | priors, evidence weights, promote/hold/reject | `data/world-model/belief-ledger.jsonl` |
+| Bayesian world model | priors, evidence weights, promote/hold/reject | `data/world-model/belief-ledger.jsonl`, `data/rag-world-model/FLEET-CONFIDENCE-STATE.json` |
 | Wallet/cash/license | cleared-cash ledger, license wallet schema, invoice states, no fake revenue | `data/wallet/` |
 | Archive/commons | metadata-first public-domain/CC/OSS intake | `data/archive-commons/`, `scripts/Invoke-ArchiveCommonsBatch.ps1` |
 | One World Leader app | product atlas, learning packets, ethical service app | `reports/LANTERN-PRODUCT-UNIVERSE-ATLAS.md` |

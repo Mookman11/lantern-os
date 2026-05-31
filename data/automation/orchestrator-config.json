@@ -112,13 +112,24 @@
       }
     },
     {
-      "name": "movie2-readiness",
-      "script": "D:\\tmp\\lantern-os\\scripts\\Invoke-Movie2ReadinessTracker.ps1",
+      "name": "fleet-confidence",
+      "script": "D:\\tmp\\lantern-os\\scripts\\Compute-FleetConfidence.ps1",
       "enabled": true,
       "priority": 11,
+      "intervalMinutes": 60,
+      "parameters": {
+        "outputPath": "D:\\tmp\\lantern-os\\data\\rag-world-model\\FLEET-CONFIDENCE-STATE.json",
+        "runOnce": false
+      }
+    },
+    {
+      "name": "public-platform-readiness",
+      "script": "D:\\tmp\\lantern-os\\scripts\\Invoke-Movie2ReadinessTracker.ps1",
+      "enabled": true,
+      "priority": 12,
       "intervalMinutes": 30,
       "parameters": {
-        "outputPath": "D:\\tmp\\lantern-os\\data\\automation\\movie2-readiness-results.json",
+        "outputPath": "D:\\tmp\\lantern-os\\data\\automation\\public-platform-readiness-results.json",
         "runOnce": true
       }
     },
@@ -126,7 +137,7 @@
       "name": "mcp-canary",
       "script": "D:\\tmp\\lantern-os\\scripts\\Invoke-McpCanaryTestEngine.ps1",
       "enabled": true,
-      "priority": 12,
+      "priority": 13,
       "intervalMinutes": 60,
       "parameters": {
         "outputPath": "D:\\tmp\\lantern-os\\data\\automation\\mcp-canary-results.json",
@@ -137,7 +148,7 @@
       "name": "human-trial-gates",
       "script": "D:\\tmp\\lantern-os\\scripts\\Invoke-HumanTrialGateMonitor.ps1",
       "enabled": true,
-      "priority": 13,
+      "priority": 14,
       "intervalMinutes": 30,
       "parameters": {
         "outputPath": "D:\\tmp\\lantern-os\\data\\automation\\human-trial-gate-results.json",
