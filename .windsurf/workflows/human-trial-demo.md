@@ -165,14 +165,13 @@ If a demo fails:
 ## Validation Commands
 
 ```powershell
-# Pre-demo validation
+# Pre-demo validation (run in order)
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Invoke-LoopReceipt.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Invoke-LanternConvergenceLoop.ps1
-python .\scripts\Test-McpCanary.ps1
-python .\scripts\Test-RollbackPath.ps1
 
 # Post-demo validation
-python .\scripts\Generate-TrialReceipt.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Update-ArcReactorStatus.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Update-ArcReactorStatus.ps1 -Evidence "5 outreach sends recorded in the wallet ledger"
+# Replace -Evidence value with the actual gate string(s) from data/arc-reactor/status.json raisesMovie2 / raisesHumanTrial
 ```
 
 ## References

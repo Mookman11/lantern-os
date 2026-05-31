@@ -83,6 +83,22 @@ class KalshiClient:
         """Read-only account balance. Returns {'balance': cents}."""
         return self._request("GET", "/trade-api/v2/portfolio/balance")
 
+    def get_orders(self, status: str = "resting", limit: int = 20) -> dict:
+        """Open/resting orders. status: resting | all | canceled | executed."""
+        return self._request("GET", f"/trade-api/v2/portfolio/orders?status={status}&limit={limit}")
+
+    def get_positions(self, limit: int = 50) -> dict:
+        """Current open positions."""
+        return self._request("GET", f"/trade-api/v2/portfolio/positions?limit={limit}")
+
+    def get_fills(self, limit: int = 20) -> dict:
+        """Recent fills (executed trades)."""
+        return self._request("GET", f"/trade-api/v2/portfolio/fills?limit={limit}")
+
+    def get_settlements(self, limit: int = 20) -> dict:
+        """Recent settlement history — includes held/disputed markets."""
+        return self._request("GET", f"/trade-api/v2/portfolio/settlements?limit={limit}")
+
     def create_order(
         self,
         *,

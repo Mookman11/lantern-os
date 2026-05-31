@@ -25,6 +25,7 @@ logged-in user.
 - **Dry-run by default** — orders preview unless you prefix `live` *and* the
   deployment has `LANTERN_LIVE_ENABLED=1`.
 - **Read-only balance** — `/api/balance` signs a real Kalshi request (RSA-PSS).
+- **Full account status** — `/api/status` returns connectivity, open orders, positions, recent fills, settlements, and any settlement warnings (voided/disputed/pending markets surface automatically).
 
 ## Evidence / Source Discipline
 
@@ -37,10 +38,10 @@ logged-in user.
 ## Proven / Held / Local-only
 
 - **Proven:** auth gating, dry-run default, caps math, RSA-PSS signing vs. prod.
-- **Held:** live order submission against prod is gated behind `LANTERN_LIVE_ENABLED`
-  + kill switch + allowlisted login. Not exercised with a real order in CI.
-- **Local-only:** the live ledger (`data/kalshi/kalshi-live-ledger.jsonl`) is
-  written at runtime and gitignored.
+- **Operator-approved (2026-05-31):** read-only status queries — `get_balance`, `get_orders`, `get_positions`, `get_fills`, `get_settlements` — wired and approved for external calls.
+- **Held:** live order submission against prod is gated behind `LANTERN_LIVE_ENABLED` + kill switch + allowlisted login. Not exercised with a real order in CI.
+- **Local-only:** the live ledger (`data/kalshi/kalshi-live-ledger.jsonl`) is written at runtime and gitignored.
+- **Platform-risk note:** Kalshi regulatory/settlement disputes flagged in public coverage as of March 2026. `settlementWarnings` in `/api/status` surfaces any voided, disputed, or pending settlements automatically.
 
 ## Next Safe Action
 
@@ -93,3 +94,25 @@ Edit `k8s/ingress.yaml` host + `k8s/deployment.yaml` image before applying.
 See `.env.example`. Safety-relevant: `LANTERN_LIVE_ENABLED` (default 0),
 `KALSHI_ENVIRONMENT` (default demo), `LANTERN_MAX_PER_ORDER_USD` (40),
 `LANTERN_MAX_DAILY_LOSS_USD` (40), `LANTERN_MAX_TRADES_PER_DAY` (1).
+
+### API surface
+
+| Endpoint | Auth | Write | Description |
+|---|---|---|---|
+| `GET /api/health` | none | no | App health, env, kill-switch state |
+| `GET /api/me` | none | no | Current session user |
+| `GET /api/balance` | login required | no | Account balance in USD + daily caps |
+| `GET /api/status` | login required | no | Full read-only status: connectivity, open orders, positions, fills, settlements, settlement warnings |
+| `POST /api/chat` | login required | dry-run default | Parse plain-English order; returns plan + blockers |
+| `POST /api/order` | login required | live-gated | Submit order; dry-run unless `live: true` + `LANTERN_LIVE_ENABLED=1` |
+
+### Kalshi client methods (`app/kalshi.py`)
+
+| Method | HTTP | Description |
+|---|---|---|
+| `get_balance()` | GET /portfolio/balance | Account balance in cents |
+| `get_orders(status, limit)` | GET /portfolio/orders | Orders by status: `resting` \| `all` \| `canceled` \| `executed` |
+| `get_positions(limit)` | GET /portfolio/positions | Open positions |
+| `get_fills(limit)` | GET /portfolio/fills | Recent executed fills |
+| `get_settlements(limit)` | GET /portfolio/settlements | Settlement history; voided/disputed/pending flagged as warnings |
+| `create_order(...)` | POST /portfolio/orders | Place limit or market order (live-gated) |

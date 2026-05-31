@@ -135,7 +135,7 @@ function Create-DesktopShortcut {
     
     $shortcut = $WshShell.CreateShortcut($shortcutPath)
     $shortcut.TargetPath = "powershell.exe"
-    $shortcut.Arguments = "-ExecutionPolicy Bypass -File `"$installDir\Start-LanternDesktop.ps1`""
+    $shortcut.Arguments = "-ExecutionPolicy Bypass -File `"$installDir\scripts\Start-LanternGarageApp.ps1`""
     $shortcut.WorkingDirectory = $installDir
     $shortcut.Description = "Lantern OS"
     $shortcut.Save()
@@ -154,7 +154,7 @@ function Show-Completion {
     Write-Host ""
     Write-ColorOutput "To start Lantern OS:" -ForegroundColor Yellow
     Write-Host "  - Double-click the 'Lantern OS' desktop shortcut"
-    Write-Host "  - Or run: $env:USERPROFILE\Lantern-OS\Start-LanternDesktop.ps1"
+    Write-Host "  - Or run: powershell -ExecutionPolicy Bypass -File $env:USERPROFILE\Lantern-OS\scripts\Start-LanternGarageApp.ps1"
     Write-Host ""
     Write-ColorOutput "Local app will run at:" -ForegroundColor Yellow
     Write-Host "  http://127.0.0.1:4177"
