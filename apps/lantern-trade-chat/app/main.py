@@ -143,6 +143,47 @@ async def balance(user: dict = Depends(auth.require_user)):
     }
 
 
+@app.get("/api/status")
+async def trading_status(user: dict = Depends(auth.require_user)):
+    """Read-only account status: connectivity, orders, positions, fills, settlement warnings."""
+    client = _kalshi_client()
+    if client is None:
+        raise HTTPException(status_code=503, detail="No Kalshi credentials configured.")
+    result: dict = {"environment": settings.environment, "credentialsOk": True}
+    errors: list[str] = []
+
+    for key, fn, kwargs in [
+        ("balance",     lambda: client.get_balance(),        {}),
+        ("openOrders",  lambda: client.get_orders("resting"), {}),
+        ("positions",   lambda: client.get_positions(),       {}),
+        ("recentFills", lambda: client.get_fills(),           {}),
+        ("settlements", lambda: client.get_settlements(),     {}),
+    ]:
+        try:
+            result[key] = fn()
+        except Exception as exc:  # noqa: BLE001
+            result[key] = None
+            errors.append(f"{key}: {exc}")
+
+    result["errors"] = errors
+    result["settlementWarnings"] = _settlement_warnings(result.get("settlements"))
+    return result
+
+
+def _settlement_warnings(settlements: dict | None) -> list[str]:
+    if not settlements:
+        return []
+    warnings: list[str] = []
+    for s in (settlements.get("settlements") or []):
+        status = (s.get("status") or "").lower()
+        if status in {"voided", "disputed", "pending"}:
+            warnings.append(
+                f"{s.get('market_result_ticker', '?')} — {status} — "
+                f"${round(float(s.get('revenue', 0)) / 100, 2)}"
+            )
+    return warnings
+
+
 @app.post("/api/chat")
 async def chat_endpoint(request: Request, user: dict = Depends(auth.require_user)):
     body = await request.json()

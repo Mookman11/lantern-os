@@ -2,27 +2,10 @@
   "agentsPerStep": 3,
   "claimBoundary": "design_contract_not_live_worker_proof",
   "expectedRingSlots": 36,
-  "generatedAt": "2026-05-31T06:10:00Z",
+  "generatedAt": "2026-05-31T07:02:42.486830+00:00",
   "loopStepCount": 12,
   "missing": [],
   "ok": true,
   "poolTarget": 64,
-  "roleMatrixRows": 12,
-  "ternaryConvergence": {
-    "method": "3^12-1",
-    "spaceSize": 531441,
-    "workingState": 531440,
-    "dimensions": 12,
-    "states": {
-      "active": 5,
-      "scaffolded": 5,
-      "held": 2
-    },
-    "vector": "+1 +1 +1 0 0 0 -1 0 0 +1 +1 -1",
-    "score": 256229,
-    "occupiedCells": 12,
-    "links": 11,
-    "mirrorParity": "even",
-    "focus": "lantern-os"
-  }
+  "roleMatrixRows": 12
 }

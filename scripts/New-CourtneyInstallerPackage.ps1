@@ -25,12 +25,14 @@ if (Test-Path $zipPath) {
 # Create package directory
 New-Item -ItemType Directory -Path $packageDir -Force | Out-Null
 
-# Copy setup wizard
+# Copy launchers
+Copy-Item (Join-Path $root "scripts\COURTNEY-INSTALL-DOUBLE-CLICK-ME.bat") -Destination $packageDir
 Copy-Item (Join-Path $root "scripts\Invoke-CourtneySetupWizard.ps1") -Destination $packageDir
 
 # Copy documentation
 Copy-Item (Join-Path $root "docs\COURTNEY-QUICK-SYNC-2026-05-30.md") -Destination $packageDir
 Copy-Item (Join-Path $root "docs\COURTNEY-DESKTOP-BRIDGE-SETUP-2026-05-30.md") -Destination $packageDir
+Copy-Item (Join-Path $root "docs\COURTNEY-WINDOWS-SETUP-GUIDE-2026-05-30.md") -Destination $packageDir
 
 # Create README
 $readmeContent = @"
@@ -41,9 +43,15 @@ $readmeContent = @"
 
 ## Quick Start
 
-1. **Double-click:** `Invoke-CourtneySetupWizard.ps1`
-2. **Follow the prompts** in the wizard
-3. **Start Lantern OS** using the desktop shortcut
+**Easiest (no PowerShell knowledge needed):**
+1. **Double-click:** `COURTNEY-INSTALL-DOUBLE-CLICK-ME.bat`
+2. Follow the prompts
+3. Start Lantern OS using the desktop shortcut created on your desktop
+
+**Alternative (PowerShell):**
+1. Right-click `Invoke-CourtneySetupWizard.ps1` → Run with PowerShell
+2. Follow the prompts
+3. Start Lantern OS using the desktop shortcut
 
 ## What This Installer Does
 

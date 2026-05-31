@@ -48,6 +48,8 @@ $required = @(
     "manifests/MCP-WORK-SPLIT.md",
     "manifests/validation/CONVERGENCE-FLEET-LATEST.json",
     "scripts/Test-ConvergenceAgentFleet.py",
+    "scripts/Update-ArcReactorStatus.ps1",
+    "scripts/Invoke-LoopReceipt.ps1",
     "skills/asi-arc-reactor-mk1/SKILL.md",
     "manifests/evidence/asi-local-pdf-convergence-2026-05-29.md",
     ".windsurf/hooks.json"
