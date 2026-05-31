@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-05-31T07:20:00Z",
-  "version": "4",
+  "generatedAt": "2026-05-31T11:05:00Z",
+  "version": "5",
   "sources": [
     {
       "id": "gm-agent-orchestrator-github",
@@ -690,6 +690,63 @@
         "agentPolicy": "externalized"
       },
       "notes": "Internet Archive / Wayback Machine. Public-domain and Creative Commons asset intake. Metadata and provenance tracking for archive-commons skill. Rate limits must be respected."
+    },
+    {
+      "id": "lantern-official-v2",
+      "label": "Lantern OS Official Server",
+      "baseUrl": "https://lantern-os-production.up.railway.app",
+      "transport": "http_sse",
+      "enabled": true,
+      "localOnly": false,
+      "allowRemote": true,
+      "allowToolExecution": false,
+      "agentAgnostic": true,
+      "tokenAgnostic": false,
+      "discovery": {
+        "type": "mcp_sse_endpoint",
+        "healthPath": "/health",
+        "ssePath": "/sse",
+        "authType": "oauth_github",
+        "oauthProvider": "github",
+        "oauthScopes": ["read:user", "read:org"]
+      },
+      "ioProfile": {
+        "inputMode": "sse_jsonrpc",
+        "outputMode": "content_blocks",
+        "tokenPolicy": "externalized",
+        "agentPolicy": "externalized"
+      },
+      "notes": "Official Lantern OS production MCP server. SSE transport with GitHub OAuth. New face/interface for Lantern services. Operator-approved 2026-05-31."
+    },
+    {
+      "id": "lantern-tunnel-legacy",
+      "label": "Lantern OS Legacy Tunnel (Redirect)",
+      "baseUrl": "http://localhost:3000",
+      "transport": "http_tunnel",
+      "enabled": true,
+      "localOnly": true,
+      "allowRemote": false,
+      "allowToolExecution": false,
+      "agentAgnostic": true,
+      "tokenAgnostic": true,
+      "discovery": {
+        "type": "tunnel_redirect",
+        "tunnelProvider": "cloudflare",
+        "targetService": "lantern-official-v2",
+        "legacyPaths": ["/api/status", "/api/trade", "/api/health"],
+        "redirectMap": {
+          "/api/status": "https://lantern-os-production.up.railway.app/api/status",
+          "/api/trade": "https://lantern-os-production.up.railway.app/api/trade",
+          "/api/health": "https://lantern-os-production.up.railway.app/health"
+        }
+      },
+      "ioProfile": {
+        "inputMode": "tunnel_proxy",
+        "outputMode": "content_blocks",
+        "tokenPolicy": "externalized",
+        "agentPolicy": "externalized"
+      },
+      "notes": "Legacy tunnel endpoint for backward compatibility. Redirects old local services to new official server. Keep running until refactor complete. Operator-approved 2026-05-31."
     }
   ]
 }
