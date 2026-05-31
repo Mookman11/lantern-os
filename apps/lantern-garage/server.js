@@ -2079,6 +2079,11 @@ async function route(req, res) {
     return;
   }
 
+  if (url.pathname === "/imagniverse") {
+    sendFile(res, path.resolve(publicRoot, "art.html"));
+    return;
+  }
+
   const staticPath = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
   const target = path.resolve(publicRoot, staticPath);
   if (!target.startsWith(publicRoot)) {
