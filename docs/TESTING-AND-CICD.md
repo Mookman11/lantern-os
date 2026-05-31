@@ -211,7 +211,7 @@ cd ../..
 
 ### Test Coverage
 
-- **Python tests:** 50+ test files covering:
+- **Python tests:** 80+ test files covering:
   - Repository structure (20+ tests)
   - Skill validation (15+ tests)
   - Data validation (20+ tests)
@@ -221,6 +221,15 @@ cd ../..
   - PowerShell scripts (20+ tests)
   - MCP connector (14 tests)
   - Integration tests (20+ tests)
+  - Fleet orchestration (20+ tests)
+  - Agent fleet validation (20+ tests)
+  - Workflow orchestration (25+ tests)
+  - Surface UX (20+ tests)
+  - Discord bot (20+ tests)
+  - RAG house (20+ tests)
+  - Report generation (25+ tests)
+  - Profile validation (20+ tests)
+  - School packets (20+ tests)
   - Policy and data models (24+ existing tests)
 - **PowerShell tests:** 3 core script tests + 20+ validation tests
 - **Browser tests:** 5 Playwright test suites (trade chat, garage, static surfaces, desktop, dashboard)
@@ -267,6 +276,33 @@ cd ../..
 
 **Integration Tests:**
 - `tests/test_integration.py` - Validates component integration, cross-component workflows
+
+**Fleet Orchestration Tests:**
+- `tests/test_fleet_orchestration.py` - Validates fleet orchestration, convergence loop, fleet management
+
+**Agent Fleet Validation Tests:**
+- `tests/test_agent_fleet_validation.py` - Validates agent fleet configuration, boundaries, management
+
+**Workflow Orchestration Tests:**
+- `tests/test_workflow_orchestration.py` - Validates workflow orchestration, action pooling, execution validation
+
+**Surface UX Tests:**
+- `tests/test_surface_ux.py` - Validates surface UX, UI components, surface validation
+
+**Discord Bot Tests:**
+- `tests/test_discord_bot.py` - Validates Discord lounge bot, voice gate, Discord integration
+
+**RAG House Tests:**
+- `tests/test_rag_house.py` - Validates RAG house, internal RAG storage, RAG integration
+
+**Report Generation Tests:**
+- `tests/test_report_generation.py` - Validates report generation, PDF creation, report validation
+
+**Profile Validation Tests:**
+- `tests/test_profile_validation.py` - Validates profile management, profile data, profile validation
+
+**School Packet Tests:**
+- `tests/test_school_packets.py` - Validates school packets, educational materials, school packet validation
 
 **Browser E2E Tests:**
 - `tests/e2e/desktop-surfaces.spec.ts` - Desktop surface browser tests

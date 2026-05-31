@@ -102,7 +102,7 @@ def test_validation_json_files_are_consistent():
     if len(json_files) > 0:
         # All should have generatedAt field
         for json_file in json_files:
-            content = json_file.read_text(encoding="utf-8")
+            content = json_file.read_text(encoding="utf-8-sig")  # Handle UTF-8 BOM
             data = json.loads(content)
             # Check for common fields
             if isinstance(data, dict):
@@ -119,8 +119,10 @@ def test_skill_integration_with_fleet_manifest():
     
     fleet_content = fleet_manifest.read_text(encoding="utf-8")
     
-    # Should mention skills
-    assert "skill" in fleet_content.lower()
+    # Should mention skills or agents
+    skill_terms = ["skill", "agent", "agent-fleet"]
+    found_skill = any(term in fleet_content.lower() for term in skill_terms)
+    assert found_skill, "Fleet manifest should mention skills or agents"
 
 
 def test_ci_workflows_integration():

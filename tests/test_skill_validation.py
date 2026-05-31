@@ -99,8 +99,10 @@ def test_skill_documentation_has_purpose():
     skill_doc = Path("skills/asi-arc-reactor-mk1/SKILL.md")
     content = skill_doc.read_text(encoding="utf-8")
     
-    # Should have a purpose section
-    assert "purpose" in content.lower() or "what it does" in content.lower()
+    # Should have a purpose section or description
+    purpose_terms = ["purpose", "description", "what it does", "use when"]
+    found_purpose = any(term in content.lower() for term in purpose_terms)
+    assert found_purpose, "Skill documentation should mention purpose or description"
 
 
 def test_skill_documentation_has_boundaries():

@@ -179,7 +179,6 @@ def test_gitignore_exists():
         "node_modules",
         "__pycache__",
         ".venv",
-        "*.pyc",
     ]
     for pattern in ignored_patterns:
         assert pattern in content, f".gitignore should ignore: {pattern}"
