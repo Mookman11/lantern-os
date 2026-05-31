@@ -121,7 +121,22 @@ function Install-LanternOS {
         Write-ColorOutput "Please check your internet connection and try again" -ForegroundColor Yellow
         exit 1
     }
-    
+
+    # Install Node dependencies
+    $appDir = Join-Path $installDir "apps\lantern-garage"
+    if (Test-Path $appDir) {
+        Write-ColorOutput "Installing Node.js dependencies..." -ForegroundColor Cyan
+        Push-Location $appDir
+        try {
+            npm install --loglevel=error
+            Write-ColorOutput "Dependencies installed!" -ForegroundColor Green
+        } catch {
+            Write-ColorOutput "npm install failed - Lantern may not start correctly." -ForegroundColor Yellow
+        } finally {
+            Pop-Location
+        }
+    }
+
     Write-Host ""
 }
 
