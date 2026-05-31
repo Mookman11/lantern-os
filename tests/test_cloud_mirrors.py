@@ -11,7 +11,7 @@ def test_cloud_mirror_manifest_has_multiple_cloud_urls() -> None:
     urls = [item["url"] for item in mirrors]
     assert manifest["deployProvider"] == "Netlify"
     assert manifest["deployBranch"] == "master"
-    assert len(urls) >= 1  # Netlify mirror is live
+    assert "https://lantern-os-cloud.netlify.app" in urls
     assert len(urls) == len(set(urls))
     assert manifest["awsRuntime"]["imageSource"] == "apps/lantern-garage/Dockerfile"
     assert manifest["awsRuntime"]["containerPort"] == 8080
