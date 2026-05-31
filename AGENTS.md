@@ -108,7 +108,7 @@ Use `codex/` branch names for agent work unless the operator asks otherwise.
 **App:** `apps/lantern-trade-chat/` — FastAPI, GitHub OAuth, RSA-PSS signing.
 **Registry:** `data/automation/mcp-canary-results.json` → id `kalshi-public-markets`.
 
-### What agents MAY do (operator-approved 2026-05-31)
+### What agents MAY do (operator-approved 2026-05-31 — EXPLICIT LIVE APPROVAL GIVEN)
 
 - Read `apps/lantern-trade-chat/app/kalshi.py` and `app/main.py` to understand the client.
 - Call read-only methods via the running app's `/api/status` endpoint (requires login):
@@ -117,14 +117,14 @@ Use `codex/` branch names for agent work unless the operator asks otherwise.
   - `open_positions` — current holdings
   - `recent_fills` — last 20 executed trades
   - `settlement_warnings` — voided, disputed, or pending settlements flagged automatically
-- Run read-only balance checks against the **demo** environment without operator prompting.
+- Run read-only balance checks against **demo** or **prod** environment (operator approval on file).
 - Update `data/automation/mcp-canary-results.json` `checkedAt` field after a successful status check.
 
-### What agents MUST NOT do without explicit operator approval
+### What agents MUST NOT do without fresh operator approval
 
 - Infer account balance, orders, or positions from local memory or stale JSON files.
-- Place or simulate any order against `KALSHI_ENVIRONMENT=prod` without the operator saying "go live".
-- Set `LANTERN_LIVE_ENABLED=1` or remove `data/kalshi/LIVE-KILL-SWITCH`.
+- Place or simulate any order against `KALSHI_ENVIRONMENT=prod` without the operator saying "go live" in the current session.
+- Set `LANTERN_LIVE_ENABLED=1` or remove `data/kalshi/LIVE-KILL-SWITCH` without explicit current-session operator approval.
 - Report trading status as "active" without a fresh authenticated response from the API.
 - Add Kalshi API keys or private key material to any file in the repo.
 
