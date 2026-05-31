@@ -179,7 +179,11 @@ function Invoke-BrierCalibrationEngine {
         evidenceLanes = $currentScores.evidenceLanes
     }
     
-    $history.forecasts += $forecast
+    # Ensure forecasts is an array, then add
+    $forecastList = [System.Collections.ArrayList]@($history.forecasts)
+    if ($null -eq $forecastList) { $forecastList = [System.Collections.ArrayList]@() }
+    $forecastList.Add($forecast) | Out-Null
+    $history.forecasts = $forecastList.ToArray()
     
     # Keep only last 90 days of forecasts
     $cutoff = (Get-Date).AddDays(-90).ToString("yyyy-MM-dd")
