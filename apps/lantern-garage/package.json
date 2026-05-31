@@ -8,7 +8,7 @@
     "start:local": "node server.js",
     "start:cloud": "node cloud-server.js",
     "start:cost-dashboard": "node service-automation/cost-transparency-server.js",
-    "check": "node --check server.js && node --check cloud-server.js && node --check public/app.js",
+    "check": "node --check server.js && node --check cloud-server.js && node --check public/app.js && node --check public/courtney.js && node --check public/dreamer-dashboard.js",
     "validate": "node validate.js"
   },
   "dependencies": {

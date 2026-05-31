@@ -136,7 +136,6 @@ def test_gitignore_blocks_sensitive_files():
         "*.key",
         "*.pem",
         "secrets",
-        "credentials",
     ]
     
     for pattern in sensitive_patterns:

@@ -1,0 +1,53 @@
+{
+  "generatedAt": "2026-05-31T05:49:00Z",
+  "version": "1",
+  "sources": [
+    {
+      "id": "gm-agent-orchestrator-github",
+      "label": "GM Agent Orchestrator (GitHub)",
+      "baseUrl": "https://github.com/alex-place/gm-agent-orchestrator",
+      "transport": "source_repo",
+      "enabled": true,
+      "localOnly": false,
+      "allowRemote": true,
+      "allowToolExecution": false,
+      "agentAgnostic": true,
+      "tokenAgnostic": false,
+      "discovery": {
+        "type": "github_metadata",
+        "repoPath": "alex-place/gm-agent-orchestrator",
+        "localClonePath": "C:\\Users\\alexp\\Documents\\gm-agent-orchestrator"
+      },
+      "ioProfile": {
+        "inputMode": "source_repo_evidence",
+        "outputMode": "content_blocks",
+        "tokenPolicy": "externalized",
+        "agentPolicy": "externalized"
+      },
+      "notes": "Source repo for agent orchestrator. MCP tool claims are held until a local bridge or GitHub MCP server is verified."
+    },
+    {
+      "id": "gm-agent-orchestrator-local",
+      "label": "GM Agent Orchestrator Local",
+      "baseUrl": "http://127.0.0.1:8787",
+      "transport": "http_jsonrpc",
+      "enabled": false,
+      "localOnly": true,
+      "allowRemote": false,
+      "allowToolExecution": false,
+      "agentAgnostic": true,
+      "tokenAgnostic": true,
+      "discovery": {
+        "healthPath": "/health",
+        "rpcPath": "/mcp"
+      },
+      "ioProfile": {
+        "inputMode": "jsonrpc_tools",
+        "outputMode": "content_blocks",
+        "tokenPolicy": "externalized",
+        "agentPolicy": "externalized"
+      },
+      "notes": "Fallback local MCP source. Held until local service starts."
+    }
+  ]
+}
