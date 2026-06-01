@@ -21,18 +21,6 @@ and Arc Reactor Mining Lab converge here. No setup screen or secondary launcher
 is required when the dashboard is already running. No separate mining dashboard,
 no shortcut sprawl, no fake surfaces.
 
-Windows tester download path:
-
-```text
-https://github.com/alex-place/lantern-os/releases/latest
-```
-
-Use `lantern-desktop-tester-latest.zip` for the current tester lane. The install
-wiki is `docs/wiki/WINDOWS-TESTER-INSTALL.md`. Do not claim an `.exe` is ready
-unless that release asset exists on GitHub. `Lantern-OS-Free-Setup.exe` and
-`Lantern-OS-Founder-20-Setup.exe` are future installer asset names only until
-they are attached to a release.
-
 ---
 
 ## Simple Answer
@@ -126,23 +114,17 @@ of dropping operators into raw text docs.
 
 ## Cloud Mirrors
 
-`master` is the canonical worktree and deploy branch until v1.0.0. Cloud URLs
-are mirrors of the same Lantern OS dashboard, not separate products or extra
-dashboards.
+`master` is the deploy branch for the Render mirror. Cloud URLs are mirrors of
+the same Lantern OS dashboard, not separate products or extra dashboards.
 
 Mirror policy:
 
 - Local primary: `http://127.0.0.1:4177`
-- AWS/service mirrors live in `manifests/cloud-mirrors.json`
-- AWS uses `apps/lantern-garage/cloud-server.js` and
-  `apps/lantern-garage/Dockerfile`
+- Render/service mirrors live in `manifests/cloud-mirrors.json`
+- Render uses `apps/lantern-garage/render-server.js`
 - Local Windows uses `apps/lantern-garage/server.js`
 - A mirror can be listed as `candidate`, `configured`, or `verified`; the UI
   must show that status plainly
-
-Execution boundary: until v1.0.0, executable work must stay in the AWS-safe
-deploy/check lane or the Kalshi public-data research lane. See
-`docs/EXECUTION-BOUNDARIES.md`.
 
 ---
 
@@ -211,12 +193,6 @@ Master convergence PDF:
 
 ```text
 artifacts/COMET-LEAP-TOKEN-BURN-REVENUE-CONVERGENCE-v1.pdf
-```
-
-Public bounty radar:
-
-```text
-artifacts/PUBLIC-PUZZLE-MATH-BOUNTY-RADAR-2026-05-30.pdf
 ```
 
 ---
