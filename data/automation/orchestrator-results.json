@@ -1,56 +1,24 @@
-﻿{
-    "receiptId":  "orchestrator-20260531-041125",
-    "generatedAt":  "2026-05-31T04:11:25.6012951-04:00",
-    "evidenceClass":  "batch_orchestrator_run",
-    "dryRun":  true,
-    "summary":  {
-                    "total":  5,
-                    "ok":  0,
-                    "failed":  0,
-                    "skipped":  5,
-                    "passed":  true
-                },
-    "jobs":  [
-                 {
-                     "id":  "health-check",
-                     "status":  "dry-run",
-                     "reason":  "dry_run",
-                     "exitCode":  0,
-                     "durationMs":  0,
-                     "startedAt":  "2026-05-31T04:11:25.1863898-04:00"
-                 },
-                 {
-                     "id":  "convergence-loop",
-                     "status":  "dry-run",
-                     "reason":  "dry_run",
-                     "exitCode":  0,
-                     "durationMs":  0,
-                     "startedAt":  "2026-05-31T04:11:25.2536064-04:00"
-                 },
-                 {
-                     "id":  "loop-receipt",
-                     "status":  "dry-run",
-                     "reason":  "dry_run",
-                     "exitCode":  0,
-                     "durationMs":  0,
-                     "startedAt":  "2026-05-31T04:11:25.3226150-04:00"
-                 },
-                 {
-                     "id":  "asset-discovery",
-                     "status":  "dry-run",
-                     "reason":  "dry_run",
-                     "exitCode":  0,
-                     "durationMs":  0,
-                     "startedAt":  "2026-05-31T04:11:25.3664090-04:00"
-                 },
-                 {
-                     "id":  "sync-rag-pdf",
-                     "status":  "dry-run",
-                     "reason":  "dry_run",
-                     "exitCode":  0,
-                     "durationMs":  0,
-                     "startedAt":  "2026-05-31T04:11:25.3954375-04:00"
-                 }
-             ],
-    "boundary":  "No automated paid API calls. No autonomous action without human review gate."
+{
+    "timestamp":  "2026-05-29T10:47:32.2584035-04:00",
+    "components":  {
+                       "hff-convergence":  {
+                                               "timestamp":  "2026-05-29T10:47:32.2450716-04:00",
+                                               "success":  true
+                                           },
+                       "git-auto-deploy":  {
+                                               "timestamp":  "2026-05-29T10:47:32.2207310-04:00",
+                                               "success":  true
+                                           },
+                       "auto-poll":  {
+                                         "timestamp":  "2026-05-29T10:47:32.2351988-04:00",
+                                         "success":  true
+                                     },
+                       "lantern-convergence":  {
+                                                   "timestamp":  "2026-05-29T10:47:32.2574308-04:00",
+                                                   "success":  true
+                                               }
+                   },
+    "dryRun":  {
+                   "IsPresent":  true
+               }
 }

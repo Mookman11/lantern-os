@@ -1,95 +1,90 @@
 {
-  "generatedAt": "2026-05-29T23:04:58.346Z",
+  "generatedAt": "2026-05-27T01:25:16.516Z",
   "purpose": "One flat RAG house over Lantern OS, HFF, orchestrator, and GM source repos.",
   "boundary": "Read-only source ingestion. Old repos are archived by manifest status, not deleted.",
   "sources": [
     {
       "name": "lantern-os",
-      "path": "C:\\tmp\\lantern-os",
+      "path": "${REPO_ROOT}",
       "role": "control plane, RAG house, Garage app, release surface",
       "archiveDecision": "keep_canonical",
       "exists": true,
-      "branch": "archive/cleanup-2026-05-29",
+      "branch": "master",
       "remote": "https://github.com/alex-place/lantern-os.git",
-      "head": "c29268b63883",
+      "head": "12580110bed9",
       "dirty": true,
-      "statusShort": "M .github/workflows/static-surface-ci.yml\n M README.md\n M apps/lantern-garage/package.json\n M apps/lantern-garage/public/app.js\n M apps/lantern-garage/public/index.html\n M apps/lantern-garage/public/styles.css\n M apps/lantern-garage/render-server.js\n M apps/lantern-garage/server.js\n M data/conversations/garage-conversations.jsonl\n M manifests/validation/MCP-CONNECTOR-LATEST.json\n M render.yaml\n M scripts/Test-DiscordBotHealth.ps1\n M scripts/Test-LanternMcpConnector.ps1\n M src/discord_lounge_bot/README.md\n M src/discord_lounge_bot/bot.py\n M tests/test_action_pooling_and_ci_policy.py\n M tests/test_cloud_mirrors.py\n M tests/test_dashboard_ux.py\n?? apps/lantern-garage/public/demo-1000.html\n?? apps/lantern-garage/public/outreach.html\n?? docs/BETTER-FORWARD-ENTROPY.md\n?? docs/BETTER-IPHONE-APP-CONCEPT.md\n?? docs/BETTER-STONE-PARABLE.md\n?? docs/LANTERN-COMMAND-ENTRYPOINT.md\n?? docs/LANTERN-DESKTOP-TESTER.md\n?? docs/LANTERN-ONE-IDE-WORKSTREAM-CONTROL.md\n?? docs/LANTERN-RUNTIME-CICD.md\n?? docs/ONE-HOUR-1000-DEMO.md\n?? manifests/HOTSWAPVM-SHIP-OF-THESEUS-PATENT-CANDIDATE.md\n?? manifests/HOUSE-THINKER.md\n?? manifests/evidence/asi-local-pdf-convergence-2026-05-29.md\n?? scripts/Get-OneIdeStatus.ps1\n?? scripts/Invoke-HotSwapVmReceipt.ps1\n?? scripts/Invoke-HouseThinker.ps1\n?? scripts/New-LanternDesktopTesterPackage.ps1\n?? src/discord_lounge_bot/requirements.txt\n?? tests/Test-HotSwapVmReceipt.ps1\n?? tests/Test-HouseThinker.ps1\n?? tests/test_asi_local_pdf_convergence.py\n?? tests/test_better_and_demo_surfaces.py\n?? tests/test_command_entrypoint.py\n?? tests/test_desktop_tester_release.py\n?? tests/test_discord_voice_gate.py\n?? tests/test_one_ide_control_plane.py",
+      "statusShort": "M .gitignore\n M apps/lantern-garage/public/app.js\n M apps/lantern-garage/public/index.html\n M apps/lantern-garage/public/styles.css\n M apps/lantern-garage/server.js\n M apps/lantern-garage/validate.js\n M artifacts/ADS-ARCHITECTURE-REVIEW-v0.1.pdf\n M artifacts/COMET-LEAP-TOKEN-BURN-REVENUE-CONVERGENCE-v1.pdf\n M artifacts/LANTERN-OS-WHITEPAPER-v0.1.pdf\n M data/rag-intake/external-llm-web-cache/cache.jsonl\n M manifests/LANTERN-GARAGE-FULLSTACK-APP.md\n M manifests/validation/LANTERN-GARAGE-APP-LATEST.json\n M manifests/validation/LOCAL-CONTROLS-LATEST.json\n M manifests/windows-surfaces.md\n M reports/ADS-ARCHITECTURE-REVIEW-v0.1.md\n M reports/LANTERN-OS-WHITEPAPER-v0.1.md\n M scripts/Build-MasterConvergencePdf.ps1\n M skills/arc-reactor-confidence/SKILL.md\n M skills/bayesian-world-model/SKILL.md\n M skills/clean-storm-agile/SKILL.md\n M skills/comet-leap-agile/SKILL.md\n M skills/lantern-rag-dollhouse/SKILL.md\n M skills/lantern-rag-dollhouse/assets/pdfs/COMET-LEAP-MASTER-PLAN-v2.1.pdf\n M skills/lantern-rag-dollhouse/assets/pdfs/COMET-LEAP-TOKEN-BURN-REVENUE-CONVERGENCE-v1.pdf\n M skills/lantern-rag-dollhouse/assets/pdfs/COMET-LEAPER-FOUNDER-MONEY-CONFIDENCE-REPORT-v1.pdf\n M skills/lantern-rag-dollhouse/references/LANTERN-OS-RAG-DOLLHOUSE.flat.md\n M skills/super-jarvis-lantern-os/SKILL.md\n?? artifacts/ARC-REACTOR-MKII-CONVERGENCE-UPDATE-2026-05-26.pdf\n?? artifacts/COMET-LEAP-BAYESIAN-FOUNDER-WISDOM-PERFECT.pdf\n?? artifacts/DISCORD-COMMUNITY-OPERATOR-PACKET.pdf\n?? artifacts/DISCORD-COMMUNITY-PUBLIC-GUIDE.pdf\n?? artifacts/LANTERN-DAY-ONE-NORMIE-PACKET.pdf\n?? data/rag-house/\n?? manifests/ART-REPORT-STYLE-CONVERGENCE.md\n?? manifests/COMETSHOT-ONESHOT-REFERENCE-2026-05-26.md\n?? manifests/CONSENSUS-GATES.md\n?? manifests/DISCORD-COMMUNITY-CONVERGENCE.md\n?? manifests/FLAT-RAG-HOUSE-LATEST.md\n?? manifests/OPERATOR-FIELD-NOTES-RAG-2026-05-26.md\n?? manifests/RACE-CONDITION-CONVERGENCE.md\n?? reports/ARC-REACTOR-MKII-CONVERGENCE-UPDATE-2026-05-26.md\n?? reports/COMET-LEAPER-OPERATING-NARRATIVE-v1.md\n?? reports/DISCORD-COMMUNITY-OPERATOR-PACKET.md\n?? reports/DISCORD-COMMUNITY-PUBLIC-GUIDE.md\n?? reports/FOUNDER-WISDOM-DECISION-CARDS/\n?? reports/LANTERN-DAY-ONE-NORMIE-PACKET.md\n?? reports/assets/\n?? scripts/Build-DayOneNormiePdf.ps1\n?? scripts/Build-PerfectArtPdf.ps1\n?? scripts/Generate-DayOneNormieArt.ps1\n?? scripts/Invoke-DiscordCommunityDryRun.ps1\n?? skills/comet-leap-print-wcag/",
       "topLevelFiles": [
-        ".claude",
         ".git",
         ".gitattributes",
         ".github",
         ".gitignore",
-        "AGENT-HANDOFF-2026-05-28.md",
         "AGENTS.md",
         "apps",
-        "art",
         "artifacts",
-        "CLEANUP-LOG-2026-05-29.txt",
-        "COMET-LEAP-Bayesian-Founder-Protocol-v2.pdf",
-        "comet-leap-bayesian-founder-protocol-v2.py",
-        "COMET-LEAP-Bayesian-Founder-Wisdom.pdf",
-        "comet-leap-bayesian-founder-wisdom.py",
-        "COMET-LEAP-True-Social-Internet-Strategy.pdf",
-        "comet-leap-true-social-internet-strategy.py",
         "data",
         "docs",
         "dual-boot",
-        "EXECUTE-ORCHESTRATION.ps1",
-        "EXECUTION-OPTIONS.md",
-        "lantern-os-master-orchestration.ps1",
-        "LAUNCH-ORCHESTRATION.vbs"
-      ]
+        "manifests",
+        "README.md",
+        "reports",
+        "school-packets",
+        "scripts",
+        "skills",
+        "surfaces"
+      ],
+      "ragIndex": "manifests/TMP-REPO-RAG-INDEX.json"
     },
     {
       "name": "human-flourishing-frameworks",
-      "path": "C:\\tmp\\human-flourishing-frameworks-scan",
+      "path": "${HFF_REPO_PATH}",
       "role": "HFF scan, COMET LEAP docs and PDFs, prior convergence evidence",
       "archiveDecision": "source_evidence_only",
       "exists": true,
-      "branch": "force-render-deploy",
+      "branch": "master",
       "remote": "https://github.com/human-flourishing-frameworks/human-flourishing-frameworks.git",
-      "head": "da15bc225d24",
-      "dirty": true,
-      "statusShort": "M .claude/launch.json\n?? AGENTS.md\n?? CONVERGENCE-VALIDATION-REPORT-2026-05-28.pdf\n?? docs/CONVERGENCE-LOOP.md\n?? docs/INNOVATOR-EVIDENCE-METHOD.md\n?? docs/LANTERN-OS-RECEPTIONIST-CALL-LIST.md\n?? docs/V1-READINESS-GATES.md\n?? generate_report.py\n?? manifests/",
+      "head": "bebf73dabcd7",
+      "dirty": false,
+      "statusShort": "",
       "topLevelFiles": [
         ".claude",
         ".dockerignore",
         ".git",
         ".github",
         ".gitignore",
-        ".lantern-desktop-shot-2.png",
-        ".lantern-desktop-shot-3.png",
-        ".lantern-desktop-shot.png",
-        ".lantern-desktop-v2.png",
-        ".lantern-desktop-v3.png",
-        ".lantern-env-probe.bat",
-        ".lantern-spawn.bat",
         ".venv",
         "adoption_tracker.py",
-        "AGENTS.md",
         "agent_system.py",
         "app.py",
         "apps",
-        "art-panels-v2.html",
         "background_mode.py",
         "BEDTIME-PAPER-SUDDEN-DEATH-FOUNDER.md",
         "BEDTIME-PAPER-SUDDEN-DEATH-FOUNDER.pdf",
         "bettersafe",
-        "bio_threat_source_registry.py"
-      ]
+        "bio_threat_source_registry.py",
+        "byzantine_consensus.py",
+        "claim_safety.py",
+        "COMET-LEAP-ALL-STREAMS-50P-v3.md",
+        "COMET-LEAP-DNA-INVESTING-SENTIMENT-2026.md",
+        "COMET-LEAP-EXECUTIVE-MASTER-PLAN-NOW.md",
+        "COMET-LEAP-MASTER-PLAN-v1.0.md",
+        "COMET-LEAP-MASTER-PLAN-v2.0.md",
+        "COMET-LEAP-MASTER-PLAN-v2.0.pdf",
+        "COMET-LEAP-MASTER-PLAN-v2.1.md"
+      ],
+      "ragIndex": "manifests/TMP-REPO-RAG-INDEX.json"
     },
     {
       "name": "gm-agent-orchestrator",
-      "path": "C:\\Users\\alexp\\Documents\\gm-agent-orchestrator",
+      "path": "${ORCHESTRATOR_REPO_PATH}",
       "role": "local MCP/orchestrator, agents, queue, service supervision",
       "archiveDecision": "source_evidence_only",
       "exists": true,
-      "branch": "p0/four-agent-fleet-baseline",
+      "branch": "master",
       "remote": "https://github.com/alex-place/gm-agent-orchestrator.git",
-      "head": "99c7445b520d",
+      "head": "f4eb6b5ef395",
       "dirty": true,
-      "statusShort": "M README.md\n M package-lock.json\n M package.json\n M scripts/Get-OrchMcpCapabilityStatus.ps1\n M scripts/Get-OrchestratorStatus.ps1\n M scripts/Get-TaskStatusViaMcp.ps1\n M scripts/Invoke-OrchestratorAgentAction.ps1\n M scripts/Monitor-ServerHealthPulse.ps1\n M scripts/Start-AgentSlot.ps1\n M scripts/Start-Dashboard.ps1\n M scripts/Start-GptWebAgent.ps1\n M scripts/Start-OrchMcpServer.Tools.ps1\n M scripts/Start-OrchestratorServices.ps1\n M scripts/node_modules/.package-lock.json\n M scripts/package-lock.json\n M scripts/package.json\n M tests/Test-DashboardServiceHealthContract.ps1\n M tests/Test-OrchMcpCapabilityStatus.ps1\n M tests/Test-ServerHealthPulse.ps1\n?? config/active-processing.json\n?? private-art-refs/\n?? reports/agents/20260529-fleet-health-slot-matrix.md\n?? reports/audit/20260529-github-repl-status.md\n?? reports/audit/20260529-near-zero-converge-receipt.md\n?? reports/audit/20260529-near-zero-token-convergence-plan.md\n?? reports/audit/20260529-token-waste-tesseract.md\n?? reports/audit/20260529-token-waste-tesseract.pdf\n?? reports/queue-movements/20260529.jsonl\n?? scripts/Start-ActiveAgentFleet.ps1\n?? tests/Test-OrchestratorAgentActionStatusGate.ps1\n?? tests/Test-OrchestratorStatusQueueRecommendationAlignment.ps1\n?? tests/Test-OrchestratorStatusStaleRuntime.ps1",
+      "statusShort": "A  EVIDENCE-CONFIDENCE-FRAMEWORK.md\nA  FINANCIAL-CONTROL-SYSTEMS.md\nA  OPERATING-NARRATIVE-IMPLEMENTATION.md\nA  PATIENT-PILOT-FRAMEWORK.md\nA  PERMANENT-PROGRESS-TRACKING-SYSTEM.md\nA  PROGRESS-DASHBOARD.md\nA  PROGRESS-TRACKING-INDEX.md\nA  README-PROGRESS-TRACKING.md\nA  RESEARCH-TEAM-OPERATIONS.md",
       "topLevelFiles": [
         "%APPDATA%",
         ".claude",
@@ -105,7 +100,6 @@
         "AGENTS.md",
         "alex-place",
         "apps",
-        "art",
         "AUTO_TEST_REPORT.md",
         "BLOG-30-DAYS-WITH-LANTERN.md",
         "CLAUDE.md",
@@ -114,12 +108,14 @@
         "COMET-LEAP-24HR-CHECKPOINT.md",
         "COMET-LEAP-DNA-INVESTING-SENTIMENT-2026.md",
         "COMET-LEAP-MASTER-PLAN-v1.0.md",
-        "COMET-LEAP-MASTER-PORTFOLIO.md"
-      ]
+        "COMET-LEAP-MASTER-PORTFOLIO.md",
+        "COMET-LEAP-v0.2-MASTER-REFERENCE.html"
+      ],
+      "ragIndex": "manifests/TMP-REPO-RAG-INDEX.json"
     },
     {
       "name": "ChildOfLevistus",
-      "path": "C:\\Users\\alexp\\Documents\\Codex\\2026-04-23-what-are-you-able-to-do\\ChildOfLevistus",
+      "path": "${CHILD_OF_LEVISTUS_PATH}",
       "role": "GameMaker game source and GM validation lane",
       "archiveDecision": "source_evidence_only",
       "exists": true,
@@ -153,11 +149,77 @@
         "output",
         "README.md",
         "reports"
-      ]
+      ],
+      "ragIndex": "manifests/TMP-REPO-RAG-INDEX.json"
     }
   ],
-  "ragRecordCount": 113,
+  "ragRecordCount": 108,
   "recentRagRecords": [
+    {
+      "timestamp": "2026-05-27T01:19:24.976Z",
+      "topic": "validation stream batch",
+      "claim": "Queued RAG stream write validate-1779844764927-6.",
+      "sourceUrl": "",
+      "sourceTitle": "Lantern Garage stream validator",
+      "sourceType": "operator_asserted",
+      "rightsState": "summary_only",
+      "evidenceClass": "operator_asserted",
+      "confidence": 0.8,
+      "decision": "candidate",
+      "compressedSummary": "Validator confirmed concurrent POST writes serialize through the Lantern Garage write queue."
+    },
+    {
+      "timestamp": "2026-05-27T01:19:24.976Z",
+      "topic": "validation stream batch",
+      "claim": "Queued RAG stream write validate-1779844764927-7.",
+      "sourceUrl": "",
+      "sourceTitle": "Lantern Garage stream validator",
+      "sourceType": "operator_asserted",
+      "rightsState": "summary_only",
+      "evidenceClass": "operator_asserted",
+      "confidence": 0.8,
+      "decision": "candidate",
+      "compressedSummary": "Validator confirmed concurrent POST writes serialize through the Lantern Garage write queue."
+    },
+    {
+      "timestamp": "2026-05-27T01:24:14.728Z",
+      "topic": "validation cometshot",
+      "claim": "Lantern OS control plane accepts bounded RAG form intake.",
+      "sourceUrl": "",
+      "sourceTitle": "Lantern Garage validator",
+      "sourceType": "operator_asserted",
+      "rightsState": "summary_only",
+      "evidenceClass": "operator_asserted",
+      "confidence": 0.9,
+      "decision": "promote",
+      "compressedSummary": "Validator confirmed POST /api/rag-cache can store a compressed source-labeled RAG record."
+    },
+    {
+      "timestamp": "2026-05-27T01:24:14.744Z",
+      "topic": "validation stream batch",
+      "claim": "Queued RAG stream write validate-1779845054729-0.",
+      "sourceUrl": "",
+      "sourceTitle": "Lantern Garage stream validator",
+      "sourceType": "operator_asserted",
+      "rightsState": "summary_only",
+      "evidenceClass": "operator_asserted",
+      "confidence": 0.8,
+      "decision": "candidate",
+      "compressedSummary": "Validator confirmed concurrent POST writes serialize through the Lantern Garage write queue."
+    },
+    {
+      "timestamp": "2026-05-27T01:24:14.744Z",
+      "topic": "validation stream batch",
+      "claim": "Queued RAG stream write validate-1779845054729-1.",
+      "sourceUrl": "",
+      "sourceTitle": "Lantern Garage stream validator",
+      "sourceType": "operator_asserted",
+      "rightsState": "summary_only",
+      "evidenceClass": "operator_asserted",
+      "confidence": 0.8,
+      "decision": "candidate",
+      "compressedSummary": "Validator confirmed concurrent POST writes serialize through the Lantern Garage write queue."
+    },
     {
       "timestamp": "2026-05-27T01:24:14.745Z",
       "topic": "validation stream batch",
@@ -352,183 +414,128 @@
       "confidence": 0.8,
       "decision": "candidate",
       "compressedSummary": "Validator confirmed concurrent POST writes serialize through the Lantern Garage write queue."
-    },
-    {
-      "sourceTitle": "LANTERN-OS-SKILLS-RAG-HOUSE.pdf",
-      "evidenceClass": "operator_asserted",
-      "confidence": 0.95,
-      "sourceType": "local_asset_copied",
-      "topic": "convergence-loop",
-      "timestamp": "2026-05-28T08:29:51.2778606-04:00",
-      "decision": "promote",
-      "claim": "12-step convergence loop: orbit entry, trajectory, fuel check, mapping, signal, data collection, classification, evidence, synthesis, gate validation, safe commit, closure",
-      "compressedSummary": "12-hour convergence loop protocol with space-grade integrity steps"
-    },
-    {
-      "sourceTitle": "LANTERN-OS-SKILLS-RAG-HOUSE.pdf",
-      "evidenceClass": "local_inspected",
-      "confidence": 0.99,
-      "sourceType": "local_asset_copied",
-      "topic": "skills-inventory",
-      "timestamp": "2026-05-28T08:29:51.3124371-04:00",
-      "decision": "promote",
-      "claim": "13 skills available: brand-guidelines, consolidate-memory, doc-coauthoring, docx, mcp-builder, pdf, pptx, schedule, setup-cowork, skill-creator, theme-factory, web-artifacts-builder, xlsx",
-      "compressedSummary": "Full skills instrument list from RAG house PDF"
-    },
-    {
-      "sourceTitle": "LANTERN-OS-SKILLS-RAG-HOUSE.pdf",
-      "evidenceClass": "local_inspected",
-      "confidence": 0.99,
-      "sourceType": "local_asset_copied",
-      "topic": "rag-house-components",
-      "timestamp": "2026-05-28T08:29:51.3124371-04:00",
-      "decision": "promote",
-      "claim": "RAG house has 5 components: flat RAG reference, asset manifest SHA256, PDFs, images, intake rules. 7 data classification states.",
-      "compressedSummary": "RAG dollhouse structure and classification states"
-    },
-    {
-      "sourceTitle": "LANTERN-OS-SKILLS-RAG-HOUSE.pdf",
-      "evidenceClass": "operator_asserted",
-      "confidence": 0.99,
-      "sourceType": "local_asset_copied",
-      "topic": "safety-manifest",
-      "timestamp": "2026-05-28T08:29:51.3124371-04:00",
-      "decision": "promote",
-      "claim": "6 safety rules: no metadata pretense, source immutability, clean state only, secrets protection, copyright respect, evidence standard",
-      "compressedSummary": "Safety and integrity manifest from RAG house spec"
-    },
-    {
-      "sourceTitle": "lantern-garage-dashboard.html",
-      "evidenceClass": "local_inspected",
-      "confidence": 0.9,
-      "sourceType": "local_asset_copied",
-      "topic": "garage-dashboard",
-      "timestamp": "2026-05-28T08:29:51.3124371-04:00",
-      "decision": "promote",
-      "claim": "Dark-theme operator cockpit HTML with arc reactor (88), wallet bench, boot bay, memory house, workbench sequence, and confidence chart",
-      "compressedSummary": "Tony Garage dark dashboard surface for Lantern OS"
     }
   ],
   "recentConversations": [
     {
-      "recordedAt": "2026-05-29T18:39:12.691Z",
-      "surface": "lantern-garage",
-      "role": "operator",
-      "text": "Approved. Proceed."
+      "recordedAt": "2026-05-27T01:19:24.939Z",
+      "surface": "validate-batch",
+      "role": "note",
+      "text": "Queued stream validation conversation validate-1779844764927-6."
     },
     {
-      "recordedAt": "2026-05-29T18:39:12.698Z",
-      "surface": "lantern-garage",
-      "role": "lantern",
-      "text": "Acknowledged. Proceeding with current action path."
+      "recordedAt": "2026-05-27T01:19:24.940Z",
+      "surface": "validate-batch",
+      "role": "note",
+      "text": "Queued stream validation conversation validate-1779844764927-7."
     },
     {
-      "recordedAt": "2026-05-29T18:39:16.681Z",
-      "surface": "lantern-garage",
-      "role": "operator",
-      "text": "test llm"
+      "recordedAt": "2026-05-27T01:24:14.725Z",
+      "surface": "validate",
+      "role": "note",
+      "text": "Lantern Garage validation conversation note."
     },
     {
-      "recordedAt": "2026-05-29T18:39:16.700Z",
-      "surface": "lantern-garage",
-      "role": "lantern",
-      "text": "Message stored locally. Use quick-reply buttons or type for more context."
+      "recordedAt": "2026-05-27T01:24:14.732Z",
+      "surface": "validate-batch",
+      "role": "note",
+      "text": "Queued stream validation conversation validate-1779845054729-0."
     },
     {
-      "recordedAt": "2026-05-29T18:39:24.657Z",
-      "surface": "lantern-garage",
-      "role": "operator",
-      "text": "ok context"
+      "recordedAt": "2026-05-27T01:24:14.735Z",
+      "surface": "validate-batch",
+      "role": "note",
+      "text": "Queued stream validation conversation validate-1779845054729-1."
     },
     {
-      "recordedAt": "2026-05-29T18:39:24.664Z",
-      "surface": "lantern-garage",
-      "role": "lantern",
-      "text": "Message stored locally. Use quick-reply buttons or type for more context."
+      "recordedAt": "2026-05-27T01:24:14.735Z",
+      "surface": "validate-batch",
+      "role": "note",
+      "text": "Queued stream validation conversation validate-1779845054729-2."
     },
     {
-      "recordedAt": "2026-05-29T18:56:58.556Z",
-      "surface": "lantern-garage",
-      "role": "operator",
-      "text": "Rock and stone mining lab: safe lane check"
+      "recordedAt": "2026-05-27T01:24:14.735Z",
+      "surface": "validate-batch",
+      "role": "note",
+      "text": "Queued stream validation conversation validate-1779845054729-3."
     },
     {
-      "recordedAt": "2026-05-29T18:57:19.132Z",
-      "surface": "lantern-garage",
-      "role": "lantern",
-      "text": "Rock and stone, safely. CPU goes to the Monero learning lane, GPU stays experimental for RVN or ETC, and BTC belongs only on owned SHA-256 ASIC hardware or a clearly labeled lottery path. Next useful step: run hardware intake, set power cost, then compare net/day before any miner starts. No wallet cracking, no hidden signing, no fake one-shot ROI."
+      "recordedAt": "2026-05-27T01:24:14.735Z",
+      "surface": "validate-batch",
+      "role": "note",
+      "text": "Queued stream validation conversation validate-1779845054729-4."
     },
     {
-      "recordedAt": "2026-05-29T18:59:30.946Z",
-      "surface": "lantern-garage",
-      "role": "operator",
-      "text": "Rock and stone mining lab: safe lane check"
+      "recordedAt": "2026-05-27T01:24:14.736Z",
+      "surface": "validate-batch",
+      "role": "note",
+      "text": "Queued stream validation conversation validate-1779845054729-5."
     },
     {
-      "recordedAt": "2026-05-29T18:59:36.964Z",
-      "surface": "lantern-garage",
-      "role": "lantern",
-      "text": "Rock and stone, safely. CPU goes to the Monero learning lane, GPU stays experimental for RVN or ETC, and BTC belongs only on owned SHA-256 ASIC hardware or a clearly labeled lottery path. Next useful step: run hardware intake, set power cost, then compare net/day before any miner starts. No wallet cracking, no hidden signing, no fake one-shot ROI."
+      "recordedAt": "2026-05-27T01:24:14.736Z",
+      "surface": "validate-batch",
+      "role": "note",
+      "text": "Queued stream validation conversation validate-1779845054729-6."
     },
     {
-      "recordedAt": "2026-05-29T19:00:52.314Z",
-      "surface": "lantern-garage",
-      "role": "operator",
-      "text": "Rock and stone mining lab: safe lane check"
+      "recordedAt": "2026-05-27T01:24:14.736Z",
+      "surface": "validate-batch",
+      "role": "note",
+      "text": "Queued stream validation conversation validate-1779845054729-7."
     },
     {
-      "recordedAt": "2026-05-29T19:00:55.343Z",
-      "surface": "lantern-garage",
-      "role": "lantern",
-      "text": "Rock and stone, safely. CPU goes to the Monero learning lane, GPU stays experimental for RVN or ETC, and BTC belongs only on owned SHA-256 ASIC hardware or a clearly labeled lottery path. Next useful step: run hardware intake, set power cost, then compare net/day before any miner starts. No wallet cracking, no hidden signing, no fake one-shot ROI."
+      "recordedAt": "2026-05-27T01:25:14.916Z",
+      "surface": "validate",
+      "role": "note",
+      "text": "Lantern Garage validation conversation note."
     },
     {
-      "recordedAt": "2026-05-29T19:03:41.292Z",
-      "surface": "lantern-garage",
-      "role": "operator",
-      "text": "what does sync evidence do?"
+      "recordedAt": "2026-05-27T01:25:14.924Z",
+      "surface": "validate-batch",
+      "role": "note",
+      "text": "Queued stream validation conversation validate-1779845114921-0."
     },
     {
-      "recordedAt": "2026-05-29T19:03:44.310Z",
-      "surface": "lantern-garage",
-      "role": "lantern",
-      "text": "I am on the local-rag path. I can help with the dashboard, mining lane choices, repo evidence, wallet receipts, cloud mirrors, or local fleet controls. Ask in plain language and I will route it to the safest visible lane."
+      "recordedAt": "2026-05-27T01:25:14.927Z",
+      "surface": "validate-batch",
+      "role": "note",
+      "text": "Queued stream validation conversation validate-1779845114921-1."
     },
     {
-      "recordedAt": "2026-05-29T19:04:49.762Z",
-      "surface": "lantern-garage",
-      "role": "operator",
-      "text": "what does sync evidence do?"
+      "recordedAt": "2026-05-27T01:25:14.928Z",
+      "surface": "validate-batch",
+      "role": "note",
+      "text": "Queued stream validation conversation validate-1779845114921-2."
     },
     {
-      "recordedAt": "2026-05-29T19:04:52.842Z",
-      "surface": "lantern-garage",
-      "role": "lantern",
-      "text": "Sync Evidence rebuilds the flat RAG house from the configured local source repos. It should answer who/what by listing sources and records, not by dropping you into raw notes."
+      "recordedAt": "2026-05-27T01:25:14.928Z",
+      "surface": "validate-batch",
+      "role": "note",
+      "text": "Queued stream validation conversation validate-1779845114921-3."
     },
     {
-      "recordedAt": "2026-05-29T21:15:18.084Z",
-      "surface": "lantern-garage",
-      "role": "operator",
-      "text": "Summarize the safest zero-cash revenue lane in one sentence."
+      "recordedAt": "2026-05-27T01:25:14.928Z",
+      "surface": "validate-batch",
+      "role": "note",
+      "text": "Queued stream validation conversation validate-1779845114921-4."
     },
     {
-      "recordedAt": "2026-05-29T21:15:21.158Z",
-      "surface": "lantern-garage",
-      "role": "lantern",
-      "text": "I am on the local-rag path. I can help with the dashboard, mining lane choices, repo evidence, wallet receipts, cloud mirrors, or local fleet controls. Ask in plain language and I will route it to the safest visible lane."
+      "recordedAt": "2026-05-27T01:25:14.928Z",
+      "surface": "validate-batch",
+      "role": "note",
+      "text": "Queued stream validation conversation validate-1779845114921-5."
     },
     {
-      "recordedAt": "2026-05-29T21:18:38.783Z",
-      "surface": "lantern-garage",
-      "role": "operator",
-      "text": "Summarize the safest zero-cash revenue lane in one sentence."
+      "recordedAt": "2026-05-27T01:25:14.928Z",
+      "surface": "validate-batch",
+      "role": "note",
+      "text": "Queued stream validation conversation validate-1779845114921-6."
     },
     {
-      "recordedAt": "2026-05-29T21:18:39.975Z",
-      "surface": "lantern-garage",
-      "role": "lantern",
-      "text": "\"The safest zero-cash revenue lane for Lantern OS within a local-first operator dashboard is to generate income through advertising and service fees, while ensuring user privacy by implementing decentralized data storage and robust encryption.\""
+      "recordedAt": "2026-05-27T01:25:14.928Z",
+      "surface": "validate-batch",
+      "role": "note",
+      "text": "Queued stream validation conversation validate-1779845114921-7."
     }
   ],
   "windowsSurface": {
