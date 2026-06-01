@@ -967,6 +967,16 @@ main:focus-visible {
   margin: 0 0 8px;
 }
 
+/* Wish door styles */
+.dreamer-entry.wish {
+  border-left: 3px solid #8b5cf6;
+  background: rgba(139, 92, 246, 0.05);
+}
+
+.dreamer-entry.wish .dreamer-entry-heading strong {
+  color: #7c3aed;
+}
+
 
 
 .access-panel {
