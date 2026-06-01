@@ -11,7 +11,7 @@ from flask import Flask, jsonify, render_template_string, request
 import hmac
 import math
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 import threading
 
@@ -40,8 +40,17 @@ from cryptographic_proof import generate_keypair, load_keypair, save_keypair
 from sensors import Measurement, SensorRegistry
 from world_model import WorldModel, Intervention
 from live_sensors import create_live_sensors, run_observation_loop
+from chat_memory_integration import ChatMemoryIntegration
 
 app = Flask(__name__)
+
+# Initialize chat memory integration
+try:
+    chat_memory = ChatMemoryIntegration()
+    print("[OK] Chat memory integration initialized")
+except Exception as e:
+    print(f"[WARNING] Could not initialize chat memory: {e}")
+    chat_memory = None
 
 MIN_CONSENSUS_NODES = int(os.environ.get('MIN_CONSENSUS_NODES', '3'))
 WRITE_TOKEN = os.environ.get('HFF_WRITE_TOKEN', '')
@@ -1600,6 +1609,173 @@ def world_discover():
                 "the model finds correlations, not causes."
             ),
         }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Chat Memory Integration Routes
+# ---------------------------------------------------------------------------
+
+@app.route('/api/chat/log', methods=['POST'])
+def chat_log_message():
+    """
+    Log a chat message to the cryptographic audit chain and memory system.
+
+    Request body:
+    {
+        "user_id": "user123",
+        "message": "Hello, how are you?",
+        "role": "user",
+        "metadata": {
+            "lucidity": 0.8,
+            "emotional_intensity": 0.5
+        }
+    }
+    """
+    if not chat_memory:
+        return jsonify({"error": "chat memory not initialized"}), 503
+
+    try:
+        data = request.json
+        if not data or "message" not in data:
+            return jsonify({"error": "request must include 'message'"}), 400
+
+        user_id = data.get("user_id", "anonymous")
+        message = data.get("message", "")
+        role = data.get("role", "user")
+        metadata = data.get("metadata", {})
+
+        result = chat_memory.log_chat_message(user_id, message, role, metadata)
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/chat/verify', methods=['GET'])
+def chat_verify_integrity():
+    """
+    Verify the integrity of the entire conversation chain.
+
+    Returns verification status, entry count, coherence score, etc.
+    """
+    if not chat_memory:
+        return jsonify({"error": "chat memory not initialized"}), 503
+
+    try:
+        result = chat_memory.verify_conversation_integrity()
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/chat/fallacy-check', methods=['POST'])
+def chat_check_fallacies():
+    """
+    Check a message for logical fallacies using Bayesian detection.
+
+    Request body:
+    {
+        "message": "Either you're with us or against us."
+    }
+
+    Returns detected fallacies with probabilities and explanations.
+    """
+    if not chat_memory:
+        return jsonify({"error": "chat memory not initialized"}), 503
+
+    try:
+        data = request.json
+        if not data or "message" not in data:
+            return jsonify({"error": "request must include 'message'"}), 400
+
+        message = data.get("message", "")
+        fallacies = chat_memory.fallacy_detector.detect_fallacies(message)
+        hint = chat_memory.get_fallacy_hint(message)
+
+        return jsonify({
+            "message": message,
+            "fallacies": fallacies,
+            "hint": hint,
+            "has_fallacies": len(fallacies) > 0
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/chat/memory-summary', methods=['GET'])
+def chat_memory_summary():
+    """
+    Get a summary of the memory system state.
+
+    Returns memory statistics, audit chain stats, and identity information.
+    """
+    if not chat_memory:
+        return jsonify({"error": "chat memory not initialized"}), 503
+
+    try:
+        result = chat_memory.get_memory_summary()
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/chat/anti-entropy-audit', methods=['POST'])
+def chat_anti_entropy_audit():
+    """
+    Run a comprehensive anti-entropy audit of the memory system.
+
+    Returns audit results and any detected inconsistencies.
+    """
+    if not chat_memory:
+        return jsonify({"error": "chat memory not initialized"}), 503
+
+    try:
+        result = chat_memory.anti_entropy_audit()
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/chat/public-key', methods=['GET'])
+def chat_get_public_key():
+    """
+    Get the current public key for the audit chain.
+
+    Returns the Ed25519 public key in hex format.
+    """
+    if not chat_memory:
+        return jsonify({"error": "chat memory not initialized"}), 503
+
+    try:
+        public_key = chat_memory.get_public_key()
+        return jsonify({
+            "public_key": public_key,
+            "algorithm": "Ed25519",
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/chat/rotate-key', methods=['POST'])
+def chat_rotate_key():
+    """
+    Rotate the cryptographic key for the audit chain.
+
+    This invalidates the old key and creates a new signing key.
+    All future entries will be signed with the new key.
+    """
+    if not chat_memory:
+        return jsonify({"error": "chat memory not initialized"}), 503
+
+    grant_error = require_write_grant("chat_key_rotation")
+    if grant_error:
+        return grant_error
+
+    try:
+        result = chat_memory.rotate_audit_key()
+        return jsonify(result), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
