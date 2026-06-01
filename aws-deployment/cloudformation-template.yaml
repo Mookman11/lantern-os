@@ -14,6 +14,14 @@ Parameters:
     Type: Number
     Default: 2
     Description: Desired number of ECS tasks
+  RDSKmsKeyId:
+    Type: String
+    Description: KMS Key ID for RDS encryption
+    Default: '2ab7eb4a-f825-4002-8158-6176a8066789'
+  SecretsKmsKeyId:
+    Type: String
+    Description: KMS Key ID for Secrets Manager encryption
+    Default: 'd6ca8529-d0f3-412f-964f-ab40570848b7'
 
 Resources:
   # VPC & Networking
@@ -160,6 +168,10 @@ Resources:
         - !Ref RDSSecurityGroup
       MultiAZ: false
       BackupRetentionPeriod: 7
+      StorageEncrypted: true
+      KmsKeyId: !Sub 'arn:aws:kms:${AWS::Region}:${AWS::AccountId}:key/${RDSKmsKeyId}'
+      EnableCloudwatchLogsExports:
+        - postgresql
 
   # ElastiCache Redis
   CacheSubnetGroup:
@@ -175,10 +187,13 @@ Resources:
     Properties:
       CacheNodeType: cache.t3.micro
       Engine: redis
+      EngineVersion: '7.0'
       NumCacheNodes: 1
       VpcSecurityGroupIds:
         - !Ref ECSSecurityGroup
       CacheSubnetGroupName: !Ref CacheSubnetGroup
+      AtRestEncryptionEnabled: true
+      TransitEncryptionEnabled: false
 
   # ALB
   LanternALB:
@@ -272,6 +287,13 @@ Resources:
                 Action:
                   - ecr:GetAuthorizationToken
                 Resource: '*'
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                  - kms:DescribeKey
+                Resource:
+                  - !Sub 'arn:aws:kms:${AWS::Region}:${AWS::AccountId}:key/${RDSKmsKeyId}'
+                  - !Sub 'arn:aws:kms:${AWS::Region}:${AWS::AccountId}:key/${SecretsKmsKeyId}'
 
   LanternTaskDefinition:
     Type: AWS::ECS::TaskDefinition
