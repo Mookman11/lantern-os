@@ -1,14 +1,14 @@
 ﻿{
-    "receiptId":  "orchestrator-20260601-101258",
-    "generatedAt":  "2026-06-01T10:12:58.8788611-04:00",
+    "receiptId":  "orchestrator-20260601-155741",
+    "generatedAt":  "2026-06-01T15:57:41.5732580-04:00",
     "evidenceClass":  "batch_orchestrator_run",
     "dryRun":  false,
     "summary":  {
                     "total":  6,
-                    "ok":  3,
-                    "failed":  0,
+                    "ok":  2,
+                    "failed":  1,
                     "skipped":  3,
-                    "passed":  true
+                    "passed":  false
                 },
     "jobs":  [
                  {
@@ -17,23 +17,23 @@
                      "reason":  "script_not_found",
                      "exitCode":  null,
                      "durationMs":  0,
-                     "startedAt":  "2026-06-01T10:12:53.7365851-04:00"
+                     "startedAt":  "2026-06-01T15:57:35.4470559-04:00"
                  },
                  {
                      "id":  "convergence-loop",
-                     "status":  "ok",
+                     "status":  "failed",
                      "reason":  null,
-                     "exitCode":  0,
-                     "durationMs":  3042,
-                     "startedAt":  "2026-06-01T10:12:53.7500232-04:00"
+                     "exitCode":  1,
+                     "durationMs":  3037,
+                     "startedAt":  "2026-06-01T15:57:35.4511089-04:00"
                  },
                  {
                      "id":  "loop-receipt",
                      "status":  "ok",
                      "reason":  null,
                      "exitCode":  0,
-                     "durationMs":  1049,
-                     "startedAt":  "2026-06-01T10:12:56.7916995-04:00"
+                     "durationMs":  1020,
+                     "startedAt":  "2026-06-01T15:57:38.4947821-04:00"
                  },
                  {
                      "id":  "asset-discovery",
@@ -41,7 +41,7 @@
                      "reason":  "script_not_found",
                      "exitCode":  null,
                      "durationMs":  0,
-                     "startedAt":  "2026-06-01T10:12:57.8430812-04:00"
+                     "startedAt":  "2026-06-01T15:57:39.5194038-04:00"
                  },
                  {
                      "id":  "sync-rag-pdf",
@@ -49,15 +49,15 @@
                      "reason":  "script_not_found",
                      "exitCode":  null,
                      "durationMs":  0,
-                     "startedAt":  "2026-06-01T10:12:57.8497739-04:00"
+                     "startedAt":  "2026-06-01T15:57:39.5252214-04:00"
                  },
                  {
                      "id":  "post-ingestion-purge",
                      "status":  "ok",
                      "reason":  null,
                      "exitCode":  0,
-                     "durationMs":  1018,
-                     "startedAt":  "2026-06-01T10:12:57.8533411-04:00"
+                     "durationMs":  2037,
+                     "startedAt":  "2026-06-01T15:57:39.5312342-04:00"
                  }
              ],
     "boundary":  "No automated paid API calls. No autonomous action without human review gate."

@@ -2,9 +2,15 @@
 Unit tests for Cryptographic Audit Chain
 """
 
+import sys
+import os
 import pytest
+
+# Add the apps directory to Python path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'apps'))
+
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from apps.superfleet_memory.anti_entropy_audit import CryptographicAuditChain
+from superfleet_memory.anti_entropy_audit import CryptographicAuditChain
 
 
 class TestCryptographicAuditChain:

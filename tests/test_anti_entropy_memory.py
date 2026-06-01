@@ -2,8 +2,14 @@
 Unit tests for Anti-Entropy Memory System
 """
 
+import sys
+import os
 import pytest
-from apps.superfleet_memory.anti_entropy_memory import AntiEntropyMemory
+
+# Add the apps directory to Python path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'apps'))
+
+from superfleet_memory.anti_entropy_memory import AntiEntropyMemory
 
 
 class TestAntiEntropyMemory:
