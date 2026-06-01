@@ -28,6 +28,27 @@ Every change should move raw material toward an Orion-style technical sheet: cle
 
 ---
 
+## Discord Server
+
+Lantern OS runs a monetized Discord server with tiered role access.
+
+```text
+# Setup guide
+docs/DISCORD-SERVER-SETUP.md
+
+# Bot v2 (slash commands + role gating)
+src/discord_lounge_bot/bot_v2.py
+
+# Bot launcher
+scripts/Start-DiscordBotV2.ps1
+
+# Dockerfile
+ops/Dockerfile-discord-bot-v2
+```
+
+Roles: Public (free), Supporter ($20/mo), Pilot ($200/mo), Founder (operator).
+Commands are gated by Discord role. Subscription links go to Stripe checkout.
+
 ## Source Repos
 
 All source repositories are indexed in `manifests/TMP-REPO-RAG-INDEX.md` and
