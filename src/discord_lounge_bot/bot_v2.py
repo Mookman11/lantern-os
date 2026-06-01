@@ -24,6 +24,14 @@ except Exception as exc:
     print(f"[FATAL] Missing dependency 'discord.py': {exc}")
     sys.exit(1)
 
+# MCP Bridge — optional integration with orchestrator
+try:
+    from .mcp_bridge import MCPBridge, get_bridge
+    MCP_AVAILABLE = True
+except ImportError:
+    MCP_AVAILABLE = False
+    get_bridge = None
+
 # ── Configuration ──
 TOKEN = os.getenv("DISCORD_BOT_TOKEN", "").strip()
 GUILD_ID = os.getenv("LANTERN_DISCORD_GUILD_ID", "").strip()
@@ -348,6 +356,61 @@ async def cmd_boot_check(interaction: discord.Interaction):
 @require_tier(ROLE_FOUNDER)
 async def cmd_release_gate(interaction: discord.Interaction):
     await interaction.response.send_message("v1.0.0 gate: held. No release without operator approval and evidence.", ephemeral=True)
+
+
+# ── MCP Orchestrator Integration (Optional) ──
+
+@tree.command(name="orchestrator", description="Check Lantern orchestrator status")
+@require_tier(ROLE_PILOT)
+async def cmd_orchestrator_status(interaction: discord.Interaction):
+    """Query MCP server for orchestrator health."""
+    if not MCP_AVAILABLE or not get_bridge:
+        await interaction.response.send_message(
+            "❌ MCP bridge not available. Install with: `pip install aiohttp`",
+            ephemeral=True
+        )
+        return
+
+    await interaction.response.defer()
+    bridge = get_bridge()
+    status_data = await bridge.get_orchestrator_status()
+
+    embed = discord.Embed(title="Lantern Orchestrator Status", color=0x0d9488)
+    embed.description = bridge.format_status_embed(status_data)
+    embed.add_field(name="Timestamp", value=status_data.get("timestamp", "N/A"), inline=False)
+    embed.add_field(name="Endpoint", value=bridge.mcp_url, inline=True)
+
+    if status_data.get("status") != "online":
+        embed.color = 0xdc2626  # Red if offline
+
+    embed.set_footer(text="Powered by Lantern Orchestrator MCP Bridge")
+    await interaction.followup.send(embed=embed)
+
+
+@tree.command(name="queue", description="Check Lantern task queue")
+@require_tier(ROLE_PILOT)
+async def cmd_queue_status(interaction: discord.Interaction):
+    """Query MCP server for pending tasks."""
+    if not MCP_AVAILABLE or not get_bridge:
+        await interaction.response.send_message(
+            "❌ MCP bridge not available. Install with: `pip install aiohttp`",
+            ephemeral=True
+        )
+        return
+
+    await interaction.response.defer()
+    bridge = get_bridge()
+    queue_data = await bridge.get_queue_tasks(limit=10)
+
+    embed = discord.Embed(title="Lantern Task Queue", color=0x2563eb)
+    embed.description = bridge.format_queue_embed(queue_data)
+    embed.add_field(name="Timestamp", value=queue_data.get("timestamp", "N/A"), inline=False)
+
+    if queue_data.get("count", 0) == 0:
+        embed.color = 0x059669  # Green if queue empty
+
+    embed.set_footer(text="Powered by Lantern Orchestrator MCP Bridge")
+    await interaction.followup.send(embed=embed)
 
 
 # ── Events ──
