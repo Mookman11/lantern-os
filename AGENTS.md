@@ -1,133 +1,243 @@
-# AGENTS
+# Operator Role — Lantern OS Repo
 
-Status: active agent instruction file  
-Repo: Lantern OS v1.0.0 staging  
-Style spine: `docs/ORION-MOOKMANREPORT4-STYLE.md`
-
----
-
-## Simple Answer
-
-Agents working in this repo should make Lantern OS clearer, safer, and easier to validate.
-
-Every change should move raw material toward an Orion-style technical sheet: clear purpose, real evidence, held boundaries, next action, and validation path.
+**Status:** Active operator instructions  
+**Effective:** 2026-06-01 (Phase A implementation)  
+**Audience:** Trained operators working on repo cleanup, features, and maintenance
 
 ---
 
-## Operating Rules
+## Your Role
 
-- Inspect before editing.
-- Keep changes small and reviewable.
-- Do not import dirty worktree state blindly from source repos.
-- Do not mutate boot configuration, partitions, firmware boot order, or disks.
-- Do not claim v1.0.0 readiness without operator approval.
-- Use the Innovator evidence method for promotion decisions.
-- Do not stop at skeletons. If a loop finds actionable local issues, fix the first 2-4 before starting new expansion work.
-- Retire deprecated surfaces as an explicit convergence step.
-- Apply the Orion / Mookman Report 4 style to public-facing Markdown, flat text, and CSS.
+You are a trained operator responsible for:
+1. **Claiming issues** from the Linear backlog (not GitHub)
+2. **Completing work** on local `cleanup/*` or `feature/*` branches
+3. **Submitting PRs** for Founder review
+4. **Communicating progress** via Linear comments (async, not Slack)
+5. **Respecting boundaries** around private state, secrets, and configuration
+
+**You are NOT responsible for:**
+- Architecture decisions (Founder owns these)
+- Merging to master (Founder approves)
+- Release management
+- Deployment decisions
 
 ---
 
-## Discord Server
+## Starting Work
 
-Lantern OS runs a monetized Discord server with tiered role access.
+### 1. Read the Operating Rules
 
-```text
-# Setup guide
-docs/DISCORD-SERVER-SETUP.md
+- **Inspect before editing:** Understand what a file does before changing it
+- **Keep changes small:** PRs should be reviewable in <30 minutes
+- **Do NOT import dirty state:** Only work with tracked files (git-clean)
+- **Do NOT mutate system config:** No touching boot, firmware, partitions, disks
+- **Do NOT claim readiness:** Founder signs off on production-readiness
+- **Delete cleanly:** When removing files, grep for references first
+- **Retire deprecated surfaces:** Don't leave broken docs or scripts
 
-# Bot v2 (slash commands + role gating)
-src/discord_lounge_bot/bot_v2.py
+### 2. Understand the Repo
 
-# Bot launcher
-scripts/Start-DiscordBotV2.ps1
+Read in this order:
+1. **README.md** — what Lantern + Suzie are
+2. **CONTRIBUTING.md** — commit message style, branch naming
+3. **docs/LINEAR-WORKFLOW.md** — how to claim and complete work
+4. **docs/REPO-CONTRACT.md** — what belongs in this repo (see Phase C Phase 0)
 
-# Dockerfile
-ops/Dockerfile-discord-bot-v2
+### 3. Claim an Issue
+
+Go to **Linear workspace: Lantern OS**
+
+1. Find your task in the **Backlog**
+2. Click **Assign to myself**
+3. Move status to **In Progress**
+4. Comment: "Starting work"
+
+### 4. Work Locally
+
+```bash
+# Create a branch (cleanup or feature style)
+git checkout -b cleanup/phase-1-delete-mythology
+# or
+git checkout -b feature/add-orchestrator-endpoint
+
+# Make your changes
+# Test locally
+# Commit with clear message
+
+# Push to remote
+git push origin cleanup/phase-1-delete-mythology
+
+# Open PR (use GitHub web or gh cli)
+gh pr create --title "Phase 1 — Delete mythology docs" --body "..."
 ```
 
-Roles: Public (free), Supporter ($20/mo), Pilot ($200/mo), Founder (operator).
-Commands are gated by Discord role. Subscription links go to Stripe checkout.
+### 5. Mark Ready for Review
 
-## Source Repos
+In Linear:
+- Update status to **Ready for Review**
+- Comment with PR link: `https://github.com/alex-place/lantern-os/pull/123`
+- Add any implementation notes or gotchas
 
-All source repositories are indexed in `manifests/TMP-REPO-RAG-INDEX.md` and
-`manifests/TMP-REPO-RAG-INDEX.json`. CI/CD checks them out dynamically; local
-paths are no longer the source of truth.
+### 6. Wait for Founder Review
 
-```text
-# Primary indexes
-manifests/TMP-REPO-RAG-INDEX.md
-manifests/TMP-REPO-RAG-INDEX.json
+Founder reviews **every Friday**. No need to ping — they check Linear daily.
 
-# Key upstream origins
-https://github.com/human-flourishing-frameworks/human-flourishing-frameworks.git
-https://github.com/alex-place/lantern-os.git
+If approved: **Merge and mark Done**  
+If changes needed: **Update PR and re-comment in Linear**
+
+---
+
+## Operating Norms
+
+### Communication
+
+- **Async first:** Post in Linear, don't wait for Slack/Discord
+- **Be specific:** "Deleted 45 mythology docs, 15 remaining" vs "working on phase 1"
+- **Link to work:** Paste the PR URL in your comment for traceability
+- **Ask early:** If stuck, comment in the issue with what you need from Founder
+
+### Code Quality
+
+- **Test your changes:** Run `pytest` if tests exist
+- **No dead code:** Don't leave broken scripts or docs
+- **No secrets:** Never commit tokens, passwords, or API keys (use `.env` files)
+- **Clean git history:** One commit per issue, clear message, no "oops" commits
+
+### Respect Boundaries
+
+- **No live state in repo:** Never commit conversation logs, journal files, or `.lantern/state/`
+- **No private names:** Don't include personal names of team members in code/docs
+- **No mythology language:** Don't use TARDIS, spine, convergence, anchor, etc. in code/docs
+- **No overengineering claims:** Don't claim features are "production-ready" or "v2.0" until Founder approves
+
+---
+
+## Common Workflows
+
+### Cleanup Phase (Repo Reset)
+
+You're responsible for removing old code/docs and documenting what stays.
+
+```bash
+# Example Phase 1 cleanup: delete mythology docs
+
+# 1. Find all files matching the pattern
+find docs/ -name "*TARDIS*" -o -name "*spine*" -o -name "*anchor*"
+
+# 2. Verify no code depends on them
+grep -r "TARDIS\|spine\|anchor" src/ --include="*.py" --include="*.ps1"
+
+# 3. Delete the files
+git rm docs/TARDIS-*.md docs/spine-*.md docs/anchor-*.md
+
+# 4. Commit
+git commit -m "Phase 1 — Delete mythology docs (TARDIS, spine, anchor)"
+
+# 5. Verify
+grep -r "TARDIS\|spine\|anchor" docs/ --include="*.md"  # Should return 0 matches
 ```
 
-Treat working tree state as evidence, not as something to overwrite or reset.
-Update the RAG index when repo locations or remotes change.
+### Feature Work
 
----
+You're adding a new capability (e.g., new API endpoint, new Discord command).
 
-## Promotion Criteria
+```bash
+# 1. Create feature branch
+git checkout -b feature/add-orchestrator-status-endpoint
 
-An artifact can move into this repo when it has:
+# 2. Write code + tests
+# 3. Verify tests pass: pytest
+# 4. Commit
+git commit -m "Add /api/status endpoint for orchestrator health"
 
-- source path;
-- purpose;
-- claim IDs or clear claim summary;
-- validation status;
-- blockers and rollback notes;
-- operator approval status;
-- human-readable first screen;
-- no raw filepath spam above the first explanation.
-
----
-
-## Flat Document Shape
-
-Use this order for public-safe `.md` and `.txt` files unless the file has a stronger operational structure:
-
-1. title;
-2. short metadata block;
-3. simple answer;
-4. what it actually does;
-5. evidence / source discipline;
-6. proven / held / local-only;
-7. next safe action;
-8. validation path;
-9. appendices, raw commands, paths, and receipts.
-
----
-
-## CSS Surface Shape
-
-For static surfaces, use the Orion style:
-
-- limestone / warm white paper;
-- thin blue grid lines;
-- teal/cyan status accents;
-- amber held-state accents;
-- rounded technical panels;
-- visible focus outlines;
-- no fake active buttons;
-- disabled controls clearly marked as local-only or held.
-
----
-
-## Required Loop
-
-Before meaningful work, run:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Invoke-LanternConvergenceLoop.ps1
+# 5. Push and open PR
+git push origin feature/add-orchestrator-status-endpoint
+gh pr create ...
 ```
 
-Then handle the first 2-4 reported issues in priority order. If an issue cannot be fixed safely, mark it held in `manifests/open-issues.md` with the reason.
+---
+
+## Asking for Help
+
+**Stuck on a phase?** Comment in Linear:
+
+> Blocked on Phase 2: HFF/apps/ has 12 subfolders. Should I:
+> A) Delete only files matching mythology pattern
+> B) Deprecate entire apps/, move to archive/
+> C) Refactor individual apps to clean code
+>
+> Please advise by EOD.
+
+Founder will reply within 24 hours.
 
 ---
 
-## Branching
+## Escalation
 
-Use `codex/` branch names for agent work unless the operator asks otherwise.
+If something breaks or doesn't match your understanding:
+
+1. **Comment in Linear issue** with exact error message
+2. **Include context:** file path, line number, what you were doing
+3. **Provide evidence:** paste error output, test failure logs, etc.
+4. **Don't guess:** ask Founder before proceeding if you're unsure
+
+---
+
+## Weekly Rhythm
+
+| Day | Task |
+|-----|------|
+| Mon–Thu | Claim and work on issues |
+| Fri | Founder reviews all "Ready for Review" PRs (async) |
+| Fri | Celebrate completed work |
+| Fri | Next Cycle backlog planned |
+
+**No sync call required** — all async via Linear comments and PR reviews.
+
+---
+
+## Quick Reference
+
+| Task | Command |
+|------|---------|
+| Clone repo | `git clone https://github.com/alex-place/lantern-os.git` |
+| Create branch | `git checkout -b cleanup/phase-X-description` |
+| Check changes | `git status`, `git diff` |
+| Commit | `git commit -m "Phase X — [description]"` |
+| Push | `git push origin cleanup/phase-X-description` |
+| Open PR | `gh pr create --title "..." --body "..."` |
+| Update Linear | Move issue status, add comment with PR URL |
+
+---
+
+## What Success Looks Like
+
+✅ **A good week:**
+- Claimed 1-2 issues from Linear
+- Completed them locally with small, reviewable commits
+- Opened PRs with clear descriptions
+- Marked issues "Ready for Review"
+- Responded to feedback from Founder
+- Merged at least one PR
+
+✅ **A good PR:**
+- Solves one issue completely (not half)
+- Has clear commit message
+- All tests pass (if applicable)
+- No dead code or broken docs
+- No secrets or private data
+- Linked in Linear issue
+
+❌ **Red flags:**
+- "Added X, still need to fix Y" (incomplete)
+- Commits with messages like "WIP" or "oops" (unclear)
+- No Linear comment linking the PR
+- Code that seems to work but tests fail
+- Old mythology language still in docs
+
+---
+
+**Last Updated:** 2026-06-01  
+**Next Review:** 2026-06-14 (end of Phase C Phase 1)
+
+**Questions?** Read `docs/LINEAR-WORKFLOW.md` or comment in your Linear issue.
