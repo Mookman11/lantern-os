@@ -36,52 +36,56 @@ jobs:
 
       - name: Build Docker image
         run: |
-          echo "[1/3] Building Docker image for lantern-garage..."
+          echo "[1/4] Building Docker image for lantern-garage..."
           docker build -f apps/lantern-garage/Dockerfile \
             -t lantern-garage:latest \
-            -t lantern-garage:${{ github.sha }} \
+            -t 528081867536.dkr.ecr.us-east-1.amazonaws.com/lantern-os:${{ github.sha }} \
             apps/lantern-garage/
           echo "✓ Docker image built"
 
-      - name: Validate image health endpoint
-        run: |
-          echo "[2/3] Starting container to validate health endpoint..."
-          docker run -d -p 8080:8080 --name test-container lantern-garage:latest npm run start:cloud &
-          sleep 3
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
 
-          if curl -s http://localhost:8080/api/health | grep -q '"ok"'; then
-            echo "✓ Health endpoint responds"
-          else
-            echo "⚠ Health endpoint check incomplete (local docker test)"
-          fi
-          docker stop test-container || true
-          docker rm test-container || true
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Simulate ECS deployment
+      - name: Push image to Amazon ECR
         run: |
-          echo "[3/3] Deployment configuration ready..."
-          echo "Image: lantern-garage:latest"
-          echo "Port: 8080"
-          echo "Service: lantern-garage"
-          echo "Cluster: lantern-os-prod"
-          echo ""
-          echo "In production, this would:"
-          echo "1. Push image to AWS ECR"
-          echo "2. Update ECS service definition"
-          echo "3. Deploy new task definition"
-          echo "4. Run smoke tests via /api/health"
-          echo ""
-          echo "✓ Deployment configuration valid"
+          echo "[2/4] Pushing image to ECR..."
+          docker push 528081867536.dkr.ecr.us-east-1.amazonaws.com/lantern-os:${{ github.sha }}
+          echo "✓ Image pushed: 528081867536.dkr.ecr.us-east-1.amazonaws.com/lantern-os:${{ github.sha }}"
+
+      - name: Update ECS service
+        run: |
+          echo "[3/4] Updating ECS service..."
+          aws ecs update-service \
+            --cluster lantern-cluster \
+            --service lantern-service \
+            --force-new-deployment \
+            --region us-east-1
+          echo "✓ ECS service updated"
+
+      - name: Wait for service stability
+        run: |
+          echo "[4/4] Waiting for service stability..."
+          aws ecs wait services-stable \
+            --cluster lantern-cluster \
+            --services lantern-service \
+            --region us-east-1
+          echo "✓ Service is stable"
 
       - name: Summary
         run: |
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "✓ Deployment ready for AWS ECS Fargate"
+          echo "✓ Deployed to AWS ECS Fargate"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "Image: 528081867536.dkr.ecr.us-east-1.amazonaws.com/lantern-os:${{ github.sha }}"
+          echo "Cluster: lantern-cluster"
+          echo "Service: lantern-service"
           echo ""
-          echo "When AWS credentials are configured:"
-          echo "- Image will be pushed to ECR"
-          echo "- ECS service will be updated"
-          echo "- Central Hub will be live at cloud endpoint"
-          echo ""
-          echo "Current status: Docker build validated ✓"
+          echo "Current status: LIVE ✓"

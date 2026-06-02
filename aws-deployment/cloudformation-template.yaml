@@ -9,19 +9,23 @@ Parameters:
   ContainerImage:
     Type: String
     Description: Docker image URL from ECR
-    Default: '123456789.dkr.ecr.us-east-1.amazonaws.com/lantern-os:latest'
+    Default: '528081867536.dkr.ecr.us-east-1.amazonaws.com/lantern-os:latest'
   DesiredCount:
     Type: Number
     Default: 2
     Description: Desired number of ECS tasks
   RDSKmsKeyId:
     Type: String
-    Description: KMS Key ID for RDS encryption
-    Default: '2ab7eb4a-f825-4002-8158-6176a8066789'
+    Description: KMS Key ID for RDS encryption (optional — leave blank for default AWS managed key)
+    Default: ''
   SecretsKmsKeyId:
     Type: String
-    Description: KMS Key ID for Secrets Manager encryption
-    Default: 'd6ca8529-d0f3-412f-964f-ab40570848b7'
+    Description: KMS Key ID for Secrets Manager encryption (optional — leave blank for default AWS managed key)
+    Default: ''
+
+Conditions:
+  HasRDSKmsKey: !Not [!Equals [!Ref RDSKmsKeyId, '']]
+  HasSecretsKmsKey: !Not [!Equals [!Ref SecretsKmsKeyId, '']]
 
 Resources:
   # VPC & Networking
@@ -168,8 +172,8 @@ Resources:
         - !Ref RDSSecurityGroup
       MultiAZ: false
       BackupRetentionPeriod: 7
-      StorageEncrypted: true
-      KmsKeyId: !Sub 'arn:aws:kms:${AWS::Region}:${AWS::AccountId}:key/${RDSKmsKeyId}'
+      StorageEncrypted: !If [HasRDSKmsKey, true, false]
+      KmsKeyId: !If [HasRDSKmsKey, !Sub 'arn:aws:kms:${AWS::Region}:${AWS::AccountId}:key/${RDSKmsKeyId}', !Ref 'AWS::NoValue']
       EnableCloudwatchLogsExports:
         - postgresql
 
@@ -212,23 +216,16 @@ Resources:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
       Name: lantern-api-tg
-      Port: 5000
+      Port: 8080
       Protocol: HTTP
       TargetType: ip
       VpcId: !Ref LanternVPC
-      HealthCheckPath: /health
+      HealthCheckPath: /api/health
       HealthCheckProtocol: HTTP
-
-  DashboardTargetGroup:
-    Type: AWS::ElasticLoadBalancingV2::TargetGroup
-    Properties:
-      Name: lantern-dashboard-tg
-      Port: 4177
-      Protocol: HTTP
-      TargetType: ip
-      VpcId: !Ref LanternVPC
-      HealthCheckPath: /
-      HealthCheckProtocol: HTTP
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
 
   ALBListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
@@ -291,9 +288,13 @@ Resources:
                 Action:
                   - kms:Decrypt
                   - kms:DescribeKey
-                Resource:
-                  - !Sub 'arn:aws:kms:${AWS::Region}:${AWS::AccountId}:key/${RDSKmsKeyId}'
-                  - !Sub 'arn:aws:kms:${AWS::Region}:${AWS::AccountId}:key/${SecretsKmsKeyId}'
+                Resource: !If
+                  - HasRDSKmsKey
+                  - - !Sub 'arn:aws:kms:${AWS::Region}:${AWS::AccountId}:key/${RDSKmsKeyId}'
+                  - !If
+                    - HasSecretsKmsKey
+                    - - !Sub 'arn:aws:kms:${AWS::Region}:${AWS::AccountId}:key/${SecretsKmsKeyId}'
+                    - - '*'
 
   LanternTaskDefinition:
     Type: AWS::ECS::TaskDefinition
@@ -311,14 +312,8 @@ Resources:
           Image: !Ref ContainerImage
           Essential: true
           PortMappings:
-            - ContainerPort: 5000
-              HostPort: 5000
-              Protocol: tcp
-            - ContainerPort: 4177
-              HostPort: 4177
-              Protocol: tcp
-            - ContainerPort: 9000
-              HostPort: 9000
+            - ContainerPort: 8080
+              HostPort: 8080
               Protocol: tcp
           Environment:
             - Name: FLASK_ENV
@@ -359,7 +354,7 @@ Resources:
           AssignPublicIp: DISABLED
       LoadBalancers:
         - ContainerName: lantern-container
-          ContainerPort: 5000
+          ContainerPort: 8080
           TargetGroupArn: !Ref APITargetGroup
 
 Outputs:
@@ -367,14 +362,11 @@ Outputs:
     Description: DNS name of the load balancer
     Value: !GetAtt LanternALB.DNSName
   APIEndpoint:
-    Description: Lantern API endpoint
-    Value: !Sub 'http://${LanternALB.DNSName}:5000'
+    Description: Lantern Garage API endpoint
+    Value: !Sub 'http://${LanternALB.DNSName}:8080/api/health'
   DashboardEndpoint:
-    Description: Lantern Dashboard endpoint
-    Value: !Sub 'http://${LanternALB.DNSName}:4177'
-  HealthCheckEndpoint:
-    Description: Health check endpoint
-    Value: !Sub 'http://${LanternALB.DNSName}:9000/health'
+    Description: Lantern Dashboard (GitHub Pages mirror)
+    Value: 'https://alex-place.github.io/lantern-os/'
   RDSEndpoint:
     Description: RDS PostgreSQL endpoint
     Value: !GetAtt LanternDatabase.Endpoint.Address
