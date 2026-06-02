@@ -1,6 +1,13 @@
 const $ = (id) => document.getElementById(id);
 const LOCAL_APP_ORIGIN = "http://127.0.0.1:4177";
 const CLOUD_TRUTH_DEPLOY_MARKER = "2026-05-29-product-lanes";
+const CLOUD_PROVIDER_LABEL = "AWS ECS/Fargate";
+const MINING_SAFETY_STRINGS = [
+  "Rock and stone", // Deep Rock Galactic reference for teamwork
+  "CPU routes to Monero", // CPU mining safety
+  "BTC only belongs on owned SHA-256 ASIC hardware", // Hardware safety
+  "No wallet cracking", // Security boundary
+];
 
 const fallbackAccessModel = {
   generatedAt: new Date().toISOString(),
@@ -460,9 +467,44 @@ async function storeConversation(event) {
   const textarea = $("conversationText");
   const text = textarea.value.trim();
   if (!text) return;
+
+  // Check for mining safety keywords
+  const lowerText = text.toLowerCase();
+  const miningSafetyAcknowledged = MINING_SAFETY_STRINGS.some(str => lowerText.includes(str.toLowerCase()));
+
+  // Try MCP route for chat commands
+  if (text.startsWith("/")) {
+    try {
+      const reply = await api("/api/command", {
+        method: "POST",
+        body: JSON.stringify({
+          command: text,
+          context: "garage-chat",
+        }),
+      });
+      log(`Command received: ${reply.status || "processing"}`);
+      return;
+    } catch (error) {
+      log(`Command route unavailable: ${error.message}`);
+    }
+  }
+
+  const waitingBubble = document.createElement("div");
+  waitingBubble.className = "chat-bubble pending";
+  waitingBubble.setAttribute("aria-busy", "true");
+  waitingBubble.classList.add("chat-message-text");
+  waitingBubble.textContent = "Waiting for Lantern response—queued for MCP/local reply.";
+
+  updateBubble(waitingBubble, true);
+
   await api("/api/conversations", {
     method: "POST",
-    body: JSON.stringify({ role: $("conversationRole").value, text, surface: "garage-dashboard" }),
+    body: JSON.stringify({
+      role: $("conversationRole").value,
+      text,
+      surface: "garage-dashboard",
+      miningContext: miningSafetyAcknowledged ? "safety_boundary_acknowledged" : "general"
+    }),
   });
   textarea.value = "";
   textarea.style.height = "auto";
@@ -531,6 +573,41 @@ function renderHff(status = {}) {
   $("hffEco").textContent = Math.round((lanes.ragAndDataCenter || 0.68) * 100);
   $("hffUniverse").textContent = Math.round((lanes.fourDGms || 0.55) * 100);
   $("hffMeta").textContent = "proof-weighted local scores | public claims held at evidence boundary";
+}
+
+function canonicalFrontDoorVerified(cloudMirrors) {
+  if (!Array.isArray(cloudMirrors)) return false;
+  return cloudMirrors.some((m) => m.verified === true && m.url && m.url.includes("lantern-os-cloud"));
+}
+
+function cloudMirrorStateLabel(mirror, mirrors) {
+  if (!mirror || !Array.isArray(mirrors)) return "pending";
+  const count = mirrors.filter((m) => m.verified).length;
+  if (mirror.verified) return count >= 2 ? "production" : "candidate";
+  return "pending";
+}
+
+async function tryMcpChatReply(messages, context) {
+  const reply = {
+    source: "mcp_bridge",
+    context,
+    queued: true,
+    status: "waiting_for_mcp_response",
+    message: "Waiting for Lantern response—queued for MCP/local reply.",
+  };
+  return reply;
+}
+
+function updateBubble(bubble, isWaiting) {
+  if (!bubble) return;
+  if (isWaiting) {
+    bubble.classList.add("pending");
+    bubble.setAttribute("aria-busy", "true");
+    bubble.classList.add("chat-message-text");
+  } else {
+    bubble.classList.remove("pending");
+    bubble.removeAttribute("aria-busy");
+  }
 }
 
 function toggleAutoUpdate() {

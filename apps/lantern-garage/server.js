@@ -18,6 +18,23 @@ const maxDreamerTextLength = 2000;
 const dreamerNotebookDir = path.join(repoRoot, "data", "dreamer", "notebooks");
 const writeQueues = new Map();
 
+function tryMcpChatReply(messages, context) {
+  return {
+    source: "mcp_bridge",
+    context,
+    queued: true,
+    status: "waiting_for_mcp_response",
+  };
+}
+
+function get_mcp_feature_overview() {
+  return {
+    name: "Lantern MCP Bridge",
+    description: "Model Context Protocol, not Multi-Chain Protocol",
+    status: "operational",
+    features: ["tool_discovery", "tool_invocation", "sse_transport"],
+  };
+}
 
 function normalizeDreamerUser(value) {
   const user = String(value || "courtney")
@@ -816,6 +833,10 @@ function sendJson(res, data, status = 200) {
   res.writeHead(status, {
     "Content-Type": "application/json; charset=utf-8",
     "Cache-Control": "no-store",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+    "X-Frame-Options": "DENY",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
@@ -843,6 +864,10 @@ function sendFile(res, filePath) {
     res.writeHead(200, {
       "Content-Type": type,
       "Cache-Control": "no-store",
+      "X-Content-Type-Options": "nosniff",
+      "Referrer-Policy": "no-referrer",
+      "X-Frame-Options": "DENY",
+      "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
       "Access-Control-Allow-Origin": "*",
     });
     res.end(data);
