@@ -1,4 +1,4 @@
-name: CI
+﻿name: CI
 
 on:
   push:
@@ -29,19 +29,19 @@ jobs:
           test -f README.md || (echo "README.md missing" && exit 1)
           test -f AGENTS.md || (echo "AGENTS.md missing" && exit 1)
           test -f docs/CONVERGENCE-LOOP.md || (echo "docs/CONVERGENCE-LOOP.md missing" && exit 1)
-          echo "✓ All required top-level files present"
+          echo "Γ£ô All required top-level files present"
 
       - name: Check manifests
         run: |
           test -f manifests/FOUNDRY-MATRIX-RAG-DOLLHOUSE.md || (echo "FOUNDRY-MATRIX-RAG-DOLLHOUSE.md missing" && exit 1)
           test -f manifests/open-issues.md || (echo "open-issues.md missing" && exit 1)
-          echo "✓ All required manifests present"
+          echo "Γ£ô All required manifests present"
 
       - name: Check surfaces
         run: |
           test -f surfaces/shareholder-index/index.html || (echo "shareholder-index/index.html missing" && exit 1)
           test -f surfaces/shareholder-index/styles.css || (echo "shareholder-index/styles.css missing" && exit 1)
-          echo "✓ All required surfaces present"
+          echo "Γ£ô All required surfaces present"
 
       - name: Validate HTML links
         run: |
@@ -60,9 +60,9 @@ jobs:
               missing.append(href)
 
           if missing:
-            print(f"✗ Missing links: {missing}")
+            print(f"Γ£ù Missing links: {missing}")
             exit(1)
-          print(f"✓ All {len(hrefs)} links valid")
+          print(f"Γ£ô All {len(hrefs)} links valid")
           EOF
 
   # ============================================================================
@@ -99,11 +99,11 @@ jobs:
 
       - name: Install dependencies
         run: |
-          cd tests && npm ci --prefer-offline
+          cd apps/lantern-garage && npm ci --prefer-offline
 
       - name: Run Node tests
         run: |
-          cd tests && npm test || true
+          cd apps/lantern-garage && npm test || true
 
   # ============================================================================
   # CONVERGENCE: Consistency checks
@@ -116,8 +116,8 @@ jobs:
 
       - name: Verify repo contract
         run: |
-          test -f docs/REPO-CONTRACT.md || echo "⚠ docs/REPO-CONTRACT.md missing"
-          echo "✓ Repo contract check"
+          test -f docs/REPO-CONTRACT.md || echo "ΓÜá docs/REPO-CONTRACT.md missing"
+          echo "Γ£ô Repo contract check"
 
       - name: Verify workflow structure
         run: |
@@ -129,8 +129,8 @@ jobs:
           ]
           missing = [p for p in required if not Path(p).exists()]
           if missing:
-              raise SystemExit(f'✗ Missing workflows: {missing}')
-          print('✓ All required workflows present')
+              raise SystemExit(f'Γ£ù Missing workflows: {missing}')
+          print('Γ£ô All required workflows present')
           EOF
 
   # ============================================================================
@@ -146,12 +146,12 @@ jobs:
         run: |
           test -f manifests/cloud-mirrors.json || (echo "cloud-mirrors.json missing" && exit 1)
           python3 -m json.tool manifests/cloud-mirrors.json > /dev/null || (echo "Invalid JSON" && exit 1)
-          echo "✓ Cloud mirrors config valid"
+          echo "Γ£ô Cloud mirrors config valid"
 
       - name: Check MCP contract
         run: |
-          test -f docs/LANTERN-RUNTIME-CICD.md || echo "⚠ LANTERN-RUNTIME-CICD.md missing"
-          echo "✓ MCP contract check"
+          test -f docs/LANTERN-RUNTIME-CICD.md || echo "ΓÜá LANTERN-RUNTIME-CICD.md missing"
+          echo "Γ£ô MCP contract check"
 
   # ============================================================================
   # CONVERGENCE: Full convergence loop validation
@@ -172,14 +172,14 @@ jobs:
           # Validate JSON structure
           python3 -c "import json; json.load(open('config/batch-jobs-enhanced.json'))" || (echo "Invalid batch config JSON" && exit 1)
 
-          echo "✓ Batch framework validated by CI/CD"
+          echo "Γ£ô Batch framework validated by CI/CD"
 
       - name: Validate CI/CD from convergence perspective
         run: |
           echo "Checking that convergence loop can validate CI/CD..."
           test -f .github/workflows/ci.yml || (echo "CI workflow missing" && exit 1)
           test -f .github/workflows/deploy.yml || (echo "Deploy workflow missing" && exit 1)
-          echo "✓ CI/CD workflows validated from batch perspective"
+          echo "Γ£ô CI/CD workflows validated from batch perspective"
 
       - name: Test mutual validation loop
         run: |
@@ -187,7 +187,7 @@ jobs:
           echo "- Batch framework validates CI/CD: $(test -f .github/workflows/ci.yml && echo 'YES' || echo 'NO')"
           echo "- CI/CD validates batch framework: $(test -f config/batch-jobs-enhanced.json && echo 'YES' || echo 'NO')"
           echo ""
-          echo "✓ Mutual validation contract is active"
+          echo "Γ£ô Mutual validation contract is active"
 
   # ============================================================================
   # SUMMARY: All checks passed
@@ -204,13 +204,13 @@ jobs:
              [ "${{ needs.convergence-check.result }}" = "success" ] && \
              [ "${{ needs.integration-checks.result }}" = "success" ] && \
              [ "${{ needs.convergence-loop-validation.result }}" = "success" ]; then
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "✓ All core checks passed. Deploy gate unlocked."
-            echo "✓ CI/CD + Batch Framework mutual validation active"
-            echo "✓ Convergence loop ready to run on schedule"
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "ΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöü"
+            echo "Γ£ô All core checks passed. Deploy gate unlocked."
+            echo "Γ£ô CI/CD + Batch Framework mutual validation active"
+            echo "Γ£ô Convergence loop ready to run on schedule"
+            echo "ΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöü"
             exit 0
           else
-            echo "⚠ Some checks failed or skipped. Review logs above."
+            echo "ΓÜá Some checks failed or skipped. Review logs above."
             exit 0
           fi

@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
     [string]$OutputDir = (Join-Path (Resolve-Path (Join-Path $PSScriptRoot "..")).Path "data\internal-rag-house"),
     [switch]$IncludeFileBodies,
@@ -18,20 +18,17 @@ $hashFile = Join-Path $OutputDir "RAG-HOUSE-MANIFEST.sha256"
 $includeGlobs = @(
     "README.md",
     "AGENTS.md",
-    "QUICK-START.md",
     "docs/*.md",
-    "docs/**/*.md",
     "manifests/*.md",
-    "manifests/**/*.md",
     "reports/*.md",
-    "data/automation/*.json",
-    "data/automation/*.md",
-    "data/arc-reactor/*.json",
     "skills/*/SKILL.md",
-    "skills/**/*.md",
     "scripts/*.ps1",
     "data/world-model/*.jsonl",
-    "references/*.md"
+    "data/arc-reactor/*.json",
+    "data/wallet/**/*.json",
+    "references/*.md",
+    "rag/seeds/*.md",
+    "rag/**/*.md"
 )
 
 $excludeFragments = @(
@@ -71,7 +68,7 @@ function Get-FileSha256 {
 }
 
 $allFiles = Get-ChildItem -LiteralPath $repoRoot -File -Recurse | ForEach-Object {
-    $relative = $_.FullName.Substring($repoRoot.Length).TrimStart("\").Replace("/", "\")
+    $relative = [System.IO.Path]::GetRelativePath($repoRoot, $_.FullName).Replace("/", "\")
     if (Test-IncludedPath -RelativePath $relative) {
         [pscustomobject]@{
             path = $relative.Replace("\", "/")
