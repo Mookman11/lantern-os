@@ -1,6 +1,6 @@
 ﻿# Lantern OS Internal House RAG
 
-Generated: 2026-06-02T05:44:49.4440645-04:00
+Generated: 2026-06-02T05:58:32.5616960-04:00
 
 This flat file is an internal, source-linked RAG house index for Lantern OS. It records file paths, hashes, evidence classes, and optional file bodies. It does not delete or move source files.
 
@@ -23,9 +23,9 @@ This flat file is an internal, source-linked RAG house index for Lantern OS. It 
 ### caad/art-direction/doors/xenon-wedding-king-of-nowhere.md
 
 - evidenceClass: local_verified
-- bytes: 3354
-- sha256: 9ba785a0aeca277aa5339434cc56d62225561b6afb15e91682ef72c19b9ddb57
-- modifiedUtc: 2026-06-02T09:13:28.5738037Z
+- bytes: 3447
+- sha256: 33d94840b2fce7373785a61969b5226f0a99901d2f57a990407309f0f9adcbd5
+- modifiedUtc: 2026-06-02T09:50:16.8897829Z
 
 ### data/arc-reactor/status.json
 
@@ -664,6 +664,13 @@ This flat file is an internal, source-linked RAG house index for Lantern OS. It 
 - sha256: a1725ab43cdbb81a53929f4906e6d748218ffcf1fc66b50d9a87fc90845aba7c
 - modifiedUtc: 2026-06-02T08:25:20.7855948Z
 
+### rag/seeds/convergence-mathematical-foundations-2026-06-02.md
+
+- evidenceClass: local_verified
+- bytes: 7103
+- sha256: c69bfa92e729d3c8fb9c9ca047acd5f79a0e66dd1d1272ecee858a90f1df2ae9
+- modifiedUtc: 2026-06-02T09:58:15.3535189Z
+
 ### rag/seeds/dream-journal-branding-assets-2026-06-02.md
 
 - evidenceClass: local_verified
@@ -723,9 +730,9 @@ This flat file is an internal, source-linked RAG house index for Lantern OS. It 
 ### rag/seeds/xenon-wedding-king-of-nowhere-lore-2026-06-02.md
 
 - evidenceClass: local_verified
-- bytes: 5399
-- sha256: f17b4b1a549a1643108ae8f2e9c472e3e721639f845bbcd01f4cb7749ab6804a
-- modifiedUtc: 2026-06-02T09:13:08.1676254Z
+- bytes: 5553
+- sha256: 4dc3b7fefe22cac0c50c8efbcf6cadd8c0777852d90118b43b709f5bd0a95d70
+- modifiedUtc: 2026-06-02T09:50:16.8947839Z
 
 ### README.md
 
@@ -1572,7 +1579,7 @@ This flat file is an internal, source-linked RAG house index for Lantern OS. It 
 - evidenceClass: local_verified
 - bytes: 5973
 - sha256: ee9b5712a6647f67079b92dbfd7eac062e3d9ed7f1f07878fb55c7d13856305e
-- modifiedUtc: 2026-06-02T09:44:42.5580806Z
+- modifiedUtc: 2026-06-02T09:50:16.8957829Z
 
 ### scripts/Validate-BatchFramework.ps1
 
@@ -1651,12 +1658,19 @@ This flat file is an internal, source-linked RAG house index for Lantern OS. It 
 - sha256: f03cfb625dc5647eee23a12d1972a349e335a9fddf4193a98724cfb9238e980e
 - modifiedUtc: 2026-06-02T08:25:22.4522855Z
 
+### skills/convergence-mathematical-foundations/SKILL.md
+
+- evidenceClass: local_verified
+- bytes: 6514
+- sha256: 1fd24187b1e04d6dd6040e99197caac74c3da7b3d6e2098e1cd3ce30d0b2939a
+- modifiedUtc: 2026-06-02T09:57:37.5371880Z
+
 ### skills/dream_journal/SKILL.md
 
 - evidenceClass: local_verified
 - bytes: 5539
 - sha256: b90c7760a824f046923ac5f90820d76ca40703c4d59a82323abb34aa9ff14877
-- modifiedUtc: 2026-06-02T08:25:22.4522855Z
+- modifiedUtc: 2026-06-02T09:49:45.6540794Z
 
 ### skills/dream_journal_skill/SKILL.md
 
