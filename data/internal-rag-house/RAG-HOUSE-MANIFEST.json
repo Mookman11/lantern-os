@@ -1,0 +1,37 @@
+﻿{
+    "generatedAt":  "2026-05-31T23:30:08.0754167-04:00",
+    "root":  "D:\\tmp\\lantern-os",
+    "outputDir":  "D:\\tmp\\lantern-os\\data\\internal-rag-house",
+    "includeFileBodies":  false,
+    "maxBodyBytes":  200000,
+    "fileCount":  3,
+    "files":  [
+                  {
+                      "path":  "AGENTS.md",
+                      "bytes":  3528,
+                      "sha256":  "b7a87be89de99ddc07265e4fe94322ff31eb6e21196da2f189a56a9b7125c16a",
+                      "modifiedUtc":  "2026-06-01T02:58:07.4040930Z",
+                      "evidenceClass":  "local_verified"
+                  },
+                  {
+                      "path":  "QUICK-START.md",
+                      "bytes":  8464,
+                      "sha256":  "5025bc1318a66acf856f096e3ce9f2cba72086e0f4e5bb3ef7c9335d95841b8c",
+                      "modifiedUtc":  "2026-05-29T14:28:19.4737116Z",
+                      "evidenceClass":  "local_verified"
+                  },
+                  {
+                      "path":  "README.md",
+                      "bytes":  8565,
+                      "sha256":  "3237fd21b49b9805d5ee8f8a7de513058b41f8c46c49aaf34736c45a145245e2",
+                      "modifiedUtc":  "2026-05-31T21:18:37.3433908Z",
+                      "evidenceClass":  "local_verified"
+                  }
+              ],
+    "boundaries":  {
+                       "noDeletion":  true,
+                       "noSourceRepoMutation":  true,
+                       "noSecrets":  true,
+                       "sourceReposRemainAuthoritative":  true
+                   }
+}
