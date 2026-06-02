@@ -35,10 +35,8 @@ class LanternMCPConnector:
     def __init__(self, mcp_server_url: Optional[str] = None):
         self.mcp_url = mcp_server_url or os.getenv(
             "MCP_SERVER_URL",
-            "http://127.0.0.1:8771"
+            "http://127.0.0.1:8770/sse"
         )
-        # SSE endpoint for OpenAI Agents SDK
-        self.sse_url = f"{self.mcp_url}/sse"
         self.server: Optional[MCPServerSse] = None
         self.connected = False
         self.tools: List[Dict[str, Any]] = []
@@ -51,7 +49,7 @@ class LanternMCPConnector:
             return False
 
         try:
-            self.server = MCPServerSse(self.sse_url)
+            self.server = MCPServerSse(self.mcp_url)
             await self.server.connect()
             self.connected = True
             # Discover available tools
