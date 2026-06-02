@@ -3,319 +3,745 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Cache-Control" content="no-store">
-  <title>Lantern OS</title>
-  <link rel="stylesheet" href="styles.css?v=20260529-product-lanes">
-  <script defer src="app.js?v=20260529-product-lanes"></script>
+  <meta http-equiv="Cache-Control" no-store">
+  <title>Dream Journal by Lantern OS</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', 'Helvetica Neue', -apple-system, system-ui, sans-serif;
+      background: linear-gradient(135deg, #f5f0ff 0%, #fef9f3 100%);
+      color: #2c2c5c;
+      line-height: 1.6;
+      min-height: 100vh;
+      padding: 2rem 1rem;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 3rem;
+      padding: 2rem 0;
+    }
+
+    .lantern-icon {
+      font-size: 3rem;
+      margin-bottom: 1rem;
+    }
+
+    h1 {
+      font-size: 2.5rem;
+      background: linear-gradient(135deg, #5b4e9e 0%, #9d5c9d 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 0.5rem;
+      font-weight: 700;
+    }
+
+    .tagline {
+      font-size: 1.1rem;
+      color: #7a6fb8;
+      margin-bottom: 0.5rem;
+    }
+
+    .subtitle {
+      font-size: 0.95rem;
+      color: #9a8fb8;
+      max-width: 500px;
+      margin: 0 auto;
+    }
+
+    section {
+      margin-bottom: 3rem;
+    }
+
+    section > h2 {
+      font-size: 1.3rem;
+      color: #5b4e9e;
+      margin-bottom: 1.5rem;
+      font-weight: 600;
+      padding-bottom: 0.5rem;
+      border-bottom: 2px solid rgba(155, 92, 157, 0.3);
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
+
+    .stat-card {
+      background: white;
+      padding: 1.5rem;
+      border-radius: 12px;
+      text-align: center;
+      box-shadow: 0 2px 8px rgba(155, 92, 157, 0.12);
+      border: 1px solid rgba(155, 92, 157, 0.15);
+      transition: all 0.3s ease;
+    }
+
+    .stat-card:hover {
+      box-shadow: 0 4px 12px rgba(155, 92, 157, 0.2);
+      transform: translateY(-2px);
+    }
+
+    .stat-number {
+      font-size: 2.5rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, #d4a574 0%, #c9956a 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 0.5rem;
+    }
+
+    .stat-label {
+      font-size: 0.85rem;
+      color: #9a8fb8;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-weight: 600;
+    }
+
+    form {
+      background: white;
+      padding: 2rem;
+      border-radius: 16px;
+      box-shadow: 0 4px 12px rgba(155, 92, 157, 0.15);
+      border: 1px solid rgba(155, 92, 157, 0.1);
+    }
+
+    .form-group {
+      margin-bottom: 1.5rem;
+    }
+
+    label {
+      display: block;
+      font-size: 0.95rem;
+      margin-bottom: 0.6rem;
+      color: #5b4e9e;
+      font-weight: 500;
+    }
+
+    textarea, input[type="text"], input[type="number"], select {
+      width: 100%;
+      padding: 0.8rem;
+      background: #faf8ff;
+      color: #2c2c5c;
+      border: 1.5px solid rgba(155, 92, 157, 0.2);
+      border-radius: 8px;
+      font-family: inherit;
+      font-size: 0.95rem;
+      transition: all 0.2s ease;
+    }
+
+    textarea {
+      min-height: 120px;
+      resize: vertical;
+    }
+
+    textarea:focus, input:focus, select:focus {
+      outline: none;
+      border-color: #9d5c9d;
+      background: white;
+      box-shadow: 0 0 0 3px rgba(155, 92, 157, 0.1);
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+    }
+
+    @media (max-width: 640px) {
+      .form-row {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    button {
+      background: linear-gradient(135deg, #d4a574 0%, #c9956a 100%);
+      color: white;
+      border: none;
+      padding: 0.8rem 1.6rem;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 0.95rem;
+      transition: all 0.2s ease;
+      box-shadow: 0 2px 6px rgba(212, 165, 116, 0.3);
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 10px rgba(212, 165, 116, 0.4);
+    }
+
+    button:active {
+      transform: translateY(0);
+    }
+
+    .entries {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .entry {
+      background: white;
+      padding: 1.5rem;
+      border-radius: 12px;
+      border-left: 4px solid #d4a574;
+      box-shadow: 0 2px 6px rgba(155, 92, 157, 0.1);
+      transition: all 0.2s ease;
+    }
+
+    .entry:hover {
+      box-shadow: 0 4px 12px rgba(155, 92, 157, 0.15);
+    }
+
+    .entry-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.8rem;
+      font-size: 0.85rem;
+    }
+
+    .entry-kind {
+      background: linear-gradient(135deg, #ebe3ff 0%, #f3e8ff 100%);
+      color: #5b4e9e;
+      padding: 0.3rem 0.8rem;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+
+    .entry-time {
+      color: #b0a5c9;
+    }
+
+    .entry-text {
+      color: #4a4a6a;
+      margin-bottom: 0.8rem;
+      line-height: 1.6;
+    }
+
+    .entry-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      font-size: 0.8rem;
+    }
+
+    .tag {
+      background: rgba(155, 92, 157, 0.08);
+      color: #7a6fb8;
+      padding: 0.3rem 0.7rem;
+      border-radius: 6px;
+      border: 1px solid rgba(155, 92, 157, 0.15);
+    }
+
+    .empty-state {
+      text-align: center;
+      color: #9a8fb8;
+      padding: 2.5rem;
+      background: linear-gradient(135deg, #f9f6ff 0%, #fef9f3 100%);
+      border-radius: 12px;
+      border: 2px dashed rgba(155, 92, 157, 0.2);
+    }
+
+    .message {
+      padding: 1rem;
+      border-radius: 8px;
+      margin-bottom: 1.5rem;
+      font-size: 0.95rem;
+      display: none;
+    }
+
+    .message.success {
+      background: rgba(105, 180, 120, 0.15);
+      color: #4a7d5c;
+      border-left: 4px solid #69b478;
+    }
+
+    .message.error {
+      background: rgba(198, 40, 40, 0.15);
+      color: #8b3a3a;
+      border-left: 4px solid #c62828;
+    }
+
+    footer {
+      text-align: center;
+      padding: 2rem 0;
+      color: #b0a5c9;
+      font-size: 0.9rem;
+    }
+
+    .footer-note {
+      margin-top: 1rem;
+      padding: 1rem;
+      background: white;
+      border-radius: 8px;
+      border: 1px solid rgba(155, 92, 157, 0.1);
+    }
+
+    .footer-note strong {
+      color: #5b4e9e;
+    }
+
+    /* Chat panel */
+    .chat-card {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 4px 12px rgba(155, 92, 157, 0.15);
+      border: 1px solid rgba(155, 92, 157, 0.1);
+      overflow: hidden;
+    }
+
+    .chat-header {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 1rem 1.5rem;
+      background: linear-gradient(135deg, #5b4e9e 0%, #9d5c9d 100%);
+      color: white;
+    }
+
+    .chat-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.8rem;
+      margin-left: auto;
+      opacity: 0.95;
+    }
+
+    .status-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: #69b478;
+      box-shadow: 0 0 0 3px rgba(105, 180, 120, 0.3);
+    }
+
+    .status-dot.offline {
+      background: #d4a574;
+      box-shadow: 0 0 0 3px rgba(212, 165, 116, 0.3);
+    }
+
+    .chat-log {
+      padding: 1.25rem 1.5rem;
+      max-height: 420px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 0.9rem;
+      background: #faf8ff;
+    }
+
+    .bubble {
+      max-width: 85%;
+      padding: 0.8rem 1rem;
+      border-radius: 14px;
+      font-size: 0.95rem;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+
+    .bubble.lantern {
+      align-self: flex-start;
+      background: linear-gradient(135deg, #ebe3ff 0%, #f3e8ff 100%);
+      color: #3c3470;
+      border-bottom-left-radius: 4px;
+    }
+
+    .bubble.operator {
+      align-self: flex-end;
+      background: linear-gradient(135deg, #d4a574 0%, #c9956a 100%);
+      color: white;
+      border-bottom-right-radius: 4px;
+    }
+
+    .bubble.typing {
+      align-self: flex-start;
+      color: #9a8fb8;
+      font-style: italic;
+    }
+
+    .chat-suggestions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      padding: 0 1.5rem 1rem;
+    }
+
+    .chip {
+      background: rgba(155, 92, 157, 0.08);
+      color: #5b4e9e;
+      border: 1px solid rgba(155, 92, 157, 0.25);
+      padding: 0.45rem 0.9rem;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-family: inherit;
+      box-shadow: none;
+    }
+
+    .chip:hover {
+      background: rgba(155, 92, 157, 0.16);
+      transform: translateY(-1px);
+      box-shadow: none;
+    }
+
+    .chat-input-row {
+      display: flex;
+      gap: 0.6rem;
+      padding: 1rem 1.5rem 1.5rem;
+      border-top: 1px solid rgba(155, 92, 157, 0.12);
+    }
+
+    .chat-input-row input {
+      flex: 1;
+    }
+
+    .chat-input-row button {
+      white-space: nowrap;
+    }
+  </style>
 </head>
-<body data-style="plain-dashboard">
-  <a class="skip-link" href="#main">Skip to controls</a>
-  <main id="main" class="shell" tabindex="-1">
-    <header class="hero os-hero">
-      <div>
-        <p class="eyebrow">Lantern OS Local Dashboard</p>
-        <h1>Lantern OS</h1>
-        <p class="subtitle">First-class dashboard for dozens of users: always-on links, public proof, auth lanes, founder-only gates, validator health, agent queue, RAG memory, cash truth, local controls, and cloud mirrors.</p>
-        <a class="local-url" href="http://127.0.0.1:4177">http://127.0.0.1:4177</a>
-      </div>
-      <section class="reactor" aria-label="Arc Reactor status">
-        <p id="phase">Loading reactor...</p>
-        <p class="user-capacity" id="userCapacity">Dozens-ready: checking...</p>
-        <p class="current-model-strip">Current Model: Baseline v1</p>
-      </section>
+<body>
+  <div class="container">
+    <header>
+      <div class="lantern-icon">🔆</div>
+      <h1>Dream Journal</h1>
+      <p class="tagline">by Lantern OS</p>
+      <p class="subtitle">Your dreams. Your space. Always private.</p>
     </header>
 
-    <article class="panel chat-panel chat-primary" id="chatPanel">
-      <div class="chat-header">
-        <div>
-          <span class="chat-title">Lantern OS Chat</span>
-          <p class="chat-subtitle">First-class local conversation with cloud mirror awareness.</p>
+    <div id="message"></div>
+
+    <section id="chat-section">
+      <h2>Talk to your Dream Journal</h2>
+      <div class="chat-card">
+        <div class="chat-header">
+          <span>🌙</span>
+          <strong>Dream Journal</strong>
+          <span class="chat-status">
+            <span class="status-dot" id="statusDot"></span>
+            <span id="statusText">Online</span>
+          </span>
         </div>
-        <div class="chat-status-row">
-          <span class="chat-status" id="chatStatus">local</span>
-          <span class="chat-status tunnel-status" id="tunnelStatus">cloud tunnel checking</span>
+        <div class="chat-log" id="chatLog"></div>
+        <div class="chat-suggestions" id="chatSuggestions"></div>
+        <div class="chat-input-row">
+          <input type="text" id="chatInput" placeholder="Tell me a dream, a door, or a feeling..." autocomplete="off">
+          <button id="chatSend" type="button">Send</button>
         </div>
       </div>
-      <div class="chat-mirror-bar">
-        <span id="chatMirrorSummary">Primary: http://127.0.0.1:4177 | <code>20260530-kalshi-packet</code></span>
-        <span id="chatMirrorLinks"></span>
+    </section>
+
+    <section id="stats-section">
+      <h2>Your Journal</h2>
+      <div class="stats">
+        <div class="stat-card">
+          <div class="stat-number" id="totalCount">0</div>
+          <div class="stat-label">Total Entries</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" id="dreamCount">0</div>
+          <div class="stat-label">Dreams</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" id="noteCount">0</div>
+          <div class="stat-label">Notes</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" id="avgLucidity">--</div>
+          <div class="stat-label">Avg Lucidity</div>
+        </div>
       </div>
-      <div class="chat-messages" id="chatMessages">
-        <div class="chat-empty" id="chatEmpty">Start a conversation. Messages stay local and the cloud mirrors stay visible.</div>
-      </div>
-      <div class="chat-quick" id="chatQuick"></div>
-      <form id="conversationForm" class="chat-input-bar">
-        <input type="hidden" id="conversationRole" value="operator">
-        <textarea id="conversationText" name="text" rows="1" maxlength="4000" placeholder="Message Lantern OS..." class="chat-textarea"></textarea>
-        <button type="submit" class="chat-send" aria-label="Send">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13"/><path d="M22 2L15 22L11 13L2 9L22 2Z"/></svg>
-        </button>
+    </section>
+
+    <section id="form-section">
+      <h2>New Entry</h2>
+      <form id="entryForm">
+        <div class="form-group">
+          <label for="kind">Entry Type</label>
+          <select id="kind" name="kind">
+            <option value="dream">Dream</option>
+            <option value="note">Note</option>
+            <option value="symbol">Symbol</option>
+            <option value="reflection">Reflection</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="text">What do you want to remember?</label>
+          <textarea id="text" name="text" placeholder="Write freely. What was vivid? What mattered? What surprised you?" required></textarea>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="emotions">Emotions (comma-separated)</label>
+            <input type="text" id="emotions" name="emotions" placeholder="e.g., clarity, wonder, peace, curiosity">
+          </div>
+          <div class="form-group">
+            <label for="lucidity">Lucidity (0 = asleep, 1 = awake)</label>
+            <input type="number" id="lucidity" name="lucidity" min="0" max="1" step="0.1" value="0.5">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="tags">Tags (comma-separated)</label>
+          <input type="text" id="tags" name="tags" placeholder="e.g., lantern, learning, home, family">
+        </div>
+
+        <button type="submit">Save Entry</button>
       </form>
-    </article>
-
-    <section class="actions" aria-label="Primary controls">
-      <a href="/hub" data-control-kind="live-link">Central Hub</a>
-      <button id="refresh" type="button" data-control-kind="real-action">Refresh Status</button>
-      <button id="runLoop" type="button" data-control-kind="held-action">Converge Loop</button>
-      <button id="flatRagIngest" type="button" data-control-kind="real-action">Ingest Repos</button>
-      <button id="autoUpdate" type="button" aria-pressed="false" data-control-kind="real-action">Auto Update</button>
-      <button id="localControls" type="button" data-control-kind="held-action">Local Controls</button>
-      <a target="_blank" rel="noopener noreferrer" href="/pricing.html" data-control-kind="live-link">Pricing</a>
-      <a target="_blank" rel="noopener noreferrer" href="/pitch.html" data-control-kind="live-link">Pitch</a>
-      <a target="_blank" rel="noopener noreferrer" href="/proof.html" data-control-kind="live-link">Proof</a>
-      <a target="_blank" rel="noopener noreferrer" href="/wish-door.html" data-control-kind="live-link">Wish Door</a>
-      <a target="_blank" rel="noopener noreferrer" href="/outreach.html" data-control-kind="live-link">Outreach</a>
-      <a target="_blank" rel="noopener noreferrer" href="/repo/artifacts/LANTERN-OS-WHITEPAPER-v0.1.pdf" data-control-kind="live-link">Whitepaper</a>
-      <a target="_blank" rel="noopener noreferrer" href="/repo/artifacts/ADS-ARCHITECTURE-REVIEW-v0.1.pdf" data-control-kind="live-link">ADS</a>
     </section>
 
-    <section class="link-dock" aria-label="Always-on product links">
-      <a target="_blank" rel="noopener noreferrer" href="/api/health">Health</a>
-      <a target="_blank" rel="noopener noreferrer" href="/api/status">Status JSON</a>
-      <a target="_blank" rel="noopener noreferrer" href="/api/access-model">Access Model</a>
-      <a target="_blank" rel="noopener noreferrer" href="/api/cloud-mirrors">Mirror JSON</a>
-      <a target="_blank" rel="noopener noreferrer" href="/api/action-capabilities">Control Truth</a>
-      <a target="_blank" rel="noopener noreferrer" href="/api/operator-feedback">Memory Feedback</a>
-      <a target="_blank" rel="noopener noreferrer" href="/view?path=docs/V1-READINESS-GATES.md">Readiness Gates</a>
-      <a target="_blank" rel="noopener noreferrer" href="/view?path=docs/INNOVATOR-EVIDENCE-METHOD.md">Evidence Method</a>
-      <a target="_blank" rel="noopener noreferrer" href="/view?path=manifests/open-issues.md">Open Issues</a>
-      <a target="_blank" rel="noopener noreferrer" href="/view?path=manifests/cloud-mirrors.json">Cloud Mirrors</a>
+    <section id="entries-section">
+      <h2>Recent Entries</h2>
+      <div class="entries" id="entriesList"></div>
     </section>
 
-    <section class="grid" aria-label="System panels">
-      <article class="panel">
-        <h2>Power</h2>
-        <dl>
-          <div><dt>Movie 1</dt><dd id="m1">--</dd></div>
-          <div><dt>Movie 2</dt><dd id="m2">--</dd></div>
-          <div><dt>Movie 3</dt><dd id="m3">--</dd></div>
-          <div><dt>Avengers</dt><dd id="avengers">--</dd></div>
-        </dl>
-      </article>
+    <footer>
+      <p>Dream Journal is saved locally on your device. Your privacy is protected.</p>
+      <div class="footer-note">
+        <strong>Lantern Principle:</strong> Visible enough to trust. Small enough not to burn the house down.
+      </div>
+    </footer>
+  </div>
 
-      <article class="panel">
-        <h2>Wallet</h2>
-        <dl>
-          <div><dt>Cleared</dt><dd id="cash">--</dd></div>
-          <div><dt>Pending</dt><dd id="pending">--</dd></div>
-          <div><dt>Invoices</dt><dd id="invoices">--</dd></div>
-        </dl>
-      </article>
+  <script>
+    const API = {
+      create: async (data) => {
+        const res = await fetch('/api/dream/create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+        if (!res.ok) throw new Error(await res.text());
+        return res.json();
+      },
 
-      <article class="panel">
-        <h2>Boot Gate</h2>
-        <dl>
-          <div><dt>Prep</dt><dd id="prep">--</dd></div>
-          <div><dt>Install</dt><dd id="install">--</dd></div>
-          <div><dt>Summary</dt><dd id="bootSummary">--</dd></div>
-        </dl>
-      </article>
+      stats: async () => {
+        const res = await fetch('/api/dream/stats');
+        if (!res.ok) throw new Error(await res.text());
+        return res.json();
+      }
+    };
 
-      <article class="panel">
-        <h2>Local Controls</h2>
-        <dl>
-          <div><dt>Dashboard</dt><dd id="dashboard">--</dd></div>
-          <div><dt>MCP</dt><dd id="mcp">--</dd></div>
-          <div><dt>AccessX</dt><dd id="accessx">--</dd></div>
-        </dl>
-      </article>
+    function showMessage(text, type = 'success') {
+      const el = document.getElementById('message');
+      el.className = `message ${type}`;
+      el.textContent = text;
+      el.style.display = 'block';
+      if (type === 'success') setTimeout(() => el.style.display = 'none', 3000);
+    }
 
-      <article class="panel mirror-panel">
-        <h2>Cloud Mirrors</h2>
-        <dl>
-          <div><dt>Primary</dt><dd id="mirrorPrimary">http://127.0.0.1:4177</dd></div>
-          <div><dt>Mirrors</dt><dd id="mirrorCount">--</dd></div>
-          <div><dt>Deploy</dt><dd id="mirrorDeploy">master -> Render</dd></div>
-        </dl>
-        <ul id="mirrorList" class="compact-list mirror-list"></ul>
-      </article>
+    function renderEntries(stats) {
+      if (!stats || stats.total_entries === 0) {
+        document.getElementById('entriesList').innerHTML = '<div class="empty-state">✨ No entries yet.<br>Start with your first dream or note.</div>';
+        return;
+      }
+      document.getElementById('entriesList').innerHTML = '<p style="color: #9a8fb8; text-align: center;">Your entries are saved locally in your journal.</p>';
+    }
 
-      <article class="panel access-panel">
-        <h2>Access Lanes</h2>
-        <dl>
-          <div><dt>Public</dt><dd id="publicLane">always-on proof + docs</dd></div>
-          <div><dt>$0 Auth</dt><dd id="authZeroLane">notes + saved workspace</dd></div>
-          <div><dt>$20</dt><dd id="authTwentyLane">operator queue + reports</dd></div>
-          <div><dt>$200</dt><dd id="authTwoHundredLane">pilot workspace + review</dd></div>
-          <div><dt>Founder</dt><dd id="founderLane">local controls held</dd></div>
-        </dl>
-      </article>
+    async function loadStats() {
+      try {
+        const stats = await API.stats();
+        document.getElementById('totalCount').textContent = stats.total_entries || 0;
+        document.getElementById('dreamCount').textContent = stats.entries_by_kind?.dream || 0;
+        document.getElementById('noteCount').textContent = stats.entries_by_kind?.note || 0;
+        const avg = stats.avg_lucidity ? parseFloat(stats.avg_lucidity).toFixed(2) : '--';
+        document.getElementById('avgLucidity').textContent = avg;
+        renderEntries(stats);
+      } catch (error) {
+        console.error('Failed to load stats:', error);
+      }
+    }
 
-      <article class="panel mining-lab-panel" id="miningLabPanel" hidden>
-        <h2>Mining Lab</h2>
-        <dl>
-          <div><dt>Mode</dt><dd id="miningMode">--</dd></div>
-          <div><dt>CPU</dt><dd id="miningCpu">--</dd></div>
-          <div><dt>GPU</dt><dd id="miningGpu">--</dd></div>
-          <div><dt>ETH</dt><dd id="miningEth">--</dd></div>
-        </dl>
-        <a target="_blank" rel="noopener noreferrer" href="/view?path=docs/ARC-REACTOR-MINING-LAB.md">Open Mining Lab</a>
-      </article>
-    </section>
+    document.getElementById('entryForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        const emotions = document.getElementById('emotions').value
+          .split(',').map(s => s.trim()).filter(Boolean);
+        const tags = document.getElementById('tags').value
+          .split(',').map(s => s.trim()).filter(Boolean);
 
-    <section class="control-truth" aria-label="Button truth map">
-      <article class="truth-card truth-action">
-        <h2>Real Buttons</h2>
-        <p id="realButtons">Refresh, RAG ingest, notes, chat, and auto-update change local app state now.</p>
-      </article>
-      <article class="truth-card truth-link">
-        <h2>Live Links</h2>
-        <p id="liveLinks">Links open route-backed docs, PDFs, JSON health, and mirror receipts.</p>
-      </article>
-      <article class="truth-card truth-held">
-        <h2>Held Controls</h2>
-        <p id="heldControls">Founder dispatch, PowerShell loops, boot mutation, and local controls need local proof before enabling.</p>
-      </article>
-    </section>
+        const data = {
+          kind: document.getElementById('kind').value,
+          text: document.getElementById('text').value,
+          emotions,
+          tags,
+          lucidity: parseFloat(document.getElementById('lucidity').value) || 0.5
+        };
 
-    <section class="os-strip" aria-label="Lantern OS launch gates">
-      <article class="gate-card">
-        <h2>Launch Rule</h2>
-        <p id="launchRule">Local app first. Disk, bootloader, firmware, and default-boot changes remain operator-held.</p>
-      </article>
-      <article class="gate-card">
-        <h2>Next Boot</h2>
-        <p id="nextBoot">Windows remains the host until the dual-boot checklist is physically completed and validated.</p>
-      </article>
-      <article class="gate-card">
-        <h2>Memory</h2>
-        <p id="memoryRule">RAG cache and local conversations are source-labeled. Private notes stay local.</p>
-      </article>
-    </section>
+        await API.create(data);
+        showMessage('✓ Entry saved to your journal');
+        document.getElementById('entryForm').reset();
+        document.getElementById('lucidity').value = 0.5;
+        await loadStats();
+      } catch (error) {
+        showMessage(`Error: ${error.message}`, 'error');
+      }
+    });
 
-    <section class="evidence-strip" aria-label="Evidence matrix">
-      <article class="evidence-panel fleet-panel">
-        <div class="evidence-header">
-          <h2>Agent Fleet</h2>
-          <span class="badge badge-live" id="fleetBadge">CHECKING</span>
-        </div>
-        <table class="evidence-table" id="fleetTable">
-          <thead><tr><th>Slot</th><th>State</th><th>Task</th><th>Confidence</th></tr></thead>
-          <tbody id="fleetBody"><tr><td colspan="4" class="muted">Loading...</td></tr></tbody>
-        </table>
-        <div class="evidence-footer">
-          <span id="fleetCounts">Q:-- A:-- D:-- F:--</span>
-          <button type="button" id="dispatchAll" class="action-chip">Dispatch All</button>
-        </div>
-      </article>
-      <article class="evidence-panel validator-panel">
-        <div class="evidence-header">
-          <h2>Validators</h2>
-          <span class="badge badge-live" id="validatorBadge">CHECKING</span>
-        </div>
-        <table class="evidence-table">
-          <thead><tr><th>Validator</th><th>State</th><th>Next action</th></tr></thead>
-          <tbody id="validatorBody"><tr><td colspan="3" class="muted">Loading...</td></tr></tbody>
-        </table>
-        <div class="evidence-footer">
-          <span id="validatorCounts">0 pass | 0 held</span>
-        </div>
-      </article>
-      <article class="evidence-panel feedback-panel">
-        <div class="evidence-header">
-          <h2>Memory Feedback</h2>
-          <span class="badge badge-candidate" id="feedbackBadge">CHECKING</span>
-        </div>
-        <ul id="feedbackMemory" class="compact-list feedback-list">
-          <li class="muted">Loading operator notes and restart memory...</li>
-        </ul>
-        <div class="evidence-footer">
-          <span id="feedbackMeta">0 memories applied</span>
-        </div>
-      </article>
-      <article class="evidence-panel hff-panel">
-        <div class="evidence-header">
-          <h2>HFF Scores</h2>
-          <span class="badge badge-candidate" id="hffBadge">LOCAL</span>
-        </div>
-        <div class="score-grid" id="hffScores">
-          <div class="score-card"><div class="score-value" id="hffHumans">--</div><div class="score-label">Humans</div></div>
-          <div class="score-card"><div class="score-value" id="hffAnimals">--</div><div class="score-label">Animals</div></div>
-          <div class="score-card"><div class="score-value" id="hffEco">--</div><div class="score-label">Ecosystems</div></div>
-          <div class="score-card"><div class="score-value" id="hffUniverse">--</div><div class="score-label">Universe</div></div>
-        </div>
-        <div class="evidence-footer">
-          <span id="hffMeta">-- beliefs | -- sensors | -- domains</span>
-        </div>
-      </article>
-    </section>
+    // ---------------------------------------------------------------- //
+    // Dream Journal Chat — always responds, online or offline.
+    // ---------------------------------------------------------------- //
+    const DOORS_LORE = {
+      founder: { name: "Founder's Wish Door", anchors: ["Love", "Safety", "Truth", "Beauty", "Freedom", "Memory", "Return"], phrase: "Hold the center. Protect the wish. Return to the anchor." },
+      xp: { name: "Gage's Windows XP Door", phrase: "Never log off. Level up always." },
+      xenon: { name: "Xenon Door", phrase: "Build beyond one world." },
+      fog: { name: "Sea of Fog and Clouds Door", phrase: "Let the powerful images rest before they become stories." },
+      sigil: { name: "Sigil / City of Doors", phrase: "You hold the keys. You protect the doors. You are never alone." }
+    };
 
-    <section class="wide">
-      <article class="panel flat-rag-panel">
-        <h2>Flat RAG House</h2>
-        <dl>
-          <div><dt>Sources</dt><dd id="flatSources">--</dd></div>
-          <div><dt>Records</dt><dd id="flatRecords">--</dd></div>
-          <div><dt>Archive Mode</dt><dd id="archiveMode">manifest only</dd></div>
-        </dl>
-        <ul id="flatSourceList" class="compact-list"></ul>
-      </article>
-      <article class="panel forms-panel">
-        <h2>RAG Intake Form</h2>
-        <form id="ragForm" class="rag-form">
-          <label for="ragTopic">Topic</label>
-          <input id="ragTopic" name="topic" maxlength="160" placeholder="repo, form, window, chat, file">
-          <label for="ragClaim">Claim</label>
-          <textarea id="ragClaim" name="claim" rows="3" maxlength="500" placeholder="Compressed claim to add to RAG..."></textarea>
-          <label for="ragDecision">Decision</label>
-          <select id="ragDecision" name="decision">
-            <option value="candidate">candidate</option>
-            <option value="promote">promote</option>
-            <option value="hold">hold</option>
-            <option value="reject">reject</option>
-          </select>
-          <button type="submit">Add RAG Item</button>
-        </form>
-      </article>
-      <article class="panel windows-panel">
-        <h2>Windows Surface</h2>
-        <dl>
-          <div><dt>Host</dt><dd id="windowsHost">Windows host, Lantern OS app</dd></div>
-          <div><dt>Boot Mutation</dt><dd id="bootMutation">blocked</dd></div>
-          <div><dt>Auto Update</dt><dd id="autoUpdateState">off</dd></div>
-        </dl>
-      </article>
-      <article class="panel pages-panel">
-        <h2>Pages</h2>
-        <ul class="page-list">
-          <li><a target="_blank" rel="noopener noreferrer" href="/outreach.html">Outreach Program</a></li>
-          <li><a target="_blank" rel="noopener noreferrer" href="/view?path=skills/lantern-rag-dollhouse/references/LANTERN-OS-ALL-IN-ONE-CHURCH-FUNDRAISING-CALL-PACKET-2026-05-28.md">Outreach Source Note</a></li>
-          <li><a target="_blank" rel="noopener noreferrer" href="/view?path=reports/ARC-REACTOR-12-STEP-CONVERGENCE-MODEL.md">Arc Reactor 12-Step Model</a></li>
-          <li><a target="_blank" rel="noopener noreferrer" href="/repo/artifacts/ARC-REACTOR-12-STEP-CONVERGENCE-MODEL.pdf">Arc Reactor PDF</a></li>
-          <li><a target="_blank" rel="noopener noreferrer" href="/view?path=reports/ARC-REACTOR-MKII-CONVERGENCE-UPDATE-2026-05-26.md">Arc Reactor MK II Report</a></li>
-          <li><a target="_blank" rel="noopener noreferrer" href="/view?path=docs/ARC-REACTOR-MINING-LAB.md">Arc Reactor Mining Lab</a></li>
-          <li><a target="_blank" rel="noopener noreferrer" href="/view?path=skills/solo-mining/SKILL.md">Solo Mining Skill</a></li>
-          <li><a target="_blank" rel="noopener noreferrer" href="/repo/artifacts/ARC-REACTOR-MKII-CONVERGENCE-UPDATE-2026-05-26.pdf">Arc Reactor MK II PDF</a></li>
-          <li><a target="_blank" rel="noopener noreferrer" href="/repo/artifacts/DISCORD-COMMUNITY-OPERATOR-PACKET.pdf">Discord Operator PDF</a></li>
-          <li><a target="_blank" rel="noopener noreferrer" href="/repo/artifacts/DISCORD-COMMUNITY-PUBLIC-GUIDE.pdf">Discord Public PDF</a></li>
-          <li><a target="_blank" rel="noopener noreferrer" href="/view?path=reports/DISCORD-COMMUNITY-PUBLIC-GUIDE.md">Normies Handout</a></li>
-          <li><a target="_blank" rel="noopener noreferrer" href="/repo/artifacts/LANTERN-DAY-ONE-NORMIE-PACKET.pdf">Day One Normie PDF</a></li>
-          <li><a target="_blank" rel="noopener noreferrer" href="/view?path=manifests/STORE-RELEASE-LANES.md">Store Release Lanes</a></li>
-          <li><a target="_blank" rel="noopener noreferrer" href="/view?path=skills/lantern-rag-dollhouse/references/LANTERN-OS-RAG-DOLLHOUSE.flat.md">Flat RAG House</a></li>
-        </ul>
-      </article>
-      <article class="panel">
-        <h2>RAG Memory</h2>
-        <ul id="ragCache"></ul>
-      </article>
-      <article class="panel operator-queue-panel">
-        <h2>Operator Lane</h2>
-        <form id="noteForm" class="note-form">
-          <input id="noteText" name="text" maxlength="500" placeholder="Quick note or P0 item...">
-          <select id="notePriority" name="priority">
-            <option value="P0">P0</option>
-            <option value="P1" selected>P1</option>
-            <option value="P2">P2</option>
-          </select>
-          <button type="submit">+ Note</button>
-        </form>
-        <ul id="operatorQueue" class="operator-queue"></ul>
-      </article>
-      <article class="panel log-panel">
-        <h2>Action Log</h2>
-        <pre id="log" aria-live="polite">Ready.</pre>
-      </article>
-    </section>
-  </main>
+    let lastDraft = "";
+
+    function setStatus(online) {
+      const dot = document.getElementById('statusDot');
+      const text = document.getElementById('statusText');
+      dot.className = 'status-dot' + (online ? '' : ' offline');
+      text.textContent = online ? 'Online' : 'Offline (local)';
+    }
+
+    function addBubble(role, text) {
+      const log = document.getElementById('chatLog');
+      const bubble = document.createElement('div');
+      bubble.className = `bubble ${role}`;
+      bubble.textContent = text;
+      log.appendChild(bubble);
+      log.scrollTop = log.scrollHeight;
+      return bubble;
+    }
+
+    function renderSuggestions(suggestions) {
+      const box = document.getElementById('chatSuggestions');
+      box.innerHTML = '';
+      (suggestions || []).forEach((s) => {
+        const chip = document.createElement('button');
+        chip.className = 'chip';
+        chip.type = 'button';
+        chip.textContent = s;
+        chip.addEventListener('click', () => handleSuggestion(s));
+        box.appendChild(chip);
+      });
+    }
+
+    // Offline in-character reply mirror of the server engine.
+    function offlineReply(message) {
+      const text = (message || '').trim();
+      const lower = text.toLowerCase();
+      const base = ["Log a dream", "Recent dreams", "Mirror a dream", "Tell me about the doors"];
+      for (const key of Object.keys(DOORS_LORE)) {
+        if (lower.includes(key) ||
+            (key === 'founder' && lower.includes('wish')) ||
+            (key === 'xp' && (lower.includes('windows') || lower.includes('gage'))) ||
+            (key === 'fog' && lower.includes('garden')) ||
+            (key === 'sigil' && lower.includes('city'))) {
+          const d = DOORS_LORE[key];
+          const anchors = d.anchors ? ` Its anchors: ${d.anchors.join(', ')}.` : '';
+          return { reply: `${d.name} stands open.${anchors} "${d.phrase}" What do you see when you step through?`, suggestions: ["Log this as a dream", "Another door", "Mirror a dream"] };
+        }
+      }
+      if (/^(hi|hello|hey|good (morning|evening|night)|greetings)/.test(lower)) {
+        return { reply: "Welcome back. I am the Dream Journal — local, private, always here, even offline. Did you dream?", suggestions: base };
+      }
+      if (lower.includes('mirror') || lower.includes('interpret') || lower.includes('mean') || lower.includes('symbol')) {
+        return { reply: "Sit with three questions: 1) What feeling stayed after waking? 2) What in waking life does this echo? 3) What small, reversible step would honor it?", suggestions: ["Record a reflection", "Recent dreams"] };
+      }
+      if (lower.includes('recent') || lower.includes('history')) {
+        return { reply: "Open the journal below to see your saved entries. Want to mirror one?", suggestions: ["Mirror a dream", "Log a dream"] };
+      }
+      if (lower.includes('log') || lower.includes('dream') || lower.includes('save')) {
+        return { reply: "Good — let us keep it. Tell me the dream in your own words. I will save it locally; only you can see it.", suggestions: ["Recent dreams", "Mirror a dream"] };
+      }
+      return { reply: `I hear it: "${text.slice(0, 160)}". That is worth keeping. Tap "Log this as a dream" to save it.`, suggestions: ["Log this as a dream", "Mirror a dream", "Tell me about the doors"], draft: text };
+    }
+
+    async function sendChat(message) {
+      const msg = (message || '').trim();
+      if (!msg) return;
+      addBubble('operator', msg);
+      const typing = addBubble('typing', '…');
+
+      try {
+        const res = await fetch('/api/dream/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: msg })
+        });
+        if (!res.ok) throw new Error('chat_failed');
+        const data = await res.json();
+        typing.remove();
+        setStatus(true);
+        addBubble('lantern', data.reply);
+        renderSuggestions(data.suggestions);
+        lastDraft = data.draft || msg;
+      } catch (err) {
+        // Server unreachable — stay in character, fully offline.
+        typing.remove();
+        setStatus(false);
+        const local = offlineReply(msg);
+        addBubble('lantern', local.reply);
+        renderSuggestions(local.suggestions);
+        lastDraft = local.draft || msg;
+      }
+    }
+
+    async function handleSuggestion(label) {
+      const l = label.toLowerCase();
+      if (l.includes('log')) {
+        // Pre-fill the entry form with the last draft and scroll to it.
+        if (lastDraft) document.getElementById('text').value = lastDraft;
+        document.getElementById('form-section').scrollIntoView({ behavior: 'smooth' });
+        addBubble('lantern', 'I moved your words to the New Entry form below. Add tags and emotions, then Save Entry.');
+        return;
+      }
+      if (l.includes('recent')) {
+        document.getElementById('stats-section').scrollIntoView({ behavior: 'smooth' });
+      }
+      sendChat(label);
+    }
+
+    document.getElementById('chatSend').addEventListener('click', () => {
+      const input = document.getElementById('chatInput');
+      const msg = input.value;
+      input.value = '';
+      sendChat(msg);
+    });
+
+    document.getElementById('chatInput').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        document.getElementById('chatSend').click();
+      }
+    });
+
+    // Opening greeting
+    addBubble('lantern', 'The dream door is open. What did you bring back? Tell me a dream, or tap a prompt below.');
+    renderSuggestions(["Log a dream", "Recent dreams", "Mirror a dream", "Tell me about the doors"]);
+
+    // Load stats on page load
+    loadStats();
+    // Refresh stats every 10 seconds
+    setInterval(loadStats, 10000);
+  </script>
 </body>
 </html>

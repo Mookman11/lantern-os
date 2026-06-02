@@ -1,4 +1,4 @@
-# Lantern OS Lore & Symbolic Sandbox
+﻿# Lantern OS Lore & Symbolic Sandbox
 
 ## Core Rule
 
@@ -63,7 +63,7 @@ A symbol can leave this sandbox (move to operational doctrine or code) **only wh
 
 **Pretty words stay pretty here.**
 
-The sandbox preserves meaning without making it proof, pressure, permission, or command. When a symbol is promoted to operational code, it earns those stakes through evidence, testing, and operator review—not through poetry alone.
+The sandbox preserves meaning without making it proof, pressure, permission, or command. When a symbol is promoted to operational code, it earns those stakes through evidence, testing, and operator reviewΓÇönot through poetry alone.
 
 ---
 
@@ -73,14 +73,14 @@ The sandbox preserves meaning without making it proof, pressure, permission, or 
 **Symbol:** Tesseract metaphor for seeing all system dimensions at once  
 **What it means:** Visual poetry for understanding distributed architecture  
 **What it's not:** A claim about multidimensional physics or quantum computing  
-**Status:** Candidate → operational (promoted to /surfaces/imagniverse/)  
+**Status:** Candidate ΓåÆ operational (promoted to /surfaces/imagniverse/)  
 **Action:** Built HTML/JS visualization; ready for user testing  
 
 ### Dreamer Journal (Ternary Coordinate System)
 **Symbol:** Ternary IDs (o/i/z encoding) for thoughts positioned in 3D conceptual space  
 **What it means:** Every dream, note, memory has a location in the thought-landscape  
 **What it's not:** A medical or psychiatric tool; not for diagnosis or treatment  
-**Status:** Symbol → candidate → operational  
+**Status:** Symbol ΓåÆ candidate ΓåÆ operational  
 **Action:** JSONL ledger with append-only entries; supports search and visualization  
 
 ### "Rock and Stone" (Mining Safety Mantra)
@@ -94,11 +94,11 @@ The sandbox preserves meaning without making it proof, pressure, permission, or 
 
 ## How to Use These Lanes in Lantern OS
 
-1. **Capture a new idea** → Add to `lore/symbols/[idea].md`
-2. **Feel uncertain about it** → Move to `lore/quarantine/[idea].md` with timestamp
-3. **Need a framework** → Reference `lore/templates/[form].md`
-4. **Ready to promote** → PR moving to `docs/` or `manifests/` with review comment
-5. **Post-review** → Log decision in `lore/reviews/[date]-promotion-decisions.md`
+1. **Capture a new idea** ΓåÆ Add to `lore/symbols/[idea].md`
+2. **Feel uncertain about it** ΓåÆ Move to `lore/quarantine/[idea].md` with timestamp
+3. **Need a framework** ΓåÆ Reference `lore/templates/[form].md`
+4. **Ready to promote** ΓåÆ PR moving to `docs/` or `manifests/` with review comment
+5. **Post-review** ΓåÆ Log decision in `lore/reviews/[date]-promotion-decisions.md`
 
 ---
 
@@ -117,13 +117,13 @@ The sandbox preserves meaning without making it proof, pressure, permission, or 
 
 ## Key Files
 
-- `lore/LORE.md` (this file) — Principles and safe exploration framework
-- `lore/symbols/` — Metaphors, dreams, image language, naming
-- `lore/quarantine/` — Hold-for-review material (private, risky, uncertain)
-- `lore/templates/` — Worksheets for reflection and review
-- `lore/reviews/` — Dated promotion decisions and audits
-- `docs/IMAGNIVERSE.md` — Tesseract metaphor, promoted to operational
-- `data/dreamer/` — Ternary-ID dream journal, promoted to operational
+- `lore/LORE.md` (this file) ΓÇö Principles and safe exploration framework
+- `lore/symbols/` ΓÇö Metaphors, dreams, image language, naming
+- `lore/quarantine/` ΓÇö Hold-for-review material (private, risky, uncertain)
+- `lore/templates/` ΓÇö Worksheets for reflection and review
+- `lore/reviews/` ΓÇö Dated promotion decisions and audits
+- `docs/IMAGNIVERSE.md` ΓÇö Tesseract metaphor, promoted to operational
+- `data/dreamer/` ΓÇö Ternary-ID dream journal, promoted to operational
 
 ---
 
@@ -134,4 +134,4 @@ The sandbox preserves meaning without making it proof, pressure, permission, or 
 3. Use promotion gate checklist before moving any metaphor to operational code
 4. Keep `lore/reviews/` as audit trail for symbol-to-doctrine decisions
 
-**Remember:** The sandbox makes space for beauty and meaning. But action, deployment, and stakes require proof, consent, and evidence—earned elsewhere.
+**Remember:** The sandbox makes space for beauty and meaning. But action, deployment, and stakes require proof, consent, and evidenceΓÇöearned elsewhere.

@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
     [string]$OutputDir = (Join-Path (Resolve-Path (Join-Path $PSScriptRoot "..")).Path "data\internal-rag-house"),
     [switch]$IncludeFileBodies,
@@ -18,20 +18,18 @@ $hashFile = Join-Path $OutputDir "RAG-HOUSE-MANIFEST.sha256"
 $includeGlobs = @(
     "README.md",
     "AGENTS.md",
-    "QUICK-START.md",
     "docs/*.md",
-    "docs/**/*.md",
     "manifests/*.md",
-    "manifests/**/*.md",
     "reports/*.md",
-    "data/automation/*.json",
-    "data/automation/*.md",
-    "data/arc-reactor/*.json",
     "skills/*/SKILL.md",
-    "skills/**/*.md",
     "scripts/*.ps1",
     "data/world-model/*.jsonl",
-    "references/*.md"
+    "data/arc-reactor/*.json",
+    "data/wallet/**/*.json",
+    "references/*.md",
+    "rag/seeds/*.md",
+    "rag/**/*.md",
+    "caad/art-direction/**/*.md"
 )
 
 $excludeFragments = @(
@@ -50,14 +48,20 @@ $excludeFragments = @(
 function Test-IncludedPath {
     param([string]$RelativePath)
 
+    $normalized = $RelativePath.Replace("\", "/")
+
     foreach ($fragment in $excludeFragments) {
-        if ($RelativePath -like "*$fragment*") {
+        if ($normalized -like "*$fragment*") {
             return $false
         }
     }
 
     foreach ($glob in $includeGlobs) {
-        if ($RelativePath -like $glob) {
+        # Convert ** glob to regex; single * works with -like already.
+        if ($glob -like "*`**`*") {
+            $rx = "^" + [regex]::Escape($glob).Replace("\*\*", ".*").Replace("\*", "[^/]*").Replace("/", "\/") + "$"
+            if ($normalized -match $rx) { return $true }
+        } elseif ($normalized -like $glob) {
             return $true
         }
     }
@@ -71,7 +75,7 @@ function Get-FileSha256 {
 }
 
 $allFiles = Get-ChildItem -LiteralPath $repoRoot -File -Recurse | ForEach-Object {
-    $relative = $_.FullName.Substring($repoRoot.Length).TrimStart("\").Replace("/", "\")
+    $relative = $_.FullName.Substring($repoRoot.Length).TrimStart("\", "/").Replace("/", "\")
     if (Test-IncludedPath -RelativePath $relative) {
         [pscustomobject]@{
             path = $relative.Replace("\", "/")

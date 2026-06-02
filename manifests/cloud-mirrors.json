@@ -10,15 +10,25 @@
       "verified": true,
       "operator": "Local machine"
     },
+    "github-pages": {
+      "description": "Static cloud mirror via GitHub Pages (Dream Journal)",
+      "url": "https://alex-place.github.io/lantern-os/",
+      "status": "verified",
+      "healthPath": "/",
+      "deployBranch": "gh-pages",
+      "verified": true,
+      "verifiedAt": "2026-06-02",
+      "notes": "Serves Dream Journal static page with offline chat fallback. Form persistence requires Node backend (AWS ECS target)."
+    },
     "netlify": {
       "description": "Cloud mirror via Netlify",
       "url": "https://lantern-os-cloud.netlify.app",
-      "status": "configured",
+      "status": "blocked",
       "healthPath": "/api/health",
       "deployBranch": "master",
       "deployId": "6a1c3fa0742f62c1b2fbe103",
       "verified": false,
-      "notes": "Deploy configured, health endpoint requires public proof"
+      "notes": "Account-level restrictions (403/422). Deploys rejected. Operator to review Netlify plan/billing."
     },
     "aws": {
       "description": "Cloud mirror via AWS ECS Fargate",
@@ -28,7 +38,7 @@
       "imageSource": "apps/lantern-garage/Dockerfile",
       "startCommand": "npm run start:cloud",
       "verified": false,
-      "notes": "Service URL pending operator deployment"
+      "notes": "Service URL pending operator AWS credential configuration. Deploy-ToAWS.ps1 ready."
     },
     "render": {
       "description": "Custom domain route via Render",
@@ -62,15 +72,26 @@
   },
   "cloudMirrors": [
     {
+      "name": "Lantern OS GitHub Pages",
+      "url": "https://alex-place.github.io/lantern-os/",
+      "role": "static cloud mirror (interim)",
+      "status": "verified",
+      "frontDoorStatus": "verified",
+      "healthPath": "/",
+      "deployedAt": "2026-06-02",
+      "verified": true,
+      "notes": "Dream Journal static page live. Chat via offline fallback (in-character, no server required). Form persistence blocked — needs AWS ECS for Node backend."
+    },
+    {
       "name": "Lantern OS Netlify Cloud",
       "url": "https://lantern-os-cloud.netlify.app",
       "role": "production cloud mirror",
-      "status": "configured",
-      "frontDoorStatus": "configured",
+      "status": "blocked",
+      "frontDoorStatus": "blocked",
       "healthPath": "/api/health",
       "deployedAt": "2026-05-31",
       "verified": false,
-      "notes": "Deploy active but public health check needs confirmation"
+      "notes": "Account restrictions block all deploys (403/422). Operator to review Netlify plan."
     }
   ],
   "retiredMirrors": [
