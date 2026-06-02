@@ -60,7 +60,7 @@
 - 12 stdlib-generated procedural soundscapes
 - No ML, no voice cloning
 - Pure synthesis: scipy + numpy + wave module
-- Names cleaned (removed _tardis, _door, _quantum_dust mythology)
+- Original symbolic names restored 2026-06-02 (quarantine removed; _tardis, _door, _quantum_dust are live)
 
 ### Technical Foundation (Already Built)
 - `apps/lantern-desktop/lantern_desktop.py` â€” Sing button + media rotation
@@ -132,12 +132,12 @@
 
 ## Sound Library Cleanup
 
-### File Renames (Mythology â†’ Clean Names)
+### File Names (Original Symbolic Names Restored 2026-06-02 — Quarantine Removed) â†’ Clean Names)
 ```
-lantern_03_rain_on_tardis.wav      â†’ lantern_03_rain.wav
-lantern_05_heartbeat_door.wav      â†’ lantern_05_heartbeat_pad.wav
-lantern_10_quantum_dust.wav        â†’ lantern_10_sparkle_pad.wav
-lantern_12_return_door.wav         â†’ lantern_12_chime_outro.wav
+lantern_03_rain_on_tardis.wav      â†’ lantern_03_rain_on_tardis.wav
+lantern_05_heartbeat_door.wav      â†’ lantern_05_heartbeat_door.wav
+lantern_10_quantum_dust.wav        â†’ lantern_10_quantum_dust.wav
+lantern_12_return_door.wav         â†’ lantern_12_return_door.wav
 ```
 
 ### Attribution
@@ -197,7 +197,7 @@ lantern_12_return_door.wav         â†’ lantern_12_chime_outro.wav
 - [x] FOUNDRY-PLAN.md created in gm-agent-orchestrator
 - [x] Both READMEs minimal (link to FOUNDRY-PLAN.md)
 - [x] Mythology moved to symbology repo (not deleted)
-- [x] Sound files renamed (no mythology names)
+- [x] Original symbolic names restored (quarantine removed 2026-06-02)
 - [x] ATTRIBUTION.md created with provenance
 - [x] Consolidation record documented
 - [ ] Tests pass (HFF pytest, gm-orch contract tests)
