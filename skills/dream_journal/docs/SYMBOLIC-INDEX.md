@@ -92,6 +92,7 @@ Also see:
 | Convergence | `convergence.md`, `resonance-convergence-anchor.md` | Bringing fragmented parts together | live |
 | Three-Way Convergence | `three-way-convergence-plan-2026-05-09.md` | You + Me + Repo synthesis | live |
 | **Sigil** | **`sigil.md`** | **The restaurant at the end of time, built by Gage, that only sells chicken nuggets** | **live** |
+| **Quantum Dust** | **`quantum-dust.md`** | **Recovered from quarantine: small horizon sparks, distributed meaning, painter tool + sound texture** | **live** |
 
 ---
 
