@@ -1140,6 +1140,12 @@ async function route(req, res) {
     return;
   }
 
+  if (url.pathname === "/hub") {
+    const hubPath = path.resolve(repoRoot, "central-hub.html");
+    sendFile(res, hubPath);
+    return;
+  }
+
   const staticPath = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
   const target = path.resolve(publicRoot, staticPath);
   if (!target.startsWith(publicRoot)) {
