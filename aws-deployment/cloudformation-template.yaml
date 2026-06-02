@@ -196,8 +196,6 @@ Resources:
       VpcSecurityGroupIds:
         - !Ref ECSSecurityGroup
       CacheSubnetGroupName: !Ref CacheSubnetGroup
-      AtRestEncryptionEnabled: true
-      TransitEncryptionEnabled: false
 
   # ALB
   LanternALB:
