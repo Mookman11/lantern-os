@@ -37,6 +37,15 @@ except ImportError as e:
     get_bridge = None
     print(f"[INFO] MCP Bridge not available: {e}")
 
+# OpenAI Agents SDK MCP Connector
+try:
+    from mcp_connector import LanternMCPConnector, get_mcp_connector
+    OPENAI_MCP_AVAILABLE = True
+except ImportError as e:
+    OPENAI_MCP_AVAILABLE = False
+    get_mcp_connector = None
+    print(f"[INFO] OpenAI MCP Connector not available: {e}")
+
 # Lantern Archive Curator — Internet Archive media streaming
 try:
     from archive_curator import get_curator, SINATRA_COLLECTION
@@ -275,9 +284,9 @@ async def cmd_help(interaction: discord.Interaction):
     if tier in (ROLE_SUPPORTER, ROLE_PILOT, ROLE_FOUNDER):
         embed.add_field(name="Supporter+", value="`/dream`, `/note`, `/wish`, `/recall`, `/mirror`, `/wallet`, `/odds`, `/talk`", inline=False)
     if tier in (ROLE_PILOT, ROLE_FOUNDER):
-        embed.add_field(name="Pilot+", value="`/converge`, `/rag-status`, `/queue`, `/place`, `/character`, `/symbol`", inline=False)
+        embed.add_field(name="Pilot+", value="`/converge`, `/rag-status`, `/queue`, `/place`, `/character`, `/symbol`, `/mcp-connect`, `/mcp-tools`", inline=False)
     if tier == ROLE_FOUNDER:
-        embed.add_field(name="Founder", value="`/dispatch`, `/controls`, `/boot-check`, `/release-gate`", inline=False)
+        embed.add_field(name="Founder", value="`/dispatch`, `/controls`, `/boot-check`, `/release-gate`, `/mcp-call`", inline=False)
     embed.add_field(name="🎵 Music & Voice", value="`/sing`, `/nextsong`, `/stop`, `/leave` — Frank Sinatra from Internet Archive", inline=False)
     embed.set_footer(text=f"Your tier: {tier.title()}")
     await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -723,6 +732,87 @@ async def cmd_leave(interaction: discord.Interaction):
         await interaction.response.send_message("👋 Left the lounge.")
     else:
         await interaction.response.send_message("Not connected.", ephemeral=True)
+
+
+# ── OpenAI Agents MCP Commands ──
+
+@tree.command(name="mcp-connect", description="Connect to MCP server via openai-agents SDK")
+@require_tier(ROLE_PILOT)
+async def cmd_mcp_connect(interaction: discord.Interaction):
+    """Establish SSE connection to the configured MCP server."""
+    if not OPENAI_MCP_AVAILABLE or not get_mcp_connector:
+        await interaction.response.send_message(
+            "OpenAI MCP Connector not available. Install with: `pip install openai-agents`",
+            ephemeral=True
+        )
+        return
+
+    await interaction.response.defer(ephemeral=True)
+    connector = get_mcp_connector()
+    success = await connector.connect()
+
+    if success:
+        tool_count = len(connector.tools)
+        await interaction.followup.send(
+            f"✅ MCP connected to `{connector.mcp_url}`\n"
+            f"Discovered **{tool_count}** tool(s). Use `/mcp-tools` to list them.",
+            ephemeral=True
+        )
+    else:
+        await interaction.followup.send(
+            f"❌ MCP connection failed: `{connector.last_error or 'unknown'}`",
+            ephemeral=True
+        )
+
+
+@tree.command(name="mcp-tools", description="List tools exposed by the MCP server")
+@require_tier(ROLE_PILOT)
+async def cmd_mcp_tools(interaction: discord.Interaction):
+    """Show discovered MCP tools."""
+    if not OPENAI_MCP_AVAILABLE or not get_mcp_connector:
+        await interaction.response.send_message(
+            "OpenAI MCP Connector not available.", ephemeral=True
+        )
+        return
+
+    connector = get_mcp_connector()
+    text = connector.format_tools_embed()
+    if len(text) > 1900:
+        text = text[:1897] + "..."
+    await interaction.response.send_message(f"```{text}```", ephemeral=True)
+
+
+@tree.command(name="mcp-call", description="Invoke an MCP tool by name")
+@app_commands.describe(tool="Tool name", arguments="JSON arguments (e.g. {\"key\": \"value\"})")
+@require_tier(ROLE_FOUNDER)
+async def cmd_mcp_call(interaction: discord.Interaction, tool: str, arguments: str = "{}"):
+    """Call an MCP tool with JSON arguments."""
+    if not OPENAI_MCP_AVAILABLE or not get_mcp_connector:
+        await interaction.response.send_message(
+            "OpenAI MCP Connector not available.", ephemeral=True
+        )
+        return
+
+    connector = get_mcp_connector()
+    if not connector.connected:
+        await interaction.response.send_message(
+            "MCP not connected. Run `/mcp-connect` first.", ephemeral=True
+        )
+        return
+
+    await interaction.response.defer(ephemeral=True)
+    try:
+        args = json.loads(arguments) if arguments else {}
+    except json.JSONDecodeError:
+        await interaction.followup.send(
+            "❌ Invalid JSON in arguments field.", ephemeral=True
+        )
+        return
+
+    result = await connector.invoke_tool(tool, args)
+    if len(result) > 1900:
+        result = result[:1897] + "..."
+    await interaction.followup.send(f"**{tool}** result:\n```\n{result}\n```", ephemeral=True)
 
 
 # ── Events ──
