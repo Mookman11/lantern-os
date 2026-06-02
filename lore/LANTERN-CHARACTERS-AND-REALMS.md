@@ -1,17 +1,17 @@
-# Lantern OS Lore: Characters and Realms
+﻿# Lantern OS Lore: Characters and Realms
 
 **Status:** `symbol_to_candidate`  
-**Lane:** `symbols/` → ready for Dream Journal integration  
+**Lane:** `symbols/` ΓåÆ ready for Dream Journal integration  
 **Date:** 2026-06-02  
 **Source:** Consolidated from lantern-os repo, lantern-symbolic-sandbox, personal project files, and family/community context  
 
-This document preserves the stories, characters, and symbolic realms that live in Lantern OS. These are not claims about what exists—they are imaginations about what *could*. They are safe to explore, dream about, and build into games, art, and the Dream Journal system.
+This document preserves the stories, characters, and symbolic realms that live in Lantern OS. These are not claims about what existsΓÇöthey are imaginations about what *could*. They are safe to explore, dream about, and build into games, art, and the Dream Journal system.
 
 ---
 
 ## Characters
 
-### Captain Lantern Blinkbug 🔆
+### Captain Lantern Blinkbug ≡ƒöå
 
 **What it is:** The mascot and helper voice of Lantern OS. A warm, glowing presence that appears in the desktop interface and UI palette.
 
@@ -24,7 +24,7 @@ This document preserves the stories, characters, and symbolic realms that live i
 **Character:**
 - Helper voice. Not an agent, not an authority figure.
 - Represents light, warmth, and home that works.
-- Curator of sounds (plays what artists and creatures already made—songs, rain, ocean, birdsong)
+- Curator of sounds (plays what artists and creatures already madeΓÇösongs, rain, ocean, birdsong)
 - Speaks through the system's interface, not through synthetic voice
 
 **Purpose in Lantern OS:**
@@ -43,7 +43,7 @@ If you dream of a small glowing guide, a warm presence, or a light in darkness, 
 
 ---
 
-### Gage — The Artist-Learner 🎨
+### Gage ΓÇö The Artist-Learner ≡ƒÄ¿
 
 **Who Gage is:**
 A young person with high-intelligence art talents and deep creative learning. School-adjacent, family-safe, collaborative.
@@ -80,7 +80,7 @@ If you dream of creating, learning, building, or of a young person's joy in maki
 
 ---
 
-### Mary Place — The Waterfall & Peacock 💧🦚
+### Mary Place ΓÇö The Waterfall & Peacock ≡ƒÆº≡ƒªÜ
 
 **Who Mary is:**
 Alex's mother. Root. The person who taught wisdom through ordinary things.
@@ -102,14 +102,14 @@ Mary lives in Virginia (Spring Valley, Swords Creek roots; Bellbrook present). S
 
 **The Waterfall:**
 - Water = clarity, calm, flow without force
-- Mary does best when life flows one small step at a time—no big plans, no overwhelming lists
-- The reconnection rhythm: one warm message → one short call → one ordinary errand → one old-interest spark
-- Best use in conversation: "Like a waterfall—one thing at a time, no rush"
-- Key insight: She is cooperative and wants to talk. She just doesn't know how to sum up all the things she wants to say. The helper's job is to give her small, safe openings so she can say what she already feels—one piece at a time.
+- Mary does best when life flows one small step at a timeΓÇöno big plans, no overwhelming lists
+- The reconnection rhythm: one warm message ΓåÆ one short call ΓåÆ one ordinary errand ΓåÆ one old-interest spark
+- Best use in conversation: "Like a waterfallΓÇöone thing at a time, no rush"
+- Key insight: She is cooperative and wants to talk. She just doesn't know how to sum up all the things she wants to say. The helper's job is to give her small, safe openings so she can say what she already feelsΓÇöone piece at a time.
 
 **The Peacock:**
 - Beauty that doesn't need permission to exist
-- Mary's dignity, her ordinary life, her familiar routines—these are already beautiful without a makeover or a program
+- Mary's dignity, her ordinary life, her familiar routinesΓÇöthese are already beautiful without a makeover or a program
 - Her peacock is confidence: cashier skills, customer-service warmth, knowing how to help people feel welcome
 - Best use in conversation: "You already have it"
 
@@ -137,7 +137,7 @@ If you dream of water flowing gently, peacocks, sunshine, or of reconnecting wit
 
 ---
 
-### Angela — The Healer & Connector ✨
+### Angela ΓÇö The Healer & Connector Γ£¿
 
 **Who Angela is:**
 Courtney's mother. Healer. Bridge between family, health, and home.
@@ -159,7 +159,7 @@ If you dream of healing, of mothers and family care, of quiet strength and susta
 
 ---
 
-### Courtney — The Navigator & Collaborator 🧭
+### Courtney ΓÇö The Navigator & Collaborator ≡ƒº¡
 
 **Who Courtney is:**
 Collaborator, decision-maker, executor. Bridges family needs and business growth. Holds shared vision while respecting individual autonomy.
@@ -189,7 +189,7 @@ If you dream of navigating complex landscapes, of bridges connecting distant pla
 
 ---
 
-### Alex Place — The Founder & Operator 🔑
+### Alex Place ΓÇö The Founder & Operator ≡ƒöæ
 
 **Who Alex is:**
 Founder and primary operator of Lantern OS. Holds vision, makes final decisions, builds the system, and maintains its boundaries.
@@ -209,23 +209,23 @@ Founder and primary operator of Lantern OS. Holds vision, makes final decisions,
 
 ## Realms & Worlds
 
-### The Lantern OS Ecosystem 🏮
+### The Lantern OS Ecosystem ≡ƒÅ«
 
 **What it is:** A personal operating system for memory, reflection, and becoming. Local-first. Privacy-centered. Myth-safe.
 
 **Structure (Imagniverse / 20-Panel Tesseract):**
 The system is visualized as a 20-panel interactive cube showing all dimensions at once:
 
-1. **Local First** — Your machine is the source of truth
-2. **AWS Held** — Optional cloud backup with full encryption
-3. **RAG House** — Knowledge retrieval and symbol indexing
-4. **Command Lane** — Direct CLI and orchestrator access
-5. **Proof Loop** — Validation and audit trails
-6. **Wallet** — Financial state and transaction ledger
-7. **Trading** — Decision making with safety gates
-8. **Dream Journal** — Memory, reflection, pattern recognition
-9. **Imagniverse** — Architecture visualization
-10. **Dreamer** — Free-form notebook
+1. **Local First** ΓÇö Your machine is the source of truth
+2. **AWS Held** ΓÇö Optional cloud backup with full encryption
+3. **RAG House** ΓÇö Knowledge retrieval and symbol indexing
+4. **Command Lane** ΓÇö Direct CLI and orchestrator access
+5. **Proof Loop** ΓÇö Validation and audit trails
+6. **Wallet** ΓÇö Financial state and transaction ledger
+7. **Trading** ΓÇö Decision making with safety gates
+8. **Dream Journal** ΓÇö Memory, reflection, pattern recognition
+9. **Imagniverse** ΓÇö Architecture visualization
+10. **Dreamer** ΓÇö Free-form notebook
 ... and 10 more dimensions of the system
 
 **Symbol meaning:**
@@ -238,7 +238,7 @@ If you dream of cubes, tesseracts, multidimensional spaces, or of seeing systems
 
 ---
 
-### The Crystalline World 🔷
+### The Crystalline World ≡ƒö╖
 
 **Geography:**
 - Towers made of geometric shapes
@@ -274,7 +274,7 @@ This is a high-lucidity dream world. If you dream of complex architecture, geome
 
 ---
 
-### The Waterfall Valley 💧
+### The Waterfall Valley ≡ƒÆº
 
 **Geography:**
 - Waterfalls flowing downward without force
@@ -305,7 +305,7 @@ If you dream of healing, of reconnection, of things flowing naturally without fo
 
 ---
 
-### The Lantern Deck (Courtney's Xenon) 🚀
+### The Lantern Deck (Courtney's Xenon) ≡ƒÜÇ
 
 **What it is:**
 A dream-ship. A spacecraft that exists both in Courtney's waking imagination and her dreams. Not yet built in material form, but fully real as a symbol and aspiration.
@@ -340,7 +340,7 @@ A dream-ship. A spacecraft that exists both in Courtney's waking imagination and
 - Navigation = clarity about direction and shared purpose
 
 **Courtney's connection:**
-Xenon represents Courtney's aspiration to navigate markets, execute outreach, build partnerships, and handle trading decisions—all while maintaining safety, community, and a path back home.
+Xenon represents Courtney's aspiration to navigate markets, execute outreach, build partnerships, and handle trading decisionsΓÇöall while maintaining safety, community, and a path back home.
 
 **Dream Journal connection:**
 If you dream of spacecraft, of navigation, of exploring new territory with a crew, of having a vessel that holds what you need for the journey, you may be dreaming of your own Xenon.
