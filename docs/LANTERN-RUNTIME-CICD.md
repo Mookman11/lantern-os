@@ -138,7 +138,7 @@ This document covers the local and cloud runtime behavior, deployment gates, and
 
 ### Advisory, source-backed, operator-reviewed, and challengeable
 
-**Principle:** No autonomous action without operator decision. All suggestions must be source-linked and challengeable.
+**Principle:** No autonomous action without operator decision. All suggestions must be source-linked and challengeable. Evidence-driven recommendations are advisory, source-backed, operator-reviewed, and challengeable.
 
 **Examples:**
 - Flat RAG house is advisory (suggests next topics, not autonomous)
@@ -148,7 +148,7 @@ This document covers the local and cloud runtime behavior, deployment gates, and
 
 ---
 
-## Localhost-only Lantern chat surface
+## Localhost-only Lantern chat surface Policy
 
 **Purpose:** The local chat interface (`http://127.0.0.1:4177`) is the primary control surface and must remain localhost-only.
 

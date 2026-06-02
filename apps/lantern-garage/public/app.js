@@ -580,6 +580,15 @@ function canonicalFrontDoorVerified(cloudMirrors) {
   return cloudMirrors.some((m) => m.verified === true && m.url && m.url.includes("lantern-os-cloud"));
 }
 
+function getFrontDoorUrl(cloudMirrors) {
+  if (!cloudMirrors || !Array.isArray(cloudMirrors)) {
+    return LOCAL_APP_ORIGIN;
+  }
+  const verified = cloudMirrors.find((m) => m.verified === true);
+  const localPrimary = cloudMirrors.find((m) => m.local === true);
+  return localPrimary ? localPrimary.url : (verified ? verified.url : LOCAL_APP_ORIGIN || "service URL pending");
+}
+
 function cloudMirrorStateLabel(mirror, mirrors) {
   if (!mirror || !Array.isArray(mirrors)) return "pending";
   const count = mirrors.filter((m) => m.verified).length;
@@ -596,6 +605,12 @@ function setFrontDoorLink(frontDoorUrl, label) {
   if (!link) return;
   link.href = frontDoorUrl;
   link.textContent = label || "Front door";
+}
+
+function updateFrontDoorFromMirrors(cloudMirrors) {
+  const canonicalVerified = canonicalFrontDoorVerified(cloudMirrors);
+  const frontDoorUrl = getFrontDoorUrl(cloudMirrors);
+  setFrontDoorLink(frontDoorUrl, canonicalVerified ? "Cloud front door" : "Local front door");
 }
 
 function summarizeDispatchFleet(queue) {
@@ -635,6 +650,7 @@ function renderOrchestratorDependency(status) {
   const statusText = status && status.status ? status.status : "checking";
   const registered = status && status.slotsRegistered ? status.slotsRegistered : 0;
   const total = status && status.totalSlots ? status.totalSlots : 4;
+  const result = status && status.result ? status.result : { held: true };
 
   const html = `
     <h3>Orchestrator Dependency</h3>
@@ -644,6 +660,8 @@ function renderOrchestratorDependency(status) {
       <div><dt id="orchDepFleet">Fleet</dt><dd>${statusText === "ready" ? "Dispatch ready" : "Rebuild in progress"}</dd></div>
       <div><dt id="orchDepNext">Next</dt><dd>Run Test-LanternOrchestratorDependency.ps1</dd></div>
     </dl>
+    <button id="dispatch.disabled" disabled>Dispatch Held</button>
+    <p>${result.held ? "No safe agent slots are available." : "Dispatch ready"}</p>
   `;
   panel.innerHTML = html;
 }
