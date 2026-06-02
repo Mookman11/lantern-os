@@ -11,7 +11,7 @@ without pretending they are all cloned, clean, or promoted.
 |---|---|---|---|
 | `local_inspected` | `C:\tmp\human-flourishing-frameworks-scan` | HFF/COMET LEAP scan source | reports, PDFs, 30-day art evidence |
 | `local_inspected` | `C:\Users\alexp\Documents\gm-agent-orchestrator` | local MCP/orchestrator | execution plane, agent queue, services |
-| `local_inspected` | `C:\Users\alexp\Documents\lantern-symbolic-sandbox` | symbolic Lantern sandbox | language/safety/quarantine research |
+| `local_inspected` | `C:\Users\alexp\Documents\lantern-symbolic-sandbox` | symbolic Lantern sandbox | language/safety/hold research |
 | `local_inspected` | `C:\tmp\lantern-os` | clean control plane | v1 staging and release surface |
 | `local_observed` | `C:\tmp\hff-lantern-recovery` | recovered Lantern runtime | source evidence only |
 | `local_observed` | `C:\tmp\hff-evidence-master-clean` | prior clean evidence line | source evidence only |
@@ -27,7 +27,7 @@ without pretending they are all cloned, clean, or promoted.
 |---|---|---|---|
 | `local_inspected` | `https://github.com/alex-place/lantern-os` | master control plane | canonical repo |
 | `local_inspected` | `https://github.com/alex-place/gm-agent-orchestrator` | local MCP/orch | execution and services |
-| `local_inspected` | `https://github.com/alex-place/lantern-symbolic-sandbox` | symbolic language | quarantine/safety rails |
+| `local_inspected` | `https://github.com/alex-place/lantern-symbolic-sandbox` | symbolic language | hold/safety rails |
 | `github_metadata_only` | `https://github.com/alex-place/place_co` | website/company | public surface |
 | `github_metadata_only` | `https://github.com/alex-place/ChildOfLevistus` | GameMaker game | Steam/game lane candidate |
 | `github_metadata_only` | `https://github.com/alex-place/gamemaker-room-editor` | GameMaker tools | game/tooling lane candidate |

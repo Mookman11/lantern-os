@@ -40,13 +40,13 @@ CADENCE_UNKNOWN = "unknown"
 NARRATIVE_STATUS_UNCLASSIFIED = "unclassified"
 NARRATIVE_STATUS_SOURCE_CLASSIFIED = "source_classified"
 NARRATIVE_STATUS_EVIDENCE_BOUND = "evidence_bound"
-NARRATIVE_STATUS_QUARANTINED = "quarantined"
+NARRATIVE_STATUS_ON_HOLD = "on_hold"
 NARRATIVE_STATUS_REJECTED = "rejected"
 
 THREAT_STATUS_CANDIDATE = "candidate"
 THREAT_STATUS_MONITOR = "monitor"
 THREAT_STATUS_REVIEW = "review"
-THREAT_STATUS_QUARANTINE = "quarantine"
+THREAT_STATUS_HOLD = "hold"
 
 RISK_DOMAIN_AMR = "amr"
 RISK_DOMAIN_FUNGAL = "fungal_resistance"
@@ -149,8 +149,8 @@ class OutbreakNarrativeSourceClassification:
     def can_be_public_claim(self) -> bool:
         return self.status == NARRATIVE_STATUS_EVIDENCE_BOUND and not self.missing_requirements()
 
-    def should_quarantine(self) -> bool:
-        return self.status == NARRATIVE_STATUS_QUARANTINED or (
+    def should_hold(self) -> bool:
+        return self.status == NARRATIVE_STATUS_ON_HOLD or (
             self.stigma_risk and not self.safe_public_summary
         )
 
@@ -158,7 +158,7 @@ class OutbreakNarrativeSourceClassification:
         data = asdict(self)
         data["missing_requirements"] = self.missing_requirements()
         data["can_be_public_claim"] = self.can_be_public_claim()
-        data["should_quarantine"] = self.should_quarantine()
+        data["should_hold"] = self.should_hold()
         return data
 
 
@@ -338,6 +338,6 @@ def default_high_confidence_categories() -> List[BioThreatCategory]:
             public_health_controls=["screening", "provenance", "access control", "human review"],
             downstream_impact_reason="High-consequence dual-use domain requiring governance-only handling.",
             dual_use_sensitivity="high",
-            status=THREAT_STATUS_QUARANTINE,
+            status=THREAT_STATUS_HOLD,
         ),
     ]

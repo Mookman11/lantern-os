@@ -49,7 +49,7 @@ Public CAAD must not include:
 - Private journals
 - Private people's unreviewed details
 - Raw chat logs
-- Unreviewed quarantine archives
+- Unreviewed hold archives
 - Claims of prophecy, diagnosis, divine command, surveillance, or deployment authority
 
 ## Promotion Gate

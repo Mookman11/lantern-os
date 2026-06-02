@@ -67,7 +67,7 @@ Decision bands:
 >= 0.90  promote if no boundary blocks
 0.70-0.89 candidate; needs validation or operator review
 0.40-0.69 backlog / poll again
-< 0.40  reject or quarantine
+< 0.40  reject or hold
 boundary present = hold regardless of score
 ```
 

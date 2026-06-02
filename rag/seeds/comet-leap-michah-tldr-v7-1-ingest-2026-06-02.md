@@ -50,4 +50,4 @@ comet-leap, michah, perfect-report, confidence-percentages, appeal-fit, truth-bo
 
 ## Retrieval Summary
 
-When asked about Michah or COMET LEAP v7.1, return: evidence-first advice, percentage confidence tables, strict uncertainty quarantine, bounded market experiments, truth board workflow, and receipt-only confidence upgrades.
+When asked about Michah or COMET LEAP v7.1, return: evidence-first advice, percentage confidence tables, strict uncertainty hold, bounded market experiments, truth board workflow, and receipt-only confidence upgrades.

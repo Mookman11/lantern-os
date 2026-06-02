@@ -22,7 +22,7 @@ Purpose: Perfect consolidation of all repositories with cloud access status
 |---|---|---|---|---|
 | `alex-place/gm-agent-orchestrator` | Local MCP/orchestrator, agents, queues | 6,126 KB | Local-only | ⏳ Active |
 | `human-flourishing-frameworks/human-flourishing-frameworks` | COMET LEAP docs, framework source | 8,721 KB | Local-only | ⏳ Active |
-| `alex-place/lantern-symbolic-sandbox` | Symbolic RAG/quarantine dependency | 16,243 KB | Local-only | ⏳ Active |
+| `alex-place/lantern-symbolic-sandbox` | Symbolic RAG/hold dependency | 16,243 KB | Local-only | ⏳ Active |
 
 ---
 

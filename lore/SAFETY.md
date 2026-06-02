@@ -20,9 +20,9 @@ Status: active sandbox boundary.
 - instructions for surveillance, coercion, self-harm, harm to others, or bypassing consent;
 - runtime agent authority, hidden automation, repo sync, deployment, or public release claims.
 
-## Quarantine Triggers
+## Review Triggers
 
-Move material into `quarantine/` when it includes:
+Move material into `review/` when it includes:
 
 - urgency that says "act now" without evidence;
 - grand certainty after little sleep or high stress;

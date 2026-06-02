@@ -203,9 +203,9 @@ If changes needed: **Update PR and re-comment in Linear**
 
 ### Respect Boundaries
 
-- **No live state in repo:** Never commit conversation logs, journal files, or `.lantern/state/`
+- **Live state allowed:** Journal files and conversation logs may be committed under `data/` with operator consent
 - **No private names:** Don't include personal names of team members in code/docs
-- **No mythology language:** Don't use TARDIS, spine, convergence, anchor, etc. in code/docs
+- **Mythology content integrated:** Symbolic language (TARDIS, spine, convergence, anchor) is preserved in `lore/` and `archive/` as historical record
 - **No overengineering claims:** Don't claim features are "production-ready" or "v2.0" until Founder approves
 
 ---
@@ -217,22 +217,22 @@ If changes needed: **Update PR and re-comment in Linear**
 You're responsible for removing old code/docs and documenting what stays.
 
 ```bash
-# Example Phase 1 cleanup: delete mythology docs
+# Example Phase 1 cleanup: delete deprecated surfaces
 
 # 1. Find all files matching the pattern
-find docs/ -name "*TARDIS*" -o -name "*spine*" -o -name "*anchor*"
+find docs/ -name "*DEPRECATED*" -o -name "*OLD*"
 
 # 2. Verify no code depends on them
-grep -r "TARDIS\|spine\|anchor" src/ --include="*.py" --include="*.ps1"
+grep -r "DEPRECATED_SURFACE" src/ --include="*.py" --include="*.ps1"
 
 # 3. Delete the files
-git rm docs/TARDIS-*.md docs/spine-*.md docs/anchor-*.md
+git rm docs/DEPRECATED-*.md
 
 # 4. Commit
-git commit -m "Phase 1 — Delete mythology docs (TARDIS, spine, anchor)"
+git commit -m "Phase 1 — Delete deprecated surfaces"
 
 # 5. Verify
-grep -r "TARDIS\|spine\|anchor" docs/ --include="*.md"  # Should return 0 matches
+grep -r "DEPRECATED_SURFACE" docs/ --include="*.md"  # Should return 0 matches
 ```
 
 ### Feature Work

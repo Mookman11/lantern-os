@@ -63,7 +63,7 @@ graph TD
 graph LR
   L[lantern-os] -->|controls via manifests/scripts| O[gm-agent-orchestrator]
   L -->|adapts tooling| GMR[gamemaker-room-editor]
-  L -->|indexes / quarantine research| SYM[lantern-symbolic-sandbox]
+  L -->|indexes / hold research| SYM[lantern-symbolic-sandbox]
   O -->|fallback| MAN[manual PowerShell / local inspection]
   O -->|hold if dirty| HOLD[do not sync/reset/dispatch]
 ```

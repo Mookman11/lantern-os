@@ -127,7 +127,7 @@ Each data state has a corresponding control loop:
 4. **external_llm_summary** — Pod stores compressed web summary (no raw dump)
 5. **external_search_snippet** — Pod ingests search snippet with provenance
 6. **not_yet_cloned** — Pod marks repo as candidate for future intake
-7. **held** — Pod quarantines; requires operator annotation to proceed
+7. **held** — Pod holds; requires operator annotation to proceed
 
 ---
 

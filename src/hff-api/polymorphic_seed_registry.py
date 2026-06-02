@@ -25,7 +25,7 @@ STATUS_DRAFT = "draft"
 STATUS_LOW_CONFIDENCE_PREDICTIVE = "low_confidence_predictive"
 STATUS_SOURCE_BACKED = "source_backed"
 STATUS_REVIEW_REQUIRED = "review_required"
-STATUS_QUARANTINED = "quarantined"
+STATUS_ON_HOLD = "on_hold"
 STATUS_REJECTED = "rejected"
 
 CLAIM_SCOPE_CONTEXT = "context"

@@ -74,5 +74,5 @@ Each line should contain:
 - `>= 0.90`: promote if no boundary blocks it.
 - `0.70-0.89`: candidate; needs validation or operator review.
 - `0.40-0.69`: keep in sprint backlog.
-- `< 0.40`: reject or quarantine.
+- `< 0.40`: reject or hold.
 - boundary present: hold regardless of confidence.

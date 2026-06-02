@@ -122,7 +122,7 @@
                   },
                   {
                       "slot":  "s05-backup-b",
-                      "role":  "quarantine-stub-checker",
+                      "role":  "hold-stub-checker",
                       "state":  "sleep",
                       "step":  5,
                       "worktree":  "D:\\tmp\\lantern-os",

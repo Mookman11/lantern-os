@@ -70,7 +70,7 @@ Decision bands:
 | `0.90-1.00` | promote unless boundary-held |
 | `0.70-0.89` | candidate |
 | `0.40-0.69` | backlog and poll |
-| `<0.40` | reject or quarantine |
+| `<0.40` | reject or hold |
 
 ## Boundaries
 
