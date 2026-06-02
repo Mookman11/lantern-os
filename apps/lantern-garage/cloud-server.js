@@ -239,6 +239,11 @@ async function route(req, res) {
     return;
   }
 
+  if (url.pathname === "/health") {
+    sendJson(res, { ok: true, service: "lantern-garage-cloud", generatedAt: new Date().toISOString() });
+    return;
+  }
+
   if (url.pathname === "/api/status") {
     sendJson(res, {
       generatedAt: new Date().toISOString(),
@@ -311,12 +316,15 @@ async function route(req, res) {
     sendJson(res, {
       status: "action_not_available_in_cloud",
       action,
-      reason: "Local actions require operator machine access",
+      message: "Action held in AWS cloud mode.",
+      reason: "The local orchestrator queue is not exposed on AWS cloud mode.",
     }, 403);
     return;
   }
 
-  const staticPath = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
+  const staticPath = url.pathname === "/" ? "index.html" :
+    url.pathname === "/outreach" ? "outreach.html" :
+    url.pathname.slice(1);
   const target = path.resolve(publicRoot, staticPath);
   if (!target.startsWith(publicRoot)) {
     sendJson(res, { error: "forbidden" }, 403);

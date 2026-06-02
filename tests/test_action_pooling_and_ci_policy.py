@@ -31,7 +31,7 @@ def test_ci_workflow_parallel_lanes_and_summary_gate_are_present():
     missing_jobs = [job for job in required_jobs if job not in text]
     assert missing_jobs == []
 
-    assert 'needs: [repo-surface, manifests, html-links, python-tests, workflow-shape]' in text
+    assert 'needs: [repo-surface, manifests, html-links, python-tests, convergence-cloud, workflow-shape]' in text
     assert 'workflow_dispatch:' in text
     assert 'group: static-surface-ci-${{ github.ref }}' in text
     assert 'cancel-in-progress: true' in text
