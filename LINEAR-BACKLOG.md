@@ -299,7 +299,7 @@
   - 500-year-lab: validate citations against PubMed/DOI, refactor to "Longevity Evidence Summary" with GRADE quality
   - Regulatory Primitive Stack: cross-ref against NIST AI RMF / ISO 42001 / EU AI Act, build overlap table
   - Capability Honesty: file as design doc, mark "implementation pending"
-  - Bumblebee audio: rename synthetic files (lantern_10_quantum_dust.wav → lantern_10_sparkle_pad.wav), create MANIFEST.md with source + license
+  - Bumblebee audio: original symbolic names restored (lantern_10_quantum_dust.wav), create MANIFEST.md with source + license
 - **Acceptance Criteria:**
   - [ ] All longevity citations resolve
   - [ ] Regulatory primitive overlap table created

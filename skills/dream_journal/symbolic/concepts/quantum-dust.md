@@ -67,9 +67,9 @@ The quantum dust sound is a rain texture: filtered noise, random ticks, low ampl
 ## Why It Was Quarantined
 
 Quantum dust was labeled "mythology" during the quarantine phase and removed from active surfaces:
-- `lantern_10_quantum_dust.wav` → `lantern_10_sparkle_pad.wav`
-- References scrubbed from `PORTFOLIO-PDF.md`, `OVERVIEW.md`, `FOUNDRY-PLAN.md`
-- `docs/sandbox-archive/FINAL_STATUS_2026-05-25.md`: "Names cleaned (removed _tardis, _door, _quantum_dust mythology)"
+- `lantern_10_quantum_dust.wav` was temporarily renamed to `lantern_10_sparkle_pad.wav` during quarantine; original name restored 2026-06-02
+- References scrubbed from `PORTFOLIO-PDF.md`, `OVERVIEW.md`, `FOUNDRY-PLAN.md` during quarantine; restored 2026-06-02
+- `docs/sandbox-archive/FINAL_STATUS_2026-05-25.md`: originally documented as "Names cleaned"; updated to "Original symbolic names restored 2026-06-02"
 
 It was quarantined because it was seen as too symbolic, too poetic, too hard to explain to investors.
 

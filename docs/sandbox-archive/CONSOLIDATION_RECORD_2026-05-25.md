@@ -35,13 +35,13 @@
 
 ## Phase 2: Sound Library Cleanup (âœ… COMPLETE)
 
-### File Renames (mythology â†’ clean names)
+### File Names (original symbolic names restored 2026-06-02 — quarantine removed)
 
 ```
-lantern_03_rain_on_tardis.wav â†’ lantern_03_rain.wav
-lantern_05_heartbeat_door.wav â†’ lantern_05_heartbeat_pad.wav
-lantern_10_quantum_dust.wav â†’ lantern_10_sparkle_pad.wav
-lantern_12_return_door.wav â†’ lantern_12_chime_outro.wav
+lantern_03_rain_on_tardis.wav  (original — restored 2026-06-02) â†’ lantern_03_rain_on_tardis.wav  (original — restored)
+lantern_05_heartbeat_door.wav  (original — restored 2026-06-02) â†’ lantern_05_heartbeat_door.wav  (original — restored)
+lantern_10_quantum_dust.wav  (original — restored 2026-06-02) â†’ lantern_10_quantum_dust.wav  (original — restored)
+lantern_12_return_door.wav  (original — restored 2026-06-02) â†’ lantern_12_return_door.wav  (original — restored)
 ```
 
 **Location:** `~/.lantern/sounds/`  

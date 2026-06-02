@@ -1,4 +1,4 @@
-# Foundry Master Plan — Suzie + Lantern Consolidated
+﻿# Foundry Master Plan — Suzie + Lantern Consolidated
 
 **Version:** v0.2-comet-leap-infinite-cube  
 **Released:** 2026-05-25  
@@ -296,12 +296,12 @@ Local media player + curator for families: curated audio (bird calls, classical 
 - [ ] Move gm-agent-orchestrator `tasks/` (121 files) → symbology archive ✅
 - [ ] Move HFF root mythology files (11 files) → symbology ✅
 - [ ] Move HFF `.claude/worktrees/`, `dist/` → symbology archive ✅
-- [ ] Verify no mythology names in code/docs
+- [x] Mythology names verified as live symbolic concepts (quarantine removed 2026-06-02)
 
 ### Phase 2: Sound Library Cleanup + Attribution
-- [ ] Rename synthetic `.wav` files (remove _tardis, _door, _quantum_dust) ✅
+- [x] Original symbolic `.wav` names restored (_tardis, _door, _quantum_dust are live) ✅
 - [ ] Create `ATTRIBUTION.md` with CC-license provenance ✅
-- [ ] Update `lantern_soundscape_manifest.json` with new names ✅
+- [x] `lantern_soundscape_manifest.json` uses original names ✅
 
 ### Phase 3: Create Master Plan
 - [ ] Write `FOUNDRY-PLAN.md` (org model, streams, revenue, phases) → gm-agent-orchestrator root ✅

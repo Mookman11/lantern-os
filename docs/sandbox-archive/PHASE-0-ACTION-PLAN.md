@@ -160,16 +160,16 @@ rm hff_safe_packet.txt
 **In `~/.lantern/sounds/`:**
 
 ```bash
-mv lantern_03_rain_on_tardis.wav lantern_03_rain.wav
-mv lantern_05_heartbeat_door.wav lantern_05_heartbeat_pad.wav
-mv lantern_10_quantum_dust.wav lantern_10_sparkle_pad.wav
-mv lantern_12_return_door.wav lantern_12_chime_outro.wav
+# mv lantern_03_rain_on_tardis.wav lantern_03_rain_on_tardis.wav  (REVERSED 2026-06-02 — original names restored)
+# mv lantern_05_heartbeat_door.wav lantern_05_heartbeat_door.wav  (REVERSED 2026-06-02 — original names restored)
+# mv lantern_10_quantum_dust.wav lantern_10_quantum_dust.wav  (REVERSED 2026-06-02 — original names restored)
+# mv lantern_12_return_door.wav lantern_12_return_door.wav  (REVERSED 2026-06-02 — original names restored)
 ```
 
 **Update `lantern_soundscape_manifest.json`:**
 ```json
 {
-  "file": "lantern_03_rain.wav",
+  "file": "lantern_03_rain_on_tardis.wav",
   "description": "rain texture",
   "source": "procedural original",
   "voice": "none"
@@ -224,9 +224,9 @@ Generated with Python `stdlib` (scipy.signal, numpy, wave module) â€” no ex
 
 - lantern_01_calm_lake_pad.wav (procedural: sine + noise blending)
 - lantern_02_door_chimes.wav (procedural: bell synthesis)
-- lantern_03_rain.wav (procedural: colored noise texture)
+- lantern_03_rain_on_tardis.wav (procedural: colored noise texture)
 - lantern_04_synthetic_frogs.wav (procedural: frog call synthesis)
-- lantern_05_heartbeat_pad.wav (procedural: pulse with harmonics)
+- lantern_05_heartbeat_door.wav (procedural: pulse with harmonics)
 - lantern_06_guardian_pad.wav (procedural: pad synthesis)
 - lantern_07_brave_chimes.wav (procedural: bell + harmonic)
 - lantern_08_safe_fun_pad.wav (procedural: pad)
@@ -335,10 +335,10 @@ python apps/lantern-desktop/lantern_desktop.py
 - grandiose framing language (stripped during write)
 
 **Renamed (Sound Library):**
-- lantern_03_rain_on_tardis.wav â†’ lantern_03_rain.wav
-- lantern_05_heartbeat_door.wav â†’ lantern_05_heartbeat_pad.wav
-- lantern_10_quantum_dust.wav â†’ lantern_10_sparkle_pad.wav
-- lantern_12_return_door.wav â†’ lantern_12_chime_outro.wav
+- lantern_03_rain_on_tardis.wav â†’ lantern_03_rain_on_tardis.wav
+- lantern_05_heartbeat_door.wav â†’ lantern_05_heartbeat_door.wav
+- lantern_10_quantum_dust.wav â†’ lantern_10_quantum_dust.wav
+- lantern_12_return_door.wav â†’ lantern_12_return_door.wav
 
 ---
 
