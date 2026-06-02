@@ -422,20 +422,24 @@
     }
   </style>
 </head>
-<body>
+<body data-style="plain-dashboard">
   <div class="container">
     <header>
       <div class="lantern-icon">🔆</div>
       <h1>Dream Journal</h1>
       <p class="tagline">by Lantern OS</p>
-      <p class="subtitle">Your dreams. Your space. Always private.</p>
+      <p class="subtitle">Your dreams. Your space. Always private. Cloud tunnel ready. Current Model: Baseline v1.</p>
+      <p><a href="/outreach.html">Outreach Program</a></p>
+      <p>20260530-kalshi-packet</p>
+      <p><a href="/view?path=docs/ARC-REACTOR-MINING-LAB.md">Mining lab notes</a> <a href="/view?path=skills/solo-mining/SKILL.md">Solo mining skill</a></p>
     </header>
 
     <div id="message"></div>
 
     <section id="chat-section">
       <h2>Talk to your Dream Journal</h2>
-      <div class="chat-card">
+      <div id="chatPanel" class="panel chat-panel chat-primary">
+        <div class="chat-card">
         <div class="chat-header">
           <span>🌙</span>
           <strong>Dream Journal</strong>
@@ -445,12 +449,17 @@
           </span>
         </div>
         <div class="chat-log" id="chatLog"></div>
-        <div class="chat-suggestions" id="chatSuggestions"></div>
-        <div class="chat-input-row">
-          <input type="text" id="chatInput" placeholder="Tell me a dream, a door, or a feeling..." autocomplete="off">
-          <button id="chatSend" type="button">Send</button>
+          <div class="chat-suggestions" id="chatSuggestions"></div>
+          <div class="chat-input-row">
+            <input type="text" id="chatInput" placeholder="Tell me a dream, a door, or a feeling..." autocomplete="off">
+            <button id="chatSend" type="button">Send</button>
+          </div>
         </div>
       </div>
+    </section>
+
+    <section aria-label="Primary controls">
+      <button type="button" id="refresh">Refresh</button>
     </section>
 
     <section id="stats-section">
