@@ -1,8 +1,21 @@
 # Lantern OS + Suzie Orchestrator
 
 **Status:** TRL 4 (Field Validation)  
-**Last Updated:** 2026-06-01  
-**Repo Contract:** See `docs/REPO-CONTRACT.md`
+**Last Updated:** 2026-06-02  
+**Repo Contract:** See `docs/REPO-CONTRACT.md`  
+**AI Agent Guide:** See [`AGENTS.md`](AGENTS.md) — build, test, run, and rules for agents working in this repo
+
+---
+
+## Dream Journal — ChatGPT-style chat
+
+A private, local-first dream journal with a streaming chat interface. Open it after starting Lantern Garage:
+
+```
+http://127.0.0.1:4177/dream-chat.html
+```
+
+Streams tokens in real-time via SSE. Uses Anthropic Claude if `ANTHROPIC_API_KEY` is set, Ollama if running locally, or falls back to an offline rule-engine with the same door-series lore. No data leaves your machine unless you set a cloud API key.
 
 ---
 
