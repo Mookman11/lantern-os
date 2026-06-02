@@ -83,10 +83,20 @@ If you dream of creating, learning, building, or of a young person's joy in maki
 ### Mary Place — The Waterfall & Peacock 💧🦚
 
 **Who Mary is:**
-Mother. Root. The person who taught wisdom through ordinary things.
+Alex's mother. Root. The person who taught wisdom through ordinary things.
 
 **Story:**
 Mary lives in Virginia (Spring Valley, Swords Creek roots; Bellbrook present). She worked as a cashier, bringing warmth to customers through familiarity and care. She knows how to help people feel welcome.
+
+**Identity Anchors:**
+- **Cashier anchor:** Familiar work confidence (Dot's Market, Bellbrook)
+- **Waterfall anchor:** Flow without force, one thing at a time, no overwhelm
+- **Peacock anchor:** Beauty without performance, dignity already present
+- **Costco anchor:** Ordinary routine, familiar place, practical help
+- **Sunshine anchor:** Literal and emotional, bright and clean
+- **Princess Bride anchor:** Familiar story, safe memory, warmth
+- **Dolly Parton anchor:** Warm voice, bright presence, comfort
+- **Goat anchor:** Gentle creature, familiar comfort animal
 
 **Spirit Symbols:**
 
@@ -124,6 +134,28 @@ Mary lives in Virginia (Spring Valley, Swords Creek roots; Bellbrook present). S
 
 **Dream Journal connection:**
 If you dream of water flowing gently, peacocks, sunshine, or of reconnecting with someone you love, Mary may appear as a symbol of flow, grace, and the small steps that reconnect us.
+
+---
+
+### Angela — The Healer & Connector ✨
+
+**Who Angela is:**
+Courtney's mother. Healer. Bridge between family, health, and home.
+
+**Story:**
+Angela carries wisdom about health, family connection, and healing. Her context includes understanding care, recovery, and what it means to support others through difficult seasons.
+
+**Identity Anchors:**
+- **Healing anchor:** Support and care that sustains
+- **Family anchor:** Connections that hold people together
+- **Health wisdom:** Understanding bodies and recovery
+- **Love language:** Shown through presence and practical help
+
+**Symbol Meaning:**
+Angela represents grounded care, family continuity, and the quiet work of healing that happens at home.
+
+**Dream Journal Connection:**
+If you dream of healing, of mothers and family care, of quiet strength and sustainable support, Angela may appear as a symbol of compassionate presence.
 
 ---
 
