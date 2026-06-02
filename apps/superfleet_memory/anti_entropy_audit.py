@@ -12,6 +12,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey, Ed25519PublicKey
 )
 from cryptography.hazmat.primitives import serialization
+from cryptography.exceptions import InvalidSignature
 
 
 class CryptographicAuditChain:
@@ -33,7 +34,8 @@ class CryptographicAuditChain:
             "action": action,
             "data": data,
             "metadata": metadata or {},
-            "previous_hash": self.last_hash
+            "previous_hash": self.last_hash,
+            "public_key": self.get_public_key_pem()
         }
 
         # Create hash of the entry (excluding signature)
@@ -63,19 +65,24 @@ class CryptographicAuditChain:
         current_hash = "0" * 64
 
         for entry in self.chain:
-            # Reconstruct entry without signature for verification
-            entry_copy = {k: v for k, v in entry.items() if k != "signature"}
+            # Reconstruct the signed payload exactly as it existed before
+            # hash/signature fields were attached.
+            entry_copy = {k: v for k, v in entry.items() if k not in ("hash", "signature")}
             entry_json = json.dumps(entry_copy, sort_keys=True).encode()
+            entry_hash = hashlib.sha256(entry_json).hexdigest()
 
             # Verify hash chain
             if entry["previous_hash"] != current_hash:
+                return False
+            if entry.get("hash") != entry_hash:
                 return False
 
             # Verify signature
             try:
                 signature = bytes.fromhex(entry["signature"])
-                self.public_key.verify(signature, entry_json)
-            except Exception:
+                verifier = serialization.load_pem_public_key(entry["public_key"].encode())
+                verifier.verify(signature, entry_json)
+            except (InvalidSignature, KeyError, ValueError, TypeError):
                 return False
 
             current_hash = entry["hash"]

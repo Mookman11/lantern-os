@@ -1,6 +1,7 @@
 param(
     [string]$Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
     [int]$FixWindow = 4,
+    [string]$Output,
     [switch]$CloudVirtualization
 )
 
@@ -285,6 +286,19 @@ $result = [pscustomobject]@{
 
 $json = $result | ConvertTo-Json -Depth 8
 Write-Output $json
+
+if ($Output) {
+    $outputPath = if ([System.IO.Path]::IsPathRooted($Output)) {
+        $Output
+    } else {
+        Join-Path (Get-Location) $Output
+    }
+    $outputDirectory = Split-Path -Path $outputPath -Parent
+    if ($outputDirectory -and -not (Test-Path -LiteralPath $outputDirectory)) {
+        New-Item -ItemType Directory -Path $outputDirectory -Force | Out-Null
+    }
+    $json | Set-Content -LiteralPath $outputPath -Encoding utf8
+}
 
 if ($issues.Count -gt 0) {
     exit 1

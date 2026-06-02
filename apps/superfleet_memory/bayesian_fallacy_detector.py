@@ -28,7 +28,7 @@ class BayesianFallacyDetector:
             "begging_the_question": 0.08
         }
 
-        self.fallacy_threshold = 0.65  # Flag if posterior > 65%
+        self.fallacy_threshold = 0.30  # Flag if posterior >= 30%
 
         self.explanations = {
             "false_dichotomy": "This presents only two options when more may exist.",
@@ -61,8 +61,8 @@ class BayesianFallacyDetector:
 
         # Pattern matching for each fallacy type
         patterns = {
-            "false_dichotomy": ["either", "or", "both", "neither", "only way"],
-            "appeal_to_emotion": ["feel", "scary", "beautiful", "terrible", "horrible", "amazing"],
+            "false_dichotomy": ["either", " or ", "with us or against us", "both", "neither", "only way"],
+            "appeal_to_emotion": ["feel", "scary", "beautiful", "terrible", "horrible", "amazing", "absolutely"],
             "hasty_generalization": ["always", "never", "all", "none", "everyone", "nobody"],
             "circular_reasoning": ["because", "since", "as", "therefore"],
             "straw_man": ["you're saying", "that means", "so you believe"],
@@ -71,11 +71,11 @@ class BayesianFallacyDetector:
             "begging_the_question": ["obviously", "clearly", "as we know", "of course"]
         }
 
-        likelihood = 0.35  # Base likelihood
+        likelihood = 0.25  # Base likelihood
 
         if fallacy in patterns:
             if any(pattern in statement_lower for pattern in patterns[fallacy]):
-                likelihood += 0.40
+                likelihood += 0.60
 
         return min(likelihood, 0.95)
 
@@ -106,7 +106,7 @@ class BayesianFallacyDetector:
             likelihood = self._calculate_likelihood(statement, fallacy)
             posterior = self._bayes_update(prior, likelihood)
 
-            if posterior > self.fallacy_threshold:
+            if posterior >= self.fallacy_threshold:
                 detected.append({
                     "fallacy": fallacy,
                     "probability": round(posterior, 3),
