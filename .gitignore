@@ -30,3 +30,6 @@ node_modules/
 
 # Discord subscriber data (local only, not in Git)
 data/discord/subscribers.json
+
+# Dreamer notebooks — private user data (local only)
+data/dreamer/notebooks/*.jsonl
