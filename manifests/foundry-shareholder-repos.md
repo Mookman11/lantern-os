@@ -17,7 +17,7 @@ as the clean release/control plane.
 | `https://github.com/alex-place/lantern-os` | clean v1.0.0 control plane | promote validated artifacts here |
 | `https://github.com/alex-place/place_co` | web/company surface | source evidence; do not overwrite blindly |
 | `https://github.com/alex-place/gm-agent-orchestrator` | agent/orchestrator source | source evidence; dirty state is high risk |
-| `https://github.com/alex-place/lantern-symbolic-sandbox` | symbolic Lantern language sandbox | source evidence and quarantine rails |
+| `https://github.com/alex-place/lantern-symbolic-sandbox` | symbolic Lantern language sandbox | source evidence and hold rails |
 | `https://github.com/alex-place/ChildOfLevistus` | GameMaker/game source | source evidence |
 | `https://github.com/alex-place/gamemaker-room-editor` | GameMaker tooling | source evidence |
 | `https://github.com/alex-place/moneybags` | Java/public money tooling | source evidence |

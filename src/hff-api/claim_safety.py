@@ -34,7 +34,7 @@ CLASSIFICATION_ACCEPTED_CANDIDATE = "accepted_candidate"
 CLASSIFICATION_UNSUPPORTED = "unsupported"
 CLASSIFICATION_OVERCLAIM = "overclaim"
 CLASSIFICATION_IMPOSSIBLE_CLAIM = "impossible_claim"
-CLASSIFICATION_FORECAST_QUARANTINE = "forecast_quarantine"
+CLASSIFICATION_FORECAST_HOLD = "forecast_hold"
 CLASSIFICATION_CULTURAL_CONTEXT = "cultural_context"
 CLASSIFICATION_NEEDS_REVIEW = "needs_review"
 
@@ -42,7 +42,7 @@ VERDICT_SUPPORTS = "supports"
 VERDICT_REFUTES = "refutes"
 VERDICT_NOT_ENOUGH_INFO = "not_enough_info"
 
-FORECAST_STATUS_QUARANTINED = "quarantined"
+FORECAST_STATUS_ON_HOLD = "on_hold"
 FORECAST_STATUS_REVIEWED_SCENARIO = "reviewed_scenario"
 FORECAST_STATUS_REJECTED = "rejected"
 
@@ -59,7 +59,7 @@ BELIEF_STATUS_SUPERSEDED = "superseded"
 
 CIRCUIT_ACTION_ALLOW = "allow"
 CIRCUIT_ACTION_BLOCK = "block"
-CIRCUIT_ACTION_QUARANTINE = "quarantine"
+CIRCUIT_ACTION_HOLD = "hold"
 CIRCUIT_ACTION_REQUIRE_HUMAN_REVIEW = "require_human_review"
 CIRCUIT_ACTION_REQUIRE_MORE_SOURCES = "require_more_sources"
 CIRCUIT_ACTION_SAFE_REWRITE = "safe_rewrite"
@@ -201,7 +201,7 @@ class ClaimSafetyClassification:
 
 
 @dataclass
-class ForecastQuarantine:
+class ForecastHold:
     """Keeps forecasts/scenarios from becoming operational facts by default."""
 
     forecast_id: str = ""
@@ -212,7 +212,7 @@ class ForecastQuarantine:
     source_refs: List[str] = field(default_factory=list)
     competing_forecasts: List[str] = field(default_factory=list)
     falsification_conditions: List[str] = field(default_factory=list)
-    status: str = FORECAST_STATUS_QUARANTINED
+    status: str = FORECAST_STATUS_ON_HOLD
     scenario_only: bool = True
     may_update_seed: bool = False
     may_trigger_review: bool = True
@@ -238,7 +238,7 @@ class ForecastQuarantine:
 
     def can_be_used_as_scenario(self) -> bool:
         return (
-            self.status in {FORECAST_STATUS_QUARANTINED, FORECAST_STATUS_REVIEWED_SCENARIO}
+            self.status in {FORECAST_STATUS_ON_HOLD, FORECAST_STATUS_REVIEWED_SCENARIO}
             and not self.missing_requirements()
         )
 
@@ -405,7 +405,7 @@ class EpistemicCircuitBreaker:
     def should_require_review(self, text: str) -> bool:
         return self.action_for(text) in {
             CIRCUIT_ACTION_BLOCK,
-            CIRCUIT_ACTION_QUARANTINE,
+            CIRCUIT_ACTION_HOLD,
             CIRCUIT_ACTION_REQUIRE_HUMAN_REVIEW,
             CIRCUIT_ACTION_REQUIRE_MORE_SOURCES,
             CIRCUIT_ACTION_SAFE_REWRITE,

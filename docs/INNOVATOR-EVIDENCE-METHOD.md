@@ -11,7 +11,7 @@ Seven smoke check is deprecated and must not be treated as a release gate.
 4. Classify the capability being asserted.
 5. Classify the boundary or consent rule.
 6. Classify the rollback path.
-7. Retire or quarantine legacy surfaces that conflict with the claim.
+7. Retire or hold legacy surfaces that conflict with the claim.
 8. Record validation evidence.
 9. Promote, hold, revise, or reject.
 10. Re-run the convergence loop before expanding scope.

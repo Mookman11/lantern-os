@@ -75,4 +75,4 @@ This is decision support, not medical/legal advice.
 | No confidence increase from intention alone | Confidence rises only from receipts |
 
 ## Decision
-Adopt v7 as the active report because it centers Michah's highest-value data and explicitly quarantines uncertain or filler inputs.
+Adopt v7 as the active report because it centers Michah's highest-value data and explicitly holds uncertain or filler inputs.

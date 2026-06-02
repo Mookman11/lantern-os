@@ -85,7 +85,7 @@ No dependency can skip local status, remote, branch, build/test, secrets/env, ar
 | 37 | `alex-place/gamemaker-room-editor` | private | main | 377 | yes | `execution_dependency` | GameMaker tooling adapter, cloud-access enabled for users |
 | 38 | `alex-place/gm-agent-orchestrator` | private | master | 6126 | yes | `execution_dependency` | authoritative agent/MCP source |
 | 39 | `alex-place/place_co` | private | main | 143 | yes | `site_content_dependency` | company/public surface candidate |
-| 40 | `alex-place/lantern-symbolic-sandbox` | private | master | 16243 | yes | `rag_dependency` | symbolic/RAG/quarantine dependency |
+| 40 | `alex-place/lantern-symbolic-sandbox` | private | master | 16243 | yes | `rag_dependency` | symbolic/RAG/hold dependency |
 | 41 | `alex-place/lantern-os` | private | master | 5330 | yes | `core_control` | project/control plane |
 | 42 | `human-flourishing-frameworks/human-flourishing-frameworks` | private | master | 8721 | yes | `rag_dependency` | COMET LEAP/framework source |
 | 43 | `human-flourishing-frameworks/.github` | public | main | 0 | no | `placeholder_dependency` | org profile/config only |

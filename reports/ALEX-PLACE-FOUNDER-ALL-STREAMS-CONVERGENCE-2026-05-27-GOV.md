@@ -20,7 +20,7 @@ This packet consolidates all major Lantern streams, user fronts, repo fronts, an
 | `local_inspected` | `C:\tmp\lantern-os` | canonical control plane |
 | `local_inspected` | `C:\Users\alexp\Documents\gm-agent-orchestrator` | MCP/orchestrator execution plane |
 | `local_inspected` | `C:\tmp\human-flourishing-frameworks-scan` | source evidence and prior packets |
-| `local_inspected` | `C:\Users\alexp\Documents\lantern-symbolic-sandbox` | quarantine symbolic lane |
+| `local_inspected` | `C:\Users\alexp\Documents\lantern-symbolic-sandbox` | hold symbolic lane |
 | `metadata_only` | `place_co`, `ChildOfLevistus`, `gamemaker-room-editor`, `moneybags`, `SmartBid`, `smartmealplanning` | intake candidates |
 
 ## Web Signal Grounding (May 2026)

@@ -43,7 +43,7 @@ Founder/operator direction can prioritize, hold, or approve the next action. It 
 | 2 | Source-repo scout | Dirty-state checker | Dependency-boundary checker |
 | 3 | Manifest reader | Open-issue reader | Stale-reference checker |
 | 4 | Objective framer | Safety reviewer | Founder-priority resolver |
-| 5 | Retirement agent | Deprecated-surface checker | Quarantine/stub checker |
+| 5 | Retirement agent | Deprecated-surface checker | Hold/stub checker |
 | 6 | Claim mapper | Evidence linker | Confidence classifier |
 | 7 | Boundary classifier | Rollback checker | Capability-state checker |
 | 8 | Validation runner | Cheapest-check selector | Environment-limit recorder |

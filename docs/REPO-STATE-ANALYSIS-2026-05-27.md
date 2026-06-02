@@ -169,7 +169,7 @@ These have pending changes—not yet committed to master:
 
 ### Gate 7: Old Surface Retirement
 - ⚠️ **PENDING**: Skeleton-only docs marked for retirement
-- ⚠️ **PENDING**: Old launch paths quarantined
+- ⚠️ **PENDING**: Old launch paths holdd
 
 ### Gate 8: Loop Evidence
 - ✓ Latest loop outputs saved and summarized (2026-05-27)
@@ -200,7 +200,7 @@ These have pending changes—not yet committed to master:
 - C:\Users\alexp\Documents\gm-agent-orchestrator (orchestrator/MCP)
 - C:\tmp\human-flourishing-frameworks-scan (source evidence)
 
-**Quarantine:**
+**Hold:**
 - C:\Users\alexp\Documents\lantern-symbolic-sandbox
 
 **Metadata-Only (Intake Candidates):**
@@ -233,7 +233,7 @@ These have pending changes—not yet committed to master:
    - Report skill options (UI/UX validation pending)
 
 ### Step 5: Retire Old Surfaces
-**Not yet completed.** Next convergence loop should mark deprecated language and quarantine conflicting launch paths.
+**Not yet completed.** Next convergence loop should mark deprecated language and hold conflicting launch paths.
 
 ---
 
@@ -281,7 +281,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Open-TonyGarage.ps
 
 ✓ No metadata pretense — metadata-only repos are tracked separately  
 ✓ Source immutability — no mutations to source repos during dollhouse build  
-✓ Clean state only — dirty state is quarantined, not imported blind  
+✓ Clean state only — dirty state is holdd, not imported blind  
 ✓ Secrets protection — no credentials in Git  
 ✓ Copyright respect — no raw article dumps  
 ✓ Evidence standard — agreement is proof only if it predicts, explains, or produces external fact  

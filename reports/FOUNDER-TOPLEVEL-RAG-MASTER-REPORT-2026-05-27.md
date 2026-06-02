@@ -25,7 +25,7 @@ This is the top-level founder packet across the repo universe. It is intentional
 | `local_inspected` | `C:\tmp\lantern-os` | canonical control plane |
 | `local_inspected` | `C:\Users\alexp\Documents\gm-agent-orchestrator` | local MCP/orchestrator execution plane |
 | `local_inspected` | `C:\tmp\human-flourishing-frameworks-scan` | COMET LEAP source evidence plane |
-| `local_inspected` | `C:\Users\alexp\Documents\lantern-symbolic-sandbox` | symbolic sandbox quarantine lane |
+| `local_inspected` | `C:\Users\alexp\Documents\lantern-symbolic-sandbox` | symbolic sandbox hold lane |
 | `github_metadata_only` | `https://github.com/alex-place/place_co` | company/web surface |
 | `github_metadata_only` | `https://github.com/alex-place/ChildOfLevistus` | GameMaker game lane |
 | `github_metadata_only` | `https://github.com/alex-place/gamemaker-room-editor` | GameMaker tooling lane |
@@ -84,7 +84,7 @@ Narrative: this lane feeds founder-grade reports and proofs into Lantern OS.
 | Repo | `https://github.com/alex-place/lantern-symbolic-sandbox` |
 | Local path | `C:\Users\alexp\Documents\lantern-symbolic-sandbox` |
 | State | `local_inspected` |
-| Founder position | quarantine symbolic lane |
+| Founder position | hold symbolic lane |
 | RAG room links | safety and language experimentation |
 | Primary risk | symbolic content leaking into ops doctrine |
 | Next proof | keep strict boundary references in manifests |
@@ -183,7 +183,7 @@ Past -> Present -> Future -> Actual pattern remains mandatory across every repo 
 `human-flourishing-frameworks-scan` remains key founder evidence source.
 
 ### Page 5
-`lantern-symbolic-sandbox` remains strict quarantine.
+`lantern-symbolic-sandbox` remains strict hold.
 
 ### Page 6
 Metadata-only repos remain candidate lanes, not promoted state.

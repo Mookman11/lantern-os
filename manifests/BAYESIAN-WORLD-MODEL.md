@@ -33,7 +33,7 @@ promote | hold | reject | poll again
 | `0.90-1.00` | strongly verified | promote unless boundary-held |
 | `0.70-0.89` | likely | candidate |
 | `0.40-0.69` | mixed | backlog and poll |
-| `0.00-0.39` | weak | reject/quarantine |
+| `0.00-0.39` | weak | reject/hold |
 
 ## Required Ledger
 

@@ -241,7 +241,7 @@ This packet consolidates all major Lantern streams, user fronts, repo fronts, an
 | `local_inspected` | `C:\tmp\lantern-os` | canonical control plane |
 | `local_inspected` | `C:\Users\alexp\Documents\gm-agent-orchestrator` | MCP/orchestrator execution plane |
 | `local_inspected` | `C:\tmp\human-flourishing-frameworks-scan` | source evidence and prior packets |
-| `local_inspected` | `C:\Users\alexp\Documents\lantern-symbolic-sandbox` | quarantine symbolic lane |
+| `local_inspected` | `C:\Users\alexp\Documents\lantern-symbolic-sandbox` | hold symbolic lane |
 | `metadata_only` | `place_co`, `ChildOfLevistus`, `gamemaker-room-editor`, `moneybags`, `SmartBid`, `smartmealplanning` | intake candidates |
 
 ## Web Signal Grounding (May 2026)
@@ -326,7 +326,7 @@ This packet consolidates all major Lantern streams, user fronts, repo fronts, an
 | `local_inspected` | `C:\tmp\lantern-os` | canonical control plane |
 | `local_inspected` | `C:\Users\alexp\Documents\gm-agent-orchestrator` | MCP/orchestrator execution plane |
 | `local_inspected` | `C:\tmp\human-flourishing-frameworks-scan` | source evidence and prior packets |
-| `local_inspected` | `C:\Users\alexp\Documents\lantern-symbolic-sandbox` | quarantine symbolic lane |
+| `local_inspected` | `C:\Users\alexp\Documents\lantern-symbolic-sandbox` | hold symbolic lane |
 | `metadata_only` | `place_co`, `ChildOfLevistus`, `gamemaker-room-editor`, `moneybags`, `SmartBid`, `smartmealplanning` | intake candidates |
 
 ## Web Signal Grounding (May 2026)
@@ -411,7 +411,7 @@ This packet consolidates all major Lantern streams, user fronts, repo fronts, an
 | `local_inspected` | `C:\tmp\lantern-os` | canonical control plane |
 | `local_inspected` | `C:\Users\alexp\Documents\gm-agent-orchestrator` | MCP/orchestrator execution plane |
 | `local_inspected` | `C:\tmp\human-flourishing-frameworks-scan` | source evidence and prior packets |
-| `local_inspected` | `C:\Users\alexp\Documents\lantern-symbolic-sandbox` | quarantine symbolic lane |
+| `local_inspected` | `C:\Users\alexp\Documents\lantern-symbolic-sandbox` | hold symbolic lane |
 | `metadata_only` | `place_co`, `ChildOfLevistus`, `gamemaker-room-editor`, `moneybags`, `SmartBid`, `smartmealplanning` | intake candidates |
 
 ## Web Signal Grounding (May 2026)
@@ -496,7 +496,7 @@ This packet consolidates all major Lantern streams, user fronts, repo fronts, an
 | `local_inspected` | `C:\tmp\lantern-os` | canonical control plane |
 | `local_inspected` | `C:\Users\alexp\Documents\gm-agent-orchestrator` | MCP/orchestrator execution plane |
 | `local_inspected` | `C:\tmp\human-flourishing-frameworks-scan` | source evidence and prior packets |
-| `local_inspected` | `C:\Users\alexp\Documents\lantern-symbolic-sandbox` | quarantine symbolic lane |
+| `local_inspected` | `C:\Users\alexp\Documents\lantern-symbolic-sandbox` | hold symbolic lane |
 | `metadata_only` | `place_co`, `ChildOfLevistus`, `gamemaker-room-editor`, `moneybags`, `SmartBid`, `smartmealplanning` | intake candidates |
 
 ## Web Signal Grounding (May 2026)
@@ -694,9 +694,9 @@ Primary framework source: `human-flourishing-frameworks/human-flourishing-framew
 - **Size:** 16,243 KB
 - **Indexed:** Yes
 - **Class:** `rag_dependency`
-- **Status:** Symbolic/RAG/quarantine dependency
+- **Status:** Symbolic/RAG/hold dependency
 - **Local Path:** `C:\Users\alexp\Documents\lantern-symbolic-sandbox`
-- **Description:** Symbolic sandbox for RAG and quarantine testing.
+- **Description:** Symbolic sandbox for RAG and hold testing.
 
 ---
 
@@ -2862,7 +2862,7 @@ This is decision support, not medical/legal advice.
 | No confidence increase from intention alone | Confidence rises only from receipts |
 
 ## Decision
-Adopt v7 as the active report because it centers Michah's highest-value data and explicitly quarantines uncertain or filler inputs.
+Adopt v7 as the active report because it centers Michah's highest-value data and explicitly holds uncertain or filler inputs.
 
 
 ---
@@ -4236,7 +4236,7 @@ The original 54% convergence score appears inaccurate. The actual convergence lo
 
 ### Active Dependencies (43 repos)
 - **Core Control:** lantern-os (project/control plane)
-- **Execution:** gm-agent-orchestrator (MCP source), gamemaker-room-editor (tooling), lantern-symbolic-sandbox (RAG/quarantine)
+- **Execution:** gm-agent-orchestrator (MCP source), gamemaker-room-editor (tooling), lantern-symbolic-sandbox (RAG/hold)
 - **RAG:** human-flourishing-frameworks (COMET LEAP source)
 - **Business:** 15 services (moneybags, payment bridge, etc.)
 - **Games:** 10 projects (GameMaker, libGDX)
@@ -5711,7 +5711,7 @@ That keeps the setup calm, visible, and easy to review.
 
 #### Symbolic Reasoning
 - Symbolic reasoning engine
-- RAG quarantine system
+- RAG hold system
 - Evidence validation
 - Content classification
 - Symbolic logic processing
@@ -5722,7 +5722,7 @@ That keeps the setup calm, visible, and easy to review.
 - Content intake system
 - Rights review gates
 - Evidence-based content promotion
-- Quarantine for unverified content
+- Hold for unverified content
 - Content metadata management
 - Content classification system
 - Rights validation workflow
@@ -6939,7 +6939,7 @@ This is the top-level founder packet across the repo universe. It is intentional
 | `local_inspected` | `C:\tmp\lantern-os` | canonical control plane |
 | `local_inspected` | `C:\Users\alexp\Documents\gm-agent-orchestrator` | local MCP/orchestrator execution plane |
 | `local_inspected` | `C:\tmp\human-flourishing-frameworks-scan` | COMET LEAP source evidence plane |
-| `local_inspected` | `C:\Users\alexp\Documents\lantern-symbolic-sandbox` | symbolic sandbox quarantine lane |
+| `local_inspected` | `C:\Users\alexp\Documents\lantern-symbolic-sandbox` | symbolic sandbox hold lane |
 | `github_metadata_only` | `https://github.com/alex-place/place_co` | company/web surface |
 | `github_metadata_only` | `https://github.com/alex-place/ChildOfLevistus` | GameMaker game lane |
 | `github_metadata_only` | `https://github.com/alex-place/gamemaker-room-editor` | GameMaker tooling lane |
@@ -6998,7 +6998,7 @@ Narrative: this lane feeds founder-grade reports and proofs into Lantern OS.
 | Repo | `https://github.com/alex-place/lantern-symbolic-sandbox` |
 | Local path | `C:\Users\alexp\Documents\lantern-symbolic-sandbox` |
 | State | `local_inspected` |
-| Founder position | quarantine symbolic lane |
+| Founder position | hold symbolic lane |
 | RAG room links | safety and language experimentation |
 | Primary risk | symbolic content leaking into ops doctrine |
 | Next proof | keep strict boundary references in manifests |
@@ -7097,7 +7097,7 @@ Past -> Present -> Future -> Actual pattern remains mandatory across every repo 
 `human-flourishing-frameworks-scan` remains key founder evidence source.
 
 ### Page 5
-`lantern-symbolic-sandbox` remains strict quarantine.
+`lantern-symbolic-sandbox` remains strict hold.
 
 ### Page 6
 Metadata-only repos remain candidate lanes, not promoted state.
@@ -12941,11 +12941,11 @@ This report documents the theoretical and novel capabilities across the alex-pla
 
 ### Symbolic Sandbox (lantern-symbolic-sandbox)
 
-**Theoretical Capability:** Symbolic reasoning and RAG quarantine testing
+**Theoretical Capability:** Symbolic reasoning and RAG hold testing
 
 **Components:**
 - Symbolic reasoning engine
-- RAG quarantine system
+- RAG hold system
 - Evidence validation
 - Rights review gates
 - Content classification
@@ -12954,11 +12954,11 @@ This report documents the theoretical and novel capabilities across the alex-pla
 - Safe content intake and classification
 - Rights validation before use
 - Evidence-based content promotion
-- Quarantine for unverified content
+- Hold for unverified content
 - Symbolic reasoning for decision support
 
 **Novel Aspects:**
-- Quarantine system for unverified content
+- Hold system for unverified content
 - Rights review gates
 - Evidence-based promotion
 - Symbolic reasoning integration
@@ -14626,7 +14626,7 @@ Decision bands:
 | `0.90-1.00` | promote unless boundary-held |
 | `0.70-0.89` | candidate |
 | `0.40-0.69` | backlog and poll |
-| `<0.40` | reject or quarantine |
+| `<0.40` | reject or hold |
 
 ## Boundaries
 

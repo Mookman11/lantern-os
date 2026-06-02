@@ -14,7 +14,7 @@ unless the operator explicitly holds them.
 2. Identify source repos and dirty state.
 3. Read manifests and open issues.
 4. State the next safest objective.
-5. Retire old stuff: remove, quarantine, or label deprecated surfaces so they do
+5. Retire old stuff: remove, hold, or label deprecated surfaces so they do
    not look release-ready.
 6. Map claims to evidence.
 7. Classify capability, boundary, and rollback path.
