@@ -1,0 +1,40 @@
+# Local/generated
+*.log
+*.tmp
+__pycache__/
+.venv/
+
+# Secrets and local environment
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+*.secret
+secrets/
+
+# Private local vaults: never commit raw PIID/PII/private social/feed/patient data.
+data/private/**
+!data/private/
+!data/private/README.md
+private/**
+.local-private/**
+
+# Large promoted artifacts should be added intentionally with manifest updates.
+artifacts/*
+!artifacts/.gitkeep
+# Node modules
+node_modules/
+**/node_modules/
+
+# Python build artifacts
+*.egg-info/
+dist/
+build/
+
+# Discord subscriber data (local only, not in Git)
+data/discord/subscribers.json
+
+# Dreamer notebooks — private user data (local only)
+data/dreamer/notebooks/*.jsonl
