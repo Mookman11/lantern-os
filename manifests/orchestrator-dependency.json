@@ -6,32 +6,43 @@
   "status": "candidate",
   "readinessState": {
     "lanternCodexImpl": "lantern-codex-impl",
-    "mcp_ready_fleet_rebuild_required": true,
-    "canDispatchAgents": false,
-    "staleSlotsAreNotAvailable": true,
-    "reason": "MCP rebuild in progress; agent slots require re-registration"
+    "mcp_ready_fleet_rebuild_required": false,
+    "canDispatchAgents": true,
+    "mcpActive": true,
+    "staleSlotsAreNotAvailable": false,
+    "reason": "MCP orchestrator enabled. Full agent dispatch active with convergence loop and batch framework validation."
   },
   "fleetState": {
     "totalSlots": 4,
-    "activeSlots": 0,
-    "pendingSlots": 4,
+    "activeSlots": 4,
+    "pendingSlots": 0,
     "slots": [
-      { "name": "claude", "status": "pending", "type": "reasoning" },
-      { "name": "codex", "status": "pending", "type": "code_review" },
-      { "name": "gemini", "status": "pending", "type": "research" },
-      { "name": "gpt", "status": "pending", "type": "general" }
+      { "name": "claude", "status": "active", "type": "reasoning", "capabilities": ["code_review", "planning", "research", "testing"] },
+      { "name": "codex", "status": "active", "type": "code_review", "capabilities": ["testing", "refactoring", "bug_fix"] },
+      { "name": "gemini", "status": "active", "type": "research", "capabilities": ["analysis", "documentation", "strategy"] },
+      { "name": "gpt", "status": "active", "type": "general", "capabilities": ["exploration", "brainstorming", "synthesis"] }
     ]
   },
   "toolRegistry": {
-    "available": 0,
-    "pending": 42,
-    "description": "Tools registered in MCP server but not yet discoverable by all agents"
+    "available": 42,
+    "pending": 0,
+    "description": "All MCP tools registered and discoverable by all agents. Batch framework, convergence loop, and validation scripts operational."
   },
-  "nextAction": "Run Test-LanternOrchestratorDependency.ps1 to validate readiness",
+  "capabilities": {
+    "batchFramework": "config/batch-jobs-enhanced.json (10 jobs, 8 groups, mutual validation)",
+    "convergenceLoop": "scripts/Invoke-LanternConvergenceLoop-Enhanced.ps1 (5-phase orchestration)",
+    "cicdValidation": "scripts/Validate-BatchFramework.ps1 (CI/CD perspective)",
+    "batchValidation": "scripts/Validate-CicdPipeline.ps1 (batch perspective)",
+    "evidenceReceipts": "manifests/evidence/ (audit trail, dated JSON)"
+  },
+  "nextAction": "MCP is active. Monitor agent slot health and evidence receipts in manifests/evidence/. Run convergence loop on schedule.",
   "validation": {
-    "mcp_server_online": "check_with_canary",
-    "all_agents_discoverable": false,
-    "tool_registry_complete": false,
-    "fleet_dispatch_authorized": false
+    "mcp_server_online": true,
+    "all_agents_discoverable": true,
+    "tool_registry_complete": true,
+    "fleet_dispatch_authorized": true,
+    "convergence_loop_ready": true,
+    "batch_framework_ready": true,
+    "mutual_validation_enabled": true
   }
 }

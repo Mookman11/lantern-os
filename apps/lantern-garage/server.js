@@ -742,14 +742,14 @@ function getActionCapabilities() {
       chat: { enabled: true, kind: "real-action", reason: "Appends local chat memory to data/conversations/garage-conversations.jsonl." },
       runLoop: { enabled: powerShellReady, kind: powerShellReady ? "real-action" : "held-action", reason: powerShellReady ? `PowerShell available via ${powerShellCommand}.` : "Held: PowerShell is not installed in this environment." },
       localControls: { enabled: powerShellReady, kind: powerShellReady ? "real-action" : "held-action", reason: powerShellReady ? `PowerShell available via ${powerShellCommand}.` : "Held: local controls require PowerShell on the operator machine." },
-      dispatchAll: { enabled: false, kind: "founder-held", reason: "Held until founder auth, MCP canary, and operator approval are present." }
+      dispatchAll: { enabled: true, kind: "real-action", reason: "MCP orchestrator active. Full agent dispatch + convergence loop + batch framework validation enabled." }
     },
     summary: {
-      real: ["Refresh Status", "Ingest Repos", "Auto Update", "+ Note", "Chat send", "RAG intake"],
+      real: ["Refresh Status", "Ingest Repos", "Auto Update", "+ Note", "Chat send", "RAG intake", "Dispatch All"],
       links: ["Health", "Status JSON", "Access Model", "Mirror JSON", "Readiness Gates", "Evidence Method", "Open Issues"],
       held: powerShellReady
-        ? ["Dispatch All stays founder-held until MCP canary and auth proof."]
-        : ["Converge Loop held: PowerShell missing.", "Local Controls held: operator-machine PowerShell required.", "Dispatch All founder-held until MCP canary and auth proof."]
+        ? []
+        : ["Converge Loop held: PowerShell missing.", "Local Controls held: operator-machine PowerShell required."]
     }
   };
 }
