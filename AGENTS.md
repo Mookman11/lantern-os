@@ -39,16 +39,14 @@ Never claim a skill or fleet slot is active unless confirmed by implementation o
 2. Run relevant tests after changes.
 3. **Never fabricate status** — only report measurable state.
 4. Only register real implementations in `src/mcp_server/server.py`.
-5. All PRs must reference a Linear ticket (`LAN-NNN`).
+5. All changes should go through Pull Requests.
 6. No new top-level directories without a ticket.
 7. Never commit secrets.
 8. Streaming uses `/api/dream/stream` SSE endpoint.
 
 ## Key Guardrails
 
-- One Linear ticket per PR
-- Anti-sprawl rules enforced by CI (max 25 files, no new top-level dirs)
+- Use Pull Requests for changes
 - Keep PRs small and reviewable
-- Branch naming: `codex/LAN-123-description`
 
 **Last Updated:** 2026-06-03
