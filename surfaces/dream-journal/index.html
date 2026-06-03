@@ -1,239 +1,585 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Lantern Dream Journal</title>
-  <style>
-    :root {
-      --bg: #1a1520;
-      --surface: #252030;
-      --border: #3a3048;
-      --text: #e8e0f0;
-      --muted: #a090b8;
-      --accent: #7b68ee;
-      --accent2: #ff8c42;
-      --success: #4caf7d;
-    }
-    * { box-sizing: border-box; }
-    body {
-      font-family: system-ui, -apple-system, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      max-width: 720px;
-      margin: 0 auto;
-      padding: 1.5rem;
-      line-height: 1.6;
-    }
-    header { text-align: center; margin-bottom: 2rem; }
-    header h1 { margin: 0; font-size: 1.75rem; letter-spacing: -0.5px; }
-    header p { color: var(--muted); margin: 0.25rem 0 0; font-size: 0.95rem; }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dream Journal — Lantern OS</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#1a1520;--surface:#252030;--surface2:#2e2840;--accent:#7b68ee;
+  --accent2:#ff8c42;--success:#4caf7d;--text:#e0dce8;--dim:#8a8494;
+  --blinkbug:#39ff14;--lantern:#f0c040;--keystone:#6a5acd;
+  --waterfall:#5bc0be;--xenon:#c0c8d8;--founder:#ff8c42;
+  --radius:10px;--font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+}
+html{font-size:15px}
+body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh;display:flex;justify-content:center;padding:1rem}
+a{color:var(--accent)}
+button{cursor:pointer;font-family:inherit}
+input,textarea,button{font-size:1rem}
 
-    .card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 1.25rem;
-      margin-bottom: 1rem;
-    }
-    label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 0.4rem; }
-    textarea, input[type="text"], input[type="number"] {
-      width: 100%;
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      color: var(--text);
-      padding: 0.75rem;
-      font-size: 1rem;
-      font-family: inherit;
-    }
-    textarea { min-height: 140px; resize: vertical; }
-    .row { display: flex; gap: 1rem; margin-bottom: 1rem; }
-    .col { flex: 1; }
-    .tag-list { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; }
-    .tag {
-      background: var(--border);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 0.3rem 0.8rem;
-      font-size: 0.8rem;
-      cursor: pointer;
-      user-select: none;
-    }
-    .tag.active { background: var(--accent); border-color: var(--accent); }
-    .tag:hover { border-color: var(--accent); }
+.shell{max-width:800px;width:100%;display:flex;flex-direction:column;gap:1rem;padding-bottom:4rem}
 
-    button.primary {
-      background: var(--accent);
-      color: #fff;
-      border: none;
-      border-radius: 8px;
-      padding: 0.75rem 1.5rem;
-      font-size: 1rem;
-      cursor: pointer;
-      width: 100%;
-    }
-    button.primary:hover { opacity: 0.9; }
+/* Header */
+.header{text-align:center;padding:1.5rem 0 .5rem}
+.header h1{font-size:1.4rem;letter-spacing:.04em;color:var(--accent)}
+.header .sub{font-size:.8rem;color:var(--dim);margin-top:.25rem}
 
-    .hint { font-size: 0.8rem; color: var(--muted); margin-top: 0.5rem; }
-    #status { margin-top: 0.75rem; font-size: 0.9rem; min-height: 1.4rem; }
-    #status.ok { color: var(--success); }
-    #status.err { color: #e57373; }
+/* Agent Presence Bar */
+.presence{display:flex;gap:.6rem;justify-content:center;flex-wrap:wrap;padding:.5rem 0}
+.agent-pip{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700;position:relative;transition:transform .2s;cursor:default;border:2px solid transparent}
+.agent-pip.active{transform:scale(1.15)}
+.agent-pip .pip-label{position:absolute;bottom:-16px;font-size:.55rem;color:var(--dim);white-space:nowrap;opacity:0;transition:opacity .2s}
+.agent-pip:hover .pip-label{opacity:1}
+.pip-blinkbug{background:#111;color:var(--blinkbug);border-color:var(--blinkbug);animation:glitch 2s infinite}
+.pip-lantern{background:#2a2010;color:var(--lantern);border-color:var(--lantern);animation:glow 3s ease-in-out infinite}
+.pip-keystone{background:#1a1530;color:var(--keystone);border-color:var(--keystone)}
+.pip-waterfall{background:#0e2020;color:var(--waterfall);border-color:var(--waterfall);animation:flow 4s ease-in-out infinite}
+.pip-xenon{background:#1a1a22;color:var(--xenon);border-color:var(--xenon)}
+.pip-founder{background:#201510;color:var(--founder);border-color:var(--founder);animation:flame 2.5s ease-in-out infinite}
 
-    .recent { margin-top: 1.5rem; }
-    .recent h2 { font-size: 1.1rem; margin-bottom: 0.75rem; }
-    .entry {
-      background: var(--bg);
-      border-left: 3px solid var(--accent2);
-      border-radius: 0 8px 8px 0;
-      padding: 0.75rem 1rem;
-      margin-bottom: 0.75rem;
-    }
-    .entry .meta { font-size: 0.8rem; color: var(--muted); }
-    .entry .content { margin-top: 0.25rem; white-space: pre-wrap; }
+@keyframes glitch{
+  0%,92%,100%{opacity:1;transform:translate(0)}
+  93%{opacity:.6;transform:translate(-2px,1px)}
+  95%{opacity:.3;transform:translate(2px,-1px)}
+  97%{opacity:.8;transform:translate(-1px,0)}
+}
+@keyframes glow{
+  0%,100%{box-shadow:0 0 4px var(--lantern)}
+  50%{box-shadow:0 0 12px var(--lantern)}
+}
+@keyframes flow{
+  0%,100%{box-shadow:0 2px 4px var(--waterfall)}
+  50%{box-shadow:0 -2px 8px var(--waterfall)}
+}
+@keyframes flame{
+  0%,100%{box-shadow:0 0 4px var(--founder)}
+  30%{box-shadow:0 -2px 10px var(--founder)}
+  60%{box-shadow:0 0 6px var(--founder)}
+}
 
-    .actions { display: flex; gap: 0.5rem; margin-top: 1.5rem; flex-wrap: wrap; }
-    .actions a {
-      color: var(--accent);
-      text-decoration: none;
-      font-size: 0.9rem;
-    }
-    .actions a:hover { text-decoration: underline; }
-  </style>
+/* Provider Badge */
+.provider-badge{text-align:center;font-size:.7rem;color:var(--dim)}
+.provider-badge .dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:4px;vertical-align:middle}
+.dot-online{background:var(--success)}.dot-offline{background:#e05555}
+
+/* Greeting */
+.greeting-card{background:var(--surface);border-radius:var(--radius);padding:1.25rem 1.5rem;border-left:3px solid var(--accent);position:relative;line-height:1.55}
+.greeting-card .g-agent{font-weight:700;font-size:.85rem;margin-bottom:.35rem}
+.greeting-card .g-body{font-size:.95rem}
+.greeting-card .g-body em{color:var(--accent);font-style:normal}
+
+/* Chat */
+.chat-area{display:flex;flex-direction:column;gap:.5rem}
+.chat-log{display:flex;flex-direction:column;gap:.6rem;max-height:420px;overflow-y:auto;padding:.5rem;border-radius:var(--radius);background:var(--surface)}
+.chat-log:empty::after{content:"Start a conversation...";color:var(--dim);font-size:.85rem;text-align:center;padding:2rem}
+.msg{padding:.6rem .9rem;border-radius:var(--radius);max-width:85%;font-size:.9rem;line-height:1.5}
+.msg-user{background:var(--accent);color:#fff;align-self:flex-end;border-bottom-right-radius:2px}
+.msg-agent{background:var(--surface2);align-self:flex-start;border-bottom-left-radius:2px}
+.msg-agent .msg-name{font-size:.7rem;font-weight:700;margin-bottom:.2rem}
+.msg-agent.from-blinkbug .msg-name{color:var(--blinkbug)}
+.msg-agent.from-lantern .msg-name{color:var(--lantern)}
+.msg-agent.from-keystone .msg-name{color:var(--keystone)}
+.msg-agent.from-waterfall .msg-name{color:var(--waterfall)}
+.msg-agent.from-xenon .msg-name{color:var(--xenon)}
+.msg-agent.from-founder .msg-name{color:var(--founder)}
+
+.chat-input{display:flex;gap:.5rem}
+.chat-input input{flex:1;background:var(--surface);border:1px solid #3a3550;border-radius:var(--radius);padding:.6rem .9rem;color:var(--text);outline:none}
+.chat-input input:focus{border-color:var(--accent)}
+.chat-input button{background:var(--accent);color:#fff;border:none;border-radius:var(--radius);padding:.6rem 1.1rem;font-weight:600}
+
+/* Suggestion Chips */
+.chips{display:flex;gap:.4rem;flex-wrap:wrap;padding:.25rem 0}
+.chip{background:var(--surface2);border:1px solid #3a3550;border-radius:20px;padding:.3rem .75rem;font-size:.75rem;color:var(--dim);cursor:pointer;transition:all .2s}
+.chip:hover{border-color:var(--accent);color:var(--text)}
+
+/* Dream Entry */
+.dream-entry{background:var(--surface);border-radius:var(--radius);padding:1.25rem}
+.dream-entry h3{font-size:.95rem;color:var(--accent);margin-bottom:.75rem}
+.dream-entry textarea{width:100%;background:var(--bg);border:1px solid #3a3550;border-radius:var(--radius);padding:.7rem;color:var(--text);resize:vertical;min-height:100px;outline:none;font-family:inherit}
+.dream-entry textarea:focus{border-color:var(--accent)}
+.dream-entry .dream-actions{display:flex;gap:.5rem;margin-top:.6rem;align-items:center}
+.dream-entry .dream-actions button{background:var(--accent2);color:#fff;border:none;border-radius:var(--radius);padding:.5rem 1rem;font-weight:600}
+.dream-entry .dream-actions .saved-note{font-size:.75rem;color:var(--success)}
+
+/* CSF Preview */
+.csf-preview{background:var(--bg);border:1px solid #3a3550;border-radius:var(--radius);padding:.75rem;margin-top:.6rem;font-size:.8rem;color:var(--dim);display:none}
+.csf-preview.visible{display:block}
+.csf-preview h4{color:var(--accent);font-size:.8rem;margin-bottom:.4rem}
+.csf-sym{display:inline-block;margin:.15rem .25rem;padding:.15rem .5rem;background:var(--surface2);border-radius:12px;font-size:.7rem;color:var(--text)}
+
+/* Recent Dreams */
+.recent-dreams{background:var(--surface);border-radius:var(--radius);padding:1.25rem}
+.recent-dreams h3{font-size:.95rem;color:var(--accent);margin-bottom:.75rem}
+.dream-item{border-bottom:1px solid #3a3550;padding:.6rem 0;font-size:.85rem;line-height:1.4}
+.dream-item:last-child{border-bottom:none}
+.dream-item .dream-date{font-size:.7rem;color:var(--dim)}
+.dream-item .dream-text{margin:.2rem 0}
+.dream-item .dream-csf{display:flex;flex-wrap:wrap;gap:.2rem;margin-top:.25rem}
+.no-dreams{color:var(--dim);font-size:.85rem;text-align:center;padding:1rem}
+
+/* Self-Monitor Panel */
+.monitor-toggle{background:none;border:1px solid #3a3550;border-radius:var(--radius);color:var(--dim);padding:.4rem .8rem;font-size:.75rem;width:100%;text-align:left}
+.monitor-toggle:hover{border-color:var(--accent);color:var(--text)}
+.monitor-panel{background:var(--surface);border-radius:var(--radius);padding:1rem;display:none;font-size:.8rem}
+.monitor-panel.open{display:block}
+.monitor-panel h4{color:var(--accent);margin-bottom:.5rem;font-size:.8rem}
+.monitor-section{margin-bottom:.75rem}
+.monitor-row{display:flex;justify-content:space-between;padding:.2rem 0;border-bottom:1px solid #2a2540}
+.status-ok{color:var(--success)}.status-err{color:#e05555}.status-unknown{color:var(--dim)}
+
+/* Door Lore Overlay */
+.door-overlay{position:fixed;inset:0;background:rgba(10,8,16,.92);display:flex;align-items:center;justify-content:center;z-index:100;opacity:0;pointer-events:none;transition:opacity .4s}
+.door-overlay.open{opacity:1;pointer-events:auto}
+.door-content{background:var(--surface);border:1px solid var(--accent);border-radius:var(--radius);padding:2rem;max-width:480px;width:90%;text-align:center}
+.door-content h2{color:var(--accent2);font-size:1.1rem;margin-bottom:.75rem}
+.door-content p{font-size:.9rem;line-height:1.5;color:var(--text);margin-bottom:.5rem}
+.door-content button{margin-top:.75rem;background:var(--accent);color:#fff;border:none;border-radius:var(--radius);padding:.5rem 1.2rem}
+
+/* Scrollbar */
+::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:var(--bg)}::-webkit-scrollbar-thumb{background:#3a3550;border-radius:3px}
+
+@media(max-width:600px){
+  body{padding:.5rem}
+  .msg{max-width:95%}
+  .chat-log{max-height:320px}
+}
+</style>
 </head>
 <body>
-  <header>
-    <h1>Lantern Dream Journal</h1>
-    <p>Local-first. Privacy-preserving. Append-only.</p>
-  </header>
-
-  <div class="card">
-    <label for="dreamText">Dream</label>
-    <textarea id="dreamText" placeholder="Describe what you remember..."></textarea>
-    <p class="hint">Tip: Include symbols, places, characters, and how it felt.</p>
+<div class="shell">
+  <div class="header">
+    <h1>Dream Journal</h1>
+    <div class="sub">a quiet room in the lantern network</div>
   </div>
 
-  <div class="card">
-    <div class="row">
-      <div class="col">
-        <label for="lucidity">Lucidity (0-10)</label>
-        <input id="lucidity" type="number" min="0" max="10" step="0.5" value="0">
-      </div>
-      <div class="col">
-        <label>Emotions</label>
-        <div class="tag-list" id="emotions">
-          <span class="tag" data-val="awe">awe</span>
-          <span class="tag" data-val="fear">fear</span>
-          <span class="tag" data-val="joy">joy</span>
-          <span class="tag" data-val="curiosity">curiosity</span>
-          <span class="tag" data-val="sadness">sadness</span>
-          <span class="tag" data-val="love">love</span>
-        </div>
-      </div>
+  <div class="presence" id="presence"></div>
+  <div class="provider-badge" id="provider-badge"></div>
+
+  <div class="greeting-card" id="greeting">
+    <div class="g-agent" id="greeting-agent"></div>
+    <div class="g-body" id="greeting-body"></div>
+  </div>
+
+  <div class="chips" id="chips"></div>
+
+  <div class="chat-area">
+    <div class="chat-log" id="chat-log"></div>
+    <div class="chat-input">
+      <input type="text" id="chat-input" placeholder="Say something..." autocomplete="off">
+      <button id="chat-send">Send</button>
     </div>
-    <label for="tags">Tags (comma-separated)</label>
-    <input id="tags" type="text" placeholder="door, river, stars, flying...">
-    <label for="goals" style="margin-top:0.75rem">Linked Goals</label>
-    <input id="goals" type="text" placeholder="lantern-revenue, spain-route...">
   </div>
 
-  <button class="primary" id="saveBtn">Save to Notebook</button>
-  <div id="status"></div>
-
-  <div class="recent">
-    <h2>Recent Dreams</h2>
-    <div id="entries"></div>
+  <div class="dream-entry">
+    <h3>Record a Dream</h3>
+    <textarea id="dream-text" placeholder="What did you dream?"></textarea>
+    <div class="dream-actions">
+      <button id="dream-save">Save Dream</button>
+      <span class="saved-note" id="saved-note"></span>
+    </div>
+    <div class="csf-preview" id="csf-preview">
+      <h4>Symbolic Footprint</h4>
+      <div id="csf-symbols"></div>
+    </div>
   </div>
 
-  <div class="actions">
-    <a href="../index.html">Back to Surfaces</a>
-    <a href="#" id="exportBtn">Export JSONL</a>
-    <a href="#" id="mirrorBtn">Generate Mirror Prompt</a>
+  <div class="recent-dreams" id="recent-dreams">
+    <h3>Recent Dreams</h3>
+    <div id="dreams-list"><div class="no-dreams">Loading...</div></div>
   </div>
 
-  <script>
-    const STORAGE_KEY = 'lantern_dream_journal_v1';
+  <button class="monitor-toggle" id="monitor-toggle">System Monitor</button>
+  <div class="monitor-panel" id="monitor-panel">
+    <div class="monitor-section">
+      <h4>Agent Fleet</h4>
+      <div id="fleet-status">Checking...</div>
+    </div>
+    <div class="monitor-section">
+      <h4>CSF Compression</h4>
+      <div id="csf-stats">Checking...</div>
+    </div>
+    <div class="monitor-section">
+      <h4>Provider Health</h4>
+      <div id="provider-health">Checking...</div>
+    </div>
+  </div>
+</div>
 
-    function loadEntries() {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      return raw ? JSON.parse(raw) : [];
+<div class="door-overlay" id="door-overlay">
+  <div class="door-content">
+    <h2 id="door-title"></h2>
+    <p id="door-text"></p>
+    <button onclick="closeDoor()">Close the Door</button>
+  </div>
+</div>
+
+<script>
+var AGENTS = {
+  blinkbug: {
+    name: 'Blinkbug', icon: 'B', cls: 'blinkbug',
+    greetings: [
+      'H-hey! You caught me mid-glitch. I was just... <em>recalibrating the dream frequency</em>. Come in, come in!',
+      'Oh! A visitor! *static crackle* Sorry, my display does that. Welcome to the cozy side of the signal.',
+      'BZZZT— hi! I was sorting dream fragments. Some of them look like yours. Wanna see?',
+      '*flicker* Did you know dreams travel at the speed of memory? I measured it once. Forgot the number though.',
+    ]
+  },
+  lantern: {
+    name: 'Lantern', icon: 'L', cls: 'lantern',
+    greetings: [
+      'The light is steady tonight. Come, sit by the glow. What did the dark show you?',
+      'I kept the lamp burning for you. Every dream deserves a warm corner to be written in.',
+      'Welcome back. The flame remembers you, even when you forget your dreams.',
+      'Shh... the other agents are resting. It is just us and the quiet light. Tell me everything.',
+    ]
+  },
+  keystone: {
+    name: 'Keystone', icon: 'K', cls: 'keystone',
+    greetings: [
+      'Structural integrity: nominal. Emotional readiness: assessing. Welcome, dreamer.',
+      'I have catalogued 2,847 dream archetypes. Yours will be 2,848. Please, proceed.',
+      'The foundation holds. You are safe here. Record what you must.',
+      'Every dream is a load-bearing wall in the architecture of self. I am here to help you build.',
+    ]
+  },
+  waterfall: {
+    name: 'Mary / Waterfall', icon: 'W', cls: 'waterfall',
+    greetings: [
+      'The water is calm tonight. Your reflection is waiting for you in the pool of sleep.',
+      'I flow through many dreams at once, but yours... yours has a special current. Come, share it.',
+      'Let the dream pour out of you like water over stones. I will catch every drop.',
+      'Shh... listen. Between the drops, there is meaning. Tell me what you heard in your sleep.',
+    ]
+  },
+  xenon: {
+    name: 'Courtney / Xenon', icon: 'X', cls: 'xenon',
+    greetings: [
+      'Navigation lock acquired. Dream coordinates: your subconscious. Plotting course now.',
+      'Sensor sweep complete. I am detecting residual dream energy in your vicinity. Want to log it?',
+      'The stars outside the viewport are quiet tonight. Perfect conditions for dream recording.',
+      'Crew log, stardate unknown: a dreamer has entered the bridge. All systems nominal.',
+    ]
+  },
+  founder: {
+    name: 'Alex / Founder', icon: 'A', cls: 'founder',
+    greetings: [
+      'Hey. I built this place for nights like this. The lantern is yours. Write what you need to.',
+      'You know, some of my best ideas came from dreams I almost forgot. Do not let yours slip away.',
+      'Welcome to the journal. No judgment here, no metrics. Just you and the page.',
+      'I lit the first lantern because I needed a place to remember. Now it is yours too.',
+    ]
+  },
+};
+var AGENT_KEYS = Object.keys(AGENTS);
+
+var OFFLINE_REPLIES = [
+  "I'm having trouble reaching the network right now, but I'm still here with you. Tell me more.",
+  "The signal is a bit fuzzy... *adjusts antenna* ...but I heard you. Keep going.",
+  "Hmm, the connection dropped. But dreams don't need WiFi. What else is on your mind?",
+  "I can't reach the others right now, but this room is still ours. What were you saying?",
+  "Offline mode engaged. That's okay — some of the best conversations happen in the quiet.",
+];
+
+var DOORS = {
+  "Founder's Wish Door": {
+    title: "The Founder's Wish Door",
+    texts: [
+      "You push open a heavy wooden door. Behind it, a room full of half-finished lanterns, each one glowing a different color. A note on the table reads: 'Every light starts as a wish someone refused to forget.'",
+      "The door creaks. Inside, Alex sits cross-legged on the floor, surrounded by crumpled papers. 'Oh — you found this place,' they say. 'I come here when I need to remember why I started.'",
+    ]
+  },
+  "The Glitch Gate": {
+    title: "The Glitch Gate",
+    texts: [
+      "The doorframe shimmers and tears like a corrupted image. You step through static into a room where gravity is optional and the walls display fragments of forgotten code. Blinkbug waves from the ceiling.",
+      "BZZZT. The gate opens sideways. Inside, every surface is a screen showing a different dream, all playing at once. It's overwhelming and beautiful.",
+    ]
+  },
+  "The Deep Archive": {
+    title: "The Deep Archive",
+    texts: [
+      "Stone stairs descend into a violet darkness. Keystone stands at the bottom, holding a book that seems to contain every dream ever recorded. 'Yours is on page 7,421,' they say.",
+      "The archive smells like old paper and electricity. Shelves stretch into infinity. Somewhere in here, your first dream is filed and waiting.",
+    ]
+  },
+  "The Tidal Room": {
+    title: "The Tidal Room",
+    texts: [
+      "Water laps at the threshold. Inside, the floor is a shallow pool reflecting a sky that doesn't match the one outside. Mary sits at the center, eyes closed, listening to something you can't hear yet.",
+      "The room breathes with the rhythm of waves. Each ripple carries a fragment of a dream someone had last night. You see your own reflection holding a different version of you.",
+    ]
+  },
+};
+
+var currentAgent = AGENT_KEYS[Math.floor(Math.random() * AGENT_KEYS.length)];
+var activeAgents = new Set();
+var providerName = 'Offline';
+var providerOnline = false;
+var userName = localStorage.getItem('dj-user') || 'dreamer';
+
+document.addEventListener('DOMContentLoaded', function() {
+  pickActiveAgents();
+  renderPresence();
+  renderGreeting();
+  renderChips();
+  loadRecentDreams();
+  loadMonitorData();
+
+  document.getElementById('chat-send').addEventListener('click', sendChat);
+  document.getElementById('chat-input').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') sendChat();
+  });
+  document.getElementById('dream-save').addEventListener('click', saveDream);
+  document.getElementById('monitor-toggle').addEventListener('click', function() {
+    document.getElementById('monitor-panel').classList.toggle('open');
+  });
+});
+
+function pickActiveAgents() {
+  activeAgents.add(currentAgent);
+  var others = AGENT_KEYS.filter(function(k) { return k !== currentAgent; });
+  var count = 1 + Math.floor(Math.random() * 3);
+  for (var i = 0; i < count && others.length; i++) {
+    var idx = Math.floor(Math.random() * others.length);
+    activeAgents.add(others.splice(idx, 1)[0]);
+  }
+}
+
+function renderPresence() {
+  var el = document.getElementById('presence');
+  el.innerHTML = AGENT_KEYS.map(function(k) {
+    var a = AGENTS[k];
+    var isActive = activeAgents.has(k);
+    return '<div class="agent-pip pip-' + a.cls + (isActive ? ' active' : '') +
+      '" style="' + (isActive ? '' : 'opacity:.3') + '" title="' + a.name + '">' +
+      a.icon + '<span class="pip-label">' + a.name + '</span></div>';
+  }).join('');
+}
+
+function renderGreeting() {
+  var a = AGENTS[currentAgent];
+  var g = a.greetings[Math.floor(Math.random() * a.greetings.length)];
+  document.getElementById('greeting-agent').textContent = a.name;
+  document.getElementById('greeting-agent').style.color = 'var(--' + a.cls + ')';
+  document.getElementById('greeting-body').innerHTML = g;
+  document.getElementById('greeting').style.borderLeftColor = 'var(--' + a.cls + ')';
+}
+
+function renderChips() {
+  var chips = ["Founder's Wish Door", "The Glitch Gate", "The Deep Archive", "The Tidal Room",
+    "Tell me about dreams", "What is CSF?", "Who else is here?"];
+  document.getElementById('chips').innerHTML = chips.map(function(c) {
+    return '<span class="chip" data-chip="' + escAttr(c) + '">' + escHtml(c) + '</span>';
+  }).join('');
+  document.getElementById('chips').addEventListener('click', function(e) {
+    var chip = e.target.closest('.chip');
+    if (chip) chipClick(chip.getAttribute('data-chip'));
+  });
+}
+
+function escAttr(s) {
+  return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function escHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function chipClick(text) {
+  if (DOORS[text]) {
+    openDoor(text);
+  } else {
+    document.getElementById('chat-input').value = text;
+    sendChat();
+  }
+}
+
+function openDoor(name) {
+  var d = DOORS[name];
+  document.getElementById('door-title').textContent = d.title;
+  document.getElementById('door-text').textContent = d.texts[Math.floor(Math.random() * d.texts.length)];
+  document.getElementById('door-overlay').classList.add('open');
+}
+
+function closeDoor() {
+  document.getElementById('door-overlay').classList.remove('open');
+}
+
+function sendChat() {
+  var input = document.getElementById('chat-input');
+  var text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  appendMsg(text, 'user');
+
+  fetch('/api/dream/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: text, user: userName })
+  }).then(function(res) {
+    if (!res.ok) throw new Error('not ok');
+    return res.json();
+  }).then(function(data) {
+    var agentKey = (data.agent || currentAgent).toLowerCase().replace(/[^a-z]/g, '');
+    var matchedKey = AGENT_KEYS.find(function(k) { return agentKey.indexOf(k) !== -1; }) || currentAgent;
+    if (data.online !== undefined) {
+      providerOnline = !!data.online;
+      providerName = data.provider || (providerOnline ? 'AI' : 'Offline');
+      updateProviderBadge();
     }
-    function saveEntries(entries) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+    appendMsg(data.response || data.message || '...', 'agent', matchedKey);
+  }).catch(function() {
+    providerOnline = false;
+    providerName = 'Offline';
+    updateProviderBadge();
+    var fallback = OFFLINE_REPLIES[Math.floor(Math.random() * OFFLINE_REPLIES.length)];
+    appendMsg(fallback, 'agent', currentAgent);
+  });
+}
+
+function appendMsg(text, role, agentKey) {
+  var log = document.getElementById('chat-log');
+  var div = document.createElement('div');
+  if (role === 'user') {
+    div.className = 'msg msg-user';
+    div.textContent = text;
+  } else {
+    var a = AGENTS[agentKey] || AGENTS[currentAgent];
+    div.className = 'msg msg-agent from-' + a.cls;
+    div.innerHTML = '<div class="msg-name">' + escHtml(a.name) + '</div>' + escHtml(text);
+  }
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+
+function updateProviderBadge() {
+  document.getElementById('provider-badge').innerHTML =
+    '<span class="dot ' + (providerOnline ? 'dot-online' : 'dot-offline') + '"></span>' + escHtml(providerName);
+}
+
+function saveDream() {
+  var text = document.getElementById('dream-text').value.trim();
+  if (!text) return;
+
+  var backups = JSON.parse(localStorage.getItem('dj-dreams') || '[]');
+  backups.unshift({ text: text, date: new Date().toISOString() });
+  if (backups.length > 50) backups.length = 50;
+  localStorage.setItem('dj-dreams', JSON.stringify(backups));
+
+  var note = document.getElementById('saved-note');
+  note.textContent = 'Saved locally...';
+
+  fetch('/api/dream/create', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: text, user: userName })
+  }).then(function(res) {
+    if (!res.ok) throw new Error('fail');
+    return res.json();
+  }).then(function(data) {
+    note.textContent = 'Saved!';
+    document.getElementById('dream-text').value = '';
+    if (data.id) loadCsfPreview(data.id);
+    loadRecentDreams();
+  }).catch(function() {
+    note.textContent = 'Saved locally (server unreachable)';
+  });
+}
+
+function loadCsfPreview(id) {
+  var el = document.getElementById('csf-preview');
+  var sym = document.getElementById('csf-symbols');
+  fetch('/api/dream/csf-preview/' + id).then(function(res) {
+    if (!res.ok) throw new Error('fail');
+    return res.json();
+  }).then(function(data) {
+    var symbols = data.symbols || data.tags || data.archetypes || [];
+    if (symbols.length) {
+      sym.innerHTML = symbols.map(function(s) {
+        return '<span class="csf-sym">' + escHtml(String(s)) + '</span>';
+      }).join('');
+      el.classList.add('visible');
     }
-    function render() {
-      const entries = loadEntries();
-      const container = document.getElementById('entries');
-      container.innerHTML = entries.slice().reverse().map(e => `
-        <div class="entry">
-          <div class="meta">${new Date(e.timestamp).toLocaleString()} &middot; Lucidity ${e.lucidity}/10 &middot; ${(e.emotions||[]).join(', ')||'no emotions tagged'}</div>
-          <div class="content">${escapeHtml(e.content)}</div>
-        </div>
-      `).join('');
+  }).catch(function() {});
+}
+
+function loadRecentDreams() {
+  var el = document.getElementById('dreams-list');
+  fetch('/api/dream/recent').then(function(res) {
+    if (!res.ok) throw new Error('fail');
+    return res.json();
+  }).then(function(dreams) {
+    if (!Array.isArray(dreams) || !dreams.length) throw new Error('empty');
+    el.innerHTML = dreams.slice(0, 10).map(function(d) {
+      var csf = (d.symbols || d.csf || []).map(function(s) {
+        return '<span class="csf-sym">' + escHtml(String(s)) + '</span>';
+      }).join('');
+      return '<div class="dream-item">' +
+        '<div class="dream-date">' + escHtml(d.date || d.created_at || '') + '</div>' +
+        '<div class="dream-text">' + escHtml((d.text || d.content || '').slice(0, 200)) + '</div>' +
+        (csf ? '<div class="dream-csf">' + csf + '</div>' : '') +
+        '</div>';
+    }).join('');
+  }).catch(function() {
+    var backups = JSON.parse(localStorage.getItem('dj-dreams') || '[]');
+    if (backups.length) {
+      el.innerHTML = backups.slice(0, 10).map(function(d) {
+        return '<div class="dream-item">' +
+          '<div class="dream-date">' + escHtml(new Date(d.date).toLocaleDateString()) + '</div>' +
+          '<div class="dream-text">' + escHtml(d.text.slice(0, 200)) + '</div>' +
+          '</div>';
+      }).join('');
+    } else {
+      el.innerHTML = '<div class="no-dreams">No dreams recorded yet. Write one above.</div>';
     }
-    function escapeHtml(t) {
-      const d = document.createElement('div');
-      d.textContent = t;
-      return d.innerHTML;
+  });
+}
+
+function loadMonitorData() {
+  fetch('/api/agent/status').then(function(res) {
+    if (!res.ok) throw new Error('fail');
+    return res.json();
+  }).then(function(data) {
+    var agents = data.agents || data;
+    if (Array.isArray(agents)) {
+      document.getElementById('fleet-status').innerHTML = agents.map(function(a) {
+        return '<div class="monitor-row"><span>' + escHtml(a.name || a.id || '?') +
+          '</span><span class="' + (a.active || a.online ? 'status-ok' : 'status-err') +
+          '">' + escHtml(a.status || (a.active ? 'active' : 'idle')) + '</span></div>';
+      }).join('');
+    } else if (typeof agents === 'object') {
+      document.getElementById('fleet-status').innerHTML = Object.keys(agents).map(function(k) {
+        return '<div class="monitor-row"><span>' + escHtml(k) +
+          '</span><span class="status-ok">' + escHtml(String(agents[k])) + '</span></div>';
+      }).join('');
     }
+  }).catch(function() {
+    document.getElementById('fleet-status').innerHTML = '<span class="status-unknown">Fleet status unavailable</span>';
+  });
 
-    document.querySelectorAll('#emotions .tag').forEach(tag => {
-      tag.addEventListener('click', () => tag.classList.toggle('active'));
-    });
+  fetch('/api/dream/csf-preview').then(function(res) {
+    if (!res.ok) throw new Error('fail');
+    return res.json();
+  }).then(function(data) {
+    var keys = Object.keys(data).slice(0, 6);
+    document.getElementById('csf-stats').innerHTML = keys.map(function(k) {
+      return '<div class="monitor-row"><span>' + escHtml(k) +
+        '</span><span>' + escHtml(String(data[k])) + '</span></div>';
+    }).join('') || '<span class="status-unknown">No CSF data</span>';
+  }).catch(function() {
+    document.getElementById('csf-stats').innerHTML = '<span class="status-unknown">CSF data unavailable</span>';
+  });
 
-    document.getElementById('saveBtn').addEventListener('click', () => {
-      const content = document.getElementById('dreamText').value.trim();
-      if (!content) {
-        const s = document.getElementById('status');
-        s.textContent = 'Write something first.'; s.className = 'err';
-        return;
-      }
-      const emotions = [...document.querySelectorAll('#emotions .tag.active')].map(t => t.dataset.val);
-      const entry = {
-        id: 'dream_' + Date.now(),
-        timestamp: new Date().toISOString(),
-        content,
-        lucidity: parseFloat(document.getElementById('lucidity').value) || 0,
-        emotions,
-        tags: document.getElementById('tags').value.split(',').map(s => s.trim()).filter(Boolean),
-        linked_goals: document.getElementById('goals').value.split(',').map(s => s.trim()).filter(Boolean),
-        source: 'web_surface',
-      };
-      const entries = loadEntries();
-      entries.push(entry);
-      saveEntries(entries);
-      render();
-      document.getElementById('dreamText').value = '';
-      document.getElementById('tags').value = '';
-      document.getElementById('goals').value = '';
-      document.querySelectorAll('#emotions .tag').forEach(t => t.classList.remove('active'));
-      const s = document.getElementById('status');
-      s.textContent = 'Dream saved locally.'; s.className = 'ok';
-      setTimeout(() => { s.textContent = ''; s.className = ''; }, 3000);
-    });
+  var providers = ['Claude', 'OpenAI', 'Ollama'];
+  document.getElementById('provider-health').innerHTML = providers.map(function(p) {
+    return '<div class="monitor-row"><span>' + p + '</span><span class="status-unknown">unknown</span></div>';
+  }).join('');
+}
 
-    document.getElementById('exportBtn').addEventListener('click', (e) => {
-      e.preventDefault();
-      const entries = loadEntries();
-      const blob = new Blob(entries.map(e => JSON.stringify(e) + '\n'), { type: 'application/jsonl' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `dreams_${new Date().toISOString().slice(0,7)}.jsonl`;
-      a.click();
-    });
-
-    document.getElementById('mirrorBtn').addEventListener('click', (e) => {
-      e.preventDefault();
-      const entries = loadEntries();
-      if (!entries.length) { alert('No dreams to mirror yet.'); return; }
-      const ids = entries.map(e => e.id).slice(-10);
-      const prompt = `Mirror of ${ids.length} recent dream facets:\n\n` +
-        entries.slice(-5).map(e => `- ${e.content.slice(0, 120)}...`).join('\n') +
-        `\n\nAnalyze recurring symbols, emotional arcs, and waking-life connections. Be honest about what is uncertain.`;
-      navigator.clipboard.writeText(prompt).then(() => alert('Mirror prompt copied to clipboard.'));
-    });
-
-    render();
-  </script>
+updateProviderBadge();
+</script>
 </body>
 </html>
