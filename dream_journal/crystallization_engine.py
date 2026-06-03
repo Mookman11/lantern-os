@@ -1,104 +1,135 @@
 """
-Lantern Crystallization Engine v1.1
-Native CSF-native loop with externalized prompts.
+Lantern Crystallization Engine (LCE) v1.0
+CSF-native, lightweight, self-improving memory engine for Dream Journal.
 """
 
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import Dict, List, Optional
+import uuid
 
 
-class DreamCrystallizationEngine:
-    def __init__(self, base_path: str = "dream_journal"):
+class LanternCrystallizationEngine:
+    def __init__(self, model: str = "qwen3:14b", base_path: str = "dream_journal"):
+        self.model = model
         self.base = Path(base_path)
         self.raw_dir = self.base / "raw"
         self.csf_dir = self.base / "csf"
         self.crystallized_dir = self.csf_dir / "crystallized"
-        self.prompt_dir = self.base / "templates" / "prompts"
+        self.symbols_dir = self.csf_dir / "symbols"
+        self.anchors_dir = self.csf_dir / "anchors"
+        self.index_dir = self.csf_dir / "index"
 
-        for p in [self.raw_dir, self.crystallized_dir]:
+        for p in [self.raw_dir, self.crystallized_dir, self.symbols_dir, self.anchors_dir, self.index_dir]:
             p.mkdir(parents=True, exist_ok=True)
 
-        # Load prompts
-        self.prompt_parse = (self.prompt_dir / "parse.md").read_text()
-        self.prompt_reflect = (self.prompt_dir / "reflect.md").read_text()
-        self.prompt_crystallize = (self.prompt_dir / "crystallize.md").read_text()
+    def _generate_id(self, prefix: str) -> str:
+        return f"{prefix}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
 
-    async def process_new_dream(self, user_id: int, raw_text: str, character: str = "default"):
-        # 1. Observe
-        dream_csf = self._create_raw_csf(user_id, raw_text, character)
-
-        # 2. Execute (Parse)
-        parsed = self._parse_dream(dream_csf)
-
-        # 3. Reflect
-        relevant = self._find_relevant_memories(parsed)
-
-        # 4. Crystallize
-        new_skill = None
-        if self._should_crystallize(relevant):
-            new_skill = await self._crystallize(parsed, relevant)
-            if new_skill:
-                self._save_crystallized_skill(new_skill)
-
-        # 5. Reuse
-        return {
-            "dream_id": dream_csf["id"],
-            "parsed": parsed,
-            "relevant_skills": relevant,
-            "new_skill": new_skill,
-            "response_context": self._build_response_context(parsed, relevant)
-        }
-
-    def _create_raw_csf(self, user_id: int, text: str, character: str) -> Dict:
-        dream_id = f"dream_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+    # 1. Observe
+    def create_raw_dream_csf(self, raw_text: str, metadata: Optional[Dict] = None) -> Dict:
+        dream_id = self._generate_id("dream")
         csf = {
+            "concept": "dream_entry",
             "id": dream_id,
-            "user_id": user_id,
-            "character": character,
-            "timestamp": datetime.utcnow().isoformat(),
-            "raw_text": text,
-            "format": "CSF-raw-v1"
+            "date": datetime.utcnow().isoformat(),
+            "raw_text": raw_text,
+            "symbols": [],
+            "emotions": [],
+            "people": [],
+            "anchors": [],
+            "crystallized": False,
+            "metadata": metadata or {}
         }
-        (self.raw_dir / f"{dream_id}.jsonl").write_text(json.dumps(csf) + "\n")
         return csf
 
-    def _parse_dream(self, dream_csf: Dict) -> Dict:
-        # In full version: call LLM with self.prompt_parse
-        text = dream_csf["raw_text"].lower()
-        return {
-            "symbols": [w for w in ["lantern", "door", "fog", "light", "shadow"] if w in text],
-            "emotions": [w for w in ["fear", "joy", "longing", "calm"] if w in text],
-            "anchors": ["God Fog Door"] if "fog" in text or "door" in text else []
-        }
+    def save_csf(self, csf: Dict, relative_path: str):
+        path = self.csf_dir / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(csf, indent=2), encoding="utf-8")
 
-    def _find_relevant_memories(self, parsed: Dict) -> List[Dict]:
-        # In full version: semantic search over crystallized/
+    # 2. Parse
+    async def parse_dream(self, dream_csf: Dict) -> Dict:
+        # Placeholder — in production this calls the LLM with the parse prompt
+        text = dream_csf["raw_text"].lower()
+        parsed = {
+            "symbols": [s for s in ["lantern_head", "god_fog_door", "mermaid_courtney"] if s in text],
+            "emotions": [e for e in ["awe", "curiosity", "unease", "fear", "joy"] if e in text],
+            "anchors": [a for a in ["convergence", "return_safe", "god_fog_door"] if a in text],
+        }
+        return parsed
+
+    # 3. Reflect
+    async def reflect(self, parsed: Dict) -> List[Dict]:
+        # Placeholder — semantic search over crystallized skills
         return []
 
-    def _should_crystallize(self, relevant: List[Dict]) -> bool:
-        return True  # v1: always attempt
+    def should_crystallize(self, relevant: List[Dict]) -> bool:
+        return True  # v1: always attempt crystallization
 
-    async def _crystallize(self, parsed: Dict, relevant: List[Dict]) -> Optional[Dict]:
+    # 4. Crystallize
+    async def crystallize(self, parsed: Dict, relevant: List[Dict]) -> Dict:
+        skill_id = self._generate_id("skill")
         skill = {
-            "id": f"skill_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}",
-            "created_at": datetime.utcnow().isoformat(),
-            "symbols": parsed.get("symbols", []),
-            "anchors": parsed.get("anchors", []),
-            "insight": "When fog appears near a door, pause and name one anchor before proceeding.",
+            "concept": "crystallized_skill",
+            "id": skill_id,
+            "name": f"skill_{datetime.utcnow().strftime('%Y%m%d')}",
+            "type": "symbolic_anchor",
+            "description": "Auto-generated symbolic insight from dream.",
+            "triggers": parsed.get("anchors", []),
+            "insight": "When this pattern appears, pause and name the dominant anchor.",
+            "usage_prompt": "What is trying to emerge through this symbol right now?",
+            "relations": parsed.get("symbols", []),
             "version": 1,
-            "format": "CSF-crystallized-v1"
+            "last_updated": datetime.utcnow().isoformat(),
+            "confidence": 0.75
         }
         return skill
 
-    def _save_crystallized_skill(self, skill: Dict):
+    def save_crystallized_skill(self, skill: Dict):
         path = self.crystallized_dir / f"{skill['id']}.csf.json"
-        path.write_text(json.dumps(skill, indent=2))
+        path.write_text(json.dumps(skill, indent=2), encoding="utf-8")
 
-    def _build_response_context(self, parsed: Dict, relevant: List[Dict]) -> str:
-        symbols = ", ".join(parsed.get("symbols", []))
-        return f"Relevant symbols: {symbols}. Recall crystallized patterns where available."
+    # 5. Index & Reuse
+    def update_index(self, dream_csf: Dict, skill: Optional[Dict] = None):
+        index_file = self.index_dir / "dream_index.jsonl"
+        entry = {
+            "dream_id": dream_csf["id"],
+            "timestamp": dream_csf["date"],
+            "symbols": dream_csf.get("symbols", []),
+            "anchors": dream_csf.get("anchors", []),
+            "crystallized_skill": skill["id"] if skill else None
+        }
+        with open(index_file, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry) + "\n")
+
+    async def generate_contextual_response(self, parsed: Dict, relevant: List[Dict], skill: Optional[Dict]) -> Dict:
+        context = {
+            "symbols": parsed.get("symbols", []),
+            "anchors": parsed.get("anchors", []),
+            "crystallized_skill": skill,
+            "relevant_past_skills": [r.get("id") for r in relevant]
+        }
+        return context
+
+    async def process_dream(self, raw_text: str, metadata: Optional[Dict] = None):
+        # Full loop
+        dream_csf = self.create_raw_dream_csf(raw_text, metadata)
+        self.save_csf(dream_csf, f"dreams/{dream_csf['id']}.csf")
+
+        parsed = await self.parse_dream(dream_csf)
+        relevant = await self.reflect(parsed)
+
+        skill = None
+        if self.should_crystallize(relevant):
+            skill = await self.crystallize(parsed, relevant)
+            self.save_crystallized_skill(skill)
+
+        self.update_index(dream_csf, skill)
+
+        return await self.generate_contextual_response(parsed, relevant, skill)
 
 
-engine = DreamCrystallizationEngine()
+# Global instance
+engine = LanternCrystallizationEngine()
