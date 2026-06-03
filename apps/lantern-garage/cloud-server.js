@@ -220,6 +220,7 @@ async function route(req, res) {
   const writePathsAllowed = [
     url.pathname === "/api/chat" && req.method === "POST",
     url.pathname === "/api/dream/chat" && req.method === "POST",
+    url.pathname === "/api/dream/chat/stream" && req.method === "POST",
     url.pathname === "/api/dream/create" && req.method === "POST",
     url.pathname === "/api/command" && req.method === "POST",
     url.pathname.startsWith("/api/actions/") && req.method === "POST",
@@ -292,6 +293,9 @@ async function route(req, res) {
         emotions: (body.emotions || []).slice(0, 20),
         tags: (body.tags || []).slice(0, 10),
         symbols: body.symbols || [],
+        linked_goals: body.linked_goals || [],
+        priority: body.priority || "normal",
+        reflection_on: body.reflection_on || [],
         source: "api",
       };
       const dreamDir = path.join(repoRoot, "data", "dream_journal");
@@ -325,6 +329,8 @@ async function route(req, res) {
         entries_by_kind: {},
         top_emotions: {},
         top_tags: {},
+        top_symbols: {},
+        total_lucidity: 0,
         avg_lucidity: 0,
       };
       let totalLucidity = 0;
@@ -333,13 +339,58 @@ async function route(req, res) {
         stats.entries_by_kind[k] = (stats.entries_by_kind[k] || 0) + 1;
         for (const em of (e.emotions || [])) stats.top_emotions[em] = (stats.top_emotions[em] || 0) + 1;
         for (const t of (e.tags || [])) stats.top_tags[t] = (stats.top_tags[t] || 0) + 1;
+        for (const s of (e.symbols || [])) stats.top_symbols[s] = (stats.top_symbols[s] || 0) + 1;
         totalLucidity += e.lucidity || 0;
       }
+      stats.total_lucidity = totalLucidity;
       if (entries.length > 0) stats.avg_lucidity = (totalLucidity / entries.length).toFixed(2);
       sendJson(res, stats);
     } catch (error) {
       sendJson(res, { error: error.message }, 500);
     }
+    return;
+  }
+
+  // Streaming chat — SSE, word-by-word, works online and offline
+  if (url.pathname === "/api/dream/chat/stream" && req.method === "POST") {
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache",
+      "Connection": "keep-alive",
+      "X-Accel-Buffering": "no",
+      "Access-Control-Allow-Origin": "*",
+      "Referrer-Policy": "no-referrer",
+      "X-Frame-Options": "DENY",
+    });
+
+    const send = (obj) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
+
+    try {
+      const body = await collectRequestBody(req);
+      const input = JSON.parse(body || "{}");
+      const message = String(input.message || "").slice(0, 2000);
+      const result = dreamChatReply(message, readRecentDreams(5));
+
+      send({ type: "start" });
+
+      // Stream word by word with natural variance
+      const tokens = result.reply.split(/(\s+)/);
+      for (let i = 0; i < tokens.length; i++) {
+        if (tokens[i]) {
+          send({ type: "token", text: tokens[i] });
+          // Vary delay: longer after punctuation, short between words
+          const isPunct = /[.!?,;:]$/.test(tokens[i].trim());
+          await new Promise((r) => setTimeout(r, isPunct ? 60 + Math.random() * 80 : 18 + Math.random() * 28));
+        }
+      }
+
+      send({ type: "done", suggestions: result.suggestions, online: result.online, draft: result.draft || null });
+    } catch (err) {
+      send({ type: "done", suggestions: ["Log a dream", "Recent dreams", "Mirror a dream"], online: false });
+    }
+
+    res.write("data: [DONE]\n\n");
+    res.end();
     return;
   }
 
@@ -413,5 +464,6 @@ server.on("error", (error) => {
 });
 
 server.listen(port, host, () => {
-  console.log(`Lantern Garage (Cloud) running on port ${port}`);
+  const actualPort = server.address().port;
+  console.log(`Lantern Garage (Cloud) running on port ${actualPort}`);
 });

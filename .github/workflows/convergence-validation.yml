@@ -19,7 +19,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          .\scripts\Invoke-LanternConvergenceLoop.ps1 -Root . -Output manifests\evidence\convergence-ci.json
+          .\scripts\Invoke-LanternConvergenceLoop.ps1 -Root . -Output manifests\evidence\convergence-ci.json -CloudVirtualization
           $results = Get-Content manifests\evidence\convergence-ci.json | ConvertFrom-Json
           if ($results.issues.Count -gt 0) {
             Write-Host "::warning:: $($results.issues.Count) convergence issues found"

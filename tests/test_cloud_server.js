@@ -14,8 +14,7 @@ const os     = require("os");
 const { spawn } = require("child_process");
 
 const SERVER  = path.resolve(__dirname, "../apps/lantern-garage/cloud-server.js");
-const PORT    = 14177; // separate from local server port (4177)
-const BASE    = `http://127.0.0.1:${PORT}`;
+let PORT      = 0;   // assigned after server binds (ephemeral)
 
 let server;
 let passed = 0;
@@ -72,12 +71,16 @@ function startServer() {
     // Point repoRoot at a temp dir so data writes don't pollute the real repo
     const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "lantern-test-"));
     server = spawn(process.execPath, [SERVER], {
-      env: { ...process.env, PORT: String(PORT), LANTERN_REPO_ROOT: tmpRoot },
+      env: { ...process.env, PORT: "0", LANTERN_REPO_ROOT: tmpRoot },
       stdio: ["ignore", "pipe", "pipe"],
     });
-    server.stderr.on("data", (d) => { /* suppress */ });
+    server.stderr.on("data", () => {});
     server.stdout.on("data", (d) => {
-      if (d.toString().includes("running on port")) resolve(tmpRoot);
+      const m = d.toString().match(/running on port (\d+)/);
+      if (m) {
+        PORT = Number(m[1]);
+        resolve(tmpRoot);
+      }
     });
     server.on("error", reject);
     setTimeout(() => reject(new Error("server startup timeout")), 8000);

@@ -380,6 +380,21 @@
       font-style: italic;
     }
 
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0; }
+    }
+    .cursor {
+      display: inline-block;
+      width: 2px;
+      height: 0.9em;
+      background: #7c67c9;
+      margin-left: 1px;
+      vertical-align: text-bottom;
+      animation: blink 0.9s step-end infinite;
+      border-radius: 1px;
+    }
+
     .chat-suggestions {
       display: flex;
       flex-wrap: wrap;
@@ -684,33 +699,103 @@
       return { reply: `I hear it: "${text.slice(0, 160)}". That is worth keeping. Tap "Log this as a dream" to save it.`, suggestions: ["Log this as a dream", "Mirror a dream", "Tell me about the doors"], draft: text };
     }
 
+    function escapeHtml(t) {
+      return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    function makeBubble(role) {
+      const log = document.getElementById('chatLog');
+      const b = document.createElement('div');
+      b.className = `bubble ${role}`;
+      log.appendChild(b);
+      log.scrollTop = log.scrollHeight;
+      return b;
+    }
+
+    // Simulate streaming for offline fallback
+    async function streamOffline(text, suggestions) {
+      const b = makeBubble('lantern');
+      b.innerHTML = '<span class="cursor"></span>';
+      const log = document.getElementById('chatLog');
+      const tokens = text.split(/(\s+)/);
+      let out = '';
+      for (const tok of tokens) {
+        if (!tok) continue;
+        out += tok;
+        const isPunct = /[.!?,;:]$/.test(tok.trim());
+        b.innerHTML = escapeHtml(out) + '<span class="cursor"></span>';
+        log.scrollTop = log.scrollHeight;
+        await new Promise(r => setTimeout(r, isPunct ? 60 + Math.random()*80 : 18 + Math.random()*28));
+      }
+      b.textContent = out;
+      renderSuggestions(suggestions);
+      return b;
+    }
+
     async function sendChat(message) {
       const msg = (message || '').trim();
       if (!msg) return;
+
+      const chatInput = document.getElementById('chatInput');
+      const chatSend  = document.getElementById('chatSend');
+      chatInput.disabled = true;
+      chatSend.disabled  = true;
+
       addBubble('operator', msg);
-      const typing = addBubble('typing', '…');
+      renderSuggestions([]);
+
+      const log = document.getElementById('chatLog');
+      const b = makeBubble('lantern');
+      b.innerHTML = '<span class="cursor"></span>';
 
       try {
-        const res = await fetch('/api/dream/chat', {
+        const res = await fetch('/api/dream/chat/stream', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: msg })
+          body: JSON.stringify({ message: msg }),
         });
-        if (!res.ok) throw new Error('chat_failed');
-        const data = await res.json();
-        typing.remove();
+        if (!res.ok) throw new Error('stream_failed');
         setStatus(true);
-        addBubble('lantern', data.reply);
-        renderSuggestions(data.suggestions);
-        lastDraft = data.draft || msg;
-      } catch (err) {
-        // Server unreachable — stay in character, fully offline.
-        typing.remove();
+
+        const reader  = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = '', out = '', suggestions = [];
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const lines = buf.split('\n');
+          buf = lines.pop();
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            const raw = line.slice(6).trim();
+            if (raw === '[DONE]') continue;
+            let ev; try { ev = JSON.parse(raw); } catch { continue; }
+            if (ev.type === 'token') {
+              out += ev.text;
+              b.innerHTML = escapeHtml(out) + '<span class="cursor"></span>';
+              log.scrollTop = log.scrollHeight;
+            } else if (ev.type === 'done') {
+              suggestions = ev.suggestions || [];
+              if (ev.draft)   lastDraft = ev.draft;
+              if (ev.online !== undefined) setStatus(ev.online);
+            }
+          }
+        }
+        b.textContent = out;
+        renderSuggestions(suggestions);
+
+      } catch (_err) {
+        b.remove();
         setStatus(false);
         const local = offlineReply(msg);
-        addBubble('lantern', local.reply);
-        renderSuggestions(local.suggestions);
-        lastDraft = local.draft || msg;
+        await streamOffline(local.reply, local.suggestions);
+        if (local.draft) lastDraft = local.draft || msg;
+      } finally {
+        chatInput.disabled = false;
+        chatSend.disabled  = false;
+        chatInput.focus();
       }
     }
 
