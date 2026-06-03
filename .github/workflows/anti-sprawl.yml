@@ -4,51 +4,71 @@ on:
   pull_request:
     branches: [master]
 
+env:
+  MAX_NEW_FILES: 25
+  MAX_NEW_MARKDOWN: 4
+  ALLOWED_TOP_LEVEL: src,apps,services,docs,tests,scripts,config,data,ops,integrations,skills,docker,manifests,.github
+
 jobs:
   anti-sprawl:
-    name: Check for repo sprawl
+    name: Enforce anti-sprawl rules
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Detect new top-level directories
+      - name: Analyze PR changes
+        id: analyze
         shell: bash
         run: |
-          NEW_DIRS=$(git diff --name-only --diff-filter=A origin/master...HEAD | cut -d/ -f1 | sort | uniq)
-          TOP_LEVEL_NEW=$(echo "$NEW_DIRS" | grep -vE '^(src|apps|services|docs|tests|scripts|config|data|ops|integrations|skills|docker|manifests|\.github)$' || true)
+          echo "=== Anti-Sprawl Analysis ==="
+          echo "Base: origin/master"
+          echo ""
 
-          if [ -n "$TOP_LEVEL_NEW" ]; then
-            echo "❌ New top-level directories detected:"
-            echo "$TOP_LEVEL_NEW"
-            echo ""
-            echo "Anti-sprawl rule: New top-level directories require explicit approval."
-            exit 1
-          fi
-          echo "✅ No new top-level directories"
+          # New files
+          NEW_FILES=$(git diff --name-only --diff-filter=A origin/master...HEAD)
+          NEW_FILE_COUNT=$(echo "$NEW_FILES" | wc -l)
+          echo "new_file_count=$NEW_FILE_COUNT" >> $GITHUB_OUTPUT
 
-      - name: Detect excessive new files
-        shell: bash
+          # New top-level directories
+          NEW_TOP_LEVEL=$(echo "$NEW_FILES" | cut -d/ -f1 | sort | uniq | grep -vE "^(${ALLOWED_TOP_LEVEL//,/|})$" || true)
+          echo "new_top_level_dirs<<EOF" >> $GITHUB_OUTPUT
+          echo "$NEW_TOP_LEVEL" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          # New markdown files
+          NEW_MD=$(echo "$NEW_FILES" | grep -E '\.md$' | wc -l)
+          echo "new_markdown_count=$NEW_MD" >> $GITHUB_OUTPUT
+
+      - name: Check new top-level directories
+        if: steps.analyze.outputs.new_top_level_dirs != ''
         run: |
-          NEW_FILE_COUNT=$(git diff --name-only --diff-filter=A origin/master...HEAD | wc -l)
-          echo "New files in PR: $NEW_FILE_COUNT"
+          echo "❌ BLOCKED: New top-level directories detected"
+          echo ""
+          echo "${{ steps.analyze.outputs.new_top_level_dirs }}"
+          echo ""
+          echo "Only the following top-level directories are allowed:"
+          echo "${{ env.ALLOWED_TOP_LEVEL }}"
+          exit 1
 
-          if [ "$NEW_FILE_COUNT" -gt 25 ]; then
-            echo "❌ Too many new files ($NEW_FILE_COUNT). Max allowed: 25 per PR."
-            echo "Please split this into smaller PRs."
-            exit 1
-          fi
-          echo "✅ File count within limits"
-
-      - name: Detect excessive new markdown files
-        shell: bash
+      - name: Check file count
+        if: steps.analyze.outputs.new_file_count > env.MAX_NEW_FILES
         run: |
-          NEW_MD_COUNT=$(git diff --name-only --diff-filter=A origin/master...HEAD | grep -E '\.md$' | wc -l)
-          echo "New markdown files: $NEW_MD_COUNT"
+          echo "❌ BLOCKED: Too many new files (${{ steps.analyze.outputs.new_file_count }})"
+          echo "Maximum allowed per PR: ${{ env.MAX_NEW_FILES }}"
+          echo "Please split this change into smaller PRs."
+          exit 1
 
-          if [ "$NEW_MD_COUNT" -gt 4 ]; then
-            echo "❌ Too many new markdown files ($NEW_MD_COUNT). Max: 4 per PR."
-            exit 1
-          fi
-          echo "✅ Markdown count within limits"
+      - name: Check markdown file count
+        if: steps.analyze.outputs.new_markdown_count > env.MAX_NEW_MARKDOWN
+        run: |
+          echo "❌ BLOCKED: Too many new markdown files (${{ steps.analyze.outputs.new_markdown_count }})"
+          echo "Maximum allowed per PR: ${{ env.MAX_NEW_MARKDOWN }}"
+          exit 1
+
+      - name: Pass
+        run: |
+          echo "✅ Anti-sprawl checks passed"
+          echo "New files: ${{ steps.analyze.outputs.new_file_count }}"
+          echo "New markdown: ${{ steps.analyze.outputs.new_markdown_count }}"
