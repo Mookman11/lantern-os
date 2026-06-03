@@ -54,6 +54,7 @@ Static surfaces are deployed from the `gh-pages` branch via the GitHub Actions w
 |---------|------|--------|-----|---------|
 | **Lantern Garage** | `4177` | Running | http://127.0.0.1:4177 | `node apps/lantern-garage/server.js` |
 | **GPT Web API** | `3000` | Running | http://127.0.0.1:3000 | `node integrations/gm-agent-orchestrator/tools/gpt-web-api/server.js` |
+| **MCP Server** | `8771` | Running | http://127.0.0.1:8771 | `python src/mcp_server/server.py` |
 | **Discord Radio Bot** | N/A | Needs token | — | `python apps/lantern-discord-radio/bot.py` |
 
 Start all:
@@ -64,7 +65,10 @@ npm start --prefix apps/lantern-garage
 # Terminal 2 — GPT Web API
 npm start --prefix integrations/gm-agent-orchestrator/tools/gpt-web-api
 
-# Terminal 3 — Discord Bot (requires token)
+# Terminal 3 — MCP Server
+python src/mcp_server/server.py
+
+# Terminal 4 — Discord Bot (requires token)
 python apps/lantern-discord-radio/bot.py
 ```
 
