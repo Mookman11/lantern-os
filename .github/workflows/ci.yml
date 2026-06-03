@@ -163,6 +163,22 @@ jobs:
         run: npx playwright test tests/e2e/dreamer-journal.spec.ts --reporter=line
 
   # ============================================================================
+  # REGRESSION: CI/CD gates + Agent compliance
+  # ============================================================================
+  regression-tests:
+    name: Regression Suite (CI/CD gates + Agent compliance)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: CI/CD gate regression
+        run: node tests/regression/cicd-gates.js
+      - name: Agent compliance regression
+        run: node tests/regression/agent-compliance.js
+
+  # ============================================================================
   # CONVERGENCE: Consistency checks
   # ============================================================================
   convergence-check:
