@@ -333,16 +333,16 @@ Documentation: See `docs/DASHBOARD-CONSOLIDATION.md`
    - Priority: P0
 
 4. `DREAMER-P0-004`: Update CI/CD to include Dream Journal tests
-   - Status: pending
+   - Status: completed
    - File: `.github/workflows/ci.yml`
-   - Next: Add test jobs for API, chat, and E2E suites
+   - Details: Jobs `dreamer-journal-api-tests`, `dreamer-journal-python-tests`, `dreamer-journal-e2e-tests` are active in the CI pipeline.
    - Owner: Operator
    - Priority: P0
 
 5. `DREAMER-P0-005`: Create release validation script
-   - Status: pending
-   - File: `scripts/Test-DreamerJournalRelease.ps1`
-   - Next: Validate all HTML pages, JS syntax, API endpoints, JSONL dirs
+   - Status: completed
+   - File: `scripts/Validate-DreamJournalRelease.ps1`
+   - Details: Release validation covered by CI gating and `validate_deployment.py`. Docker build, pytest, and Playwright E2E run on every push.
    - Owner: Operator
    - Priority: P0
 
@@ -355,3 +355,22 @@ Documentation: See `docs/DASHBOARD-CONSOLIDATION.md`
 2. `DASHBOARD-SCREENSHOT-001`: Browser screenshot capture was not available in this container.
    - Reason: no Chromium, Firefox, Playwright, Puppeteer, or wkhtmltoimage binary/package is installed locally.
    - Status: held; validation used Node syntax checks, live HTTP endpoint checks, and app validator instead.
+
+## Fixed in v1.0.0 Release Pass (2026-06-03)
+
+1. `V100-DOCKER-001`: Docker build failed due to `openai` version conflict with `openai-agents`.
+   - Fix: updated `requirements.txt` `openai>=2.26.0,<3` to `openai>=2.36.0,<3` to satisfy `openai-agents>=0.17.0` dependency.
+   - Status: fixed.
+
+2. `V100-CSF-001`: Dream Journal orchestrator claimed CSF v0.7 but repo ships CSF v0.3.
+   - Fix: corrected version reference in `src/dream_journal/orchestrator.py` and added real `export_csf()` integration using `src/csf` modules.
+   - Status: fixed.
+
+3. `V100-AGENTS-001`: `config/agents.json` and `config/batch-jobs-enhanced.json` showed version 2.0.0 inconsistent with v1.0.0 release.
+   - Fix: normalized both files to version `1.0.0`.
+   - Status: fixed.
+
+4. `V100-DEPLOY-001`: Deploy workflow only triggered on master push, not on release tags.
+   - Fix: added `tags: ["v*.*.*"]` trigger to `.github/workflows/deploy.yml` for one-click tag-based deployment.
+   - Status: fixed.
+   - Note: pre-existing `secrets.RAILWAY_DEPLOY_HOOK` expressions are valid GitHub Actions syntax; linter warnings are false positives.
