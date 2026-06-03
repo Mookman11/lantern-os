@@ -1,9 +1,40 @@
 # Headless Lantern OS — auto-start, no frills
-# Usage: docker-compose -f docker-compose.headless.yml up -d
+# Usage: docker compose -f docker-compose.headless.yml up -d --build
 # All services restart unless-stopped.
 # No dashboard. No GUI. Just APIs and compression workers.
 
 services:
+  # Dream Journal API (existing slim Flask image)
+  dream-journal:
+    image: lantern-os-dream-journal:latest
+    container_name: lantern-dream-journal
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_ENV=production
+      - PYTHONUNBUFFERED=1
+      - CSF_ENDPOINT=http://csf-worker:9000
+      - CADD_INCOMING_DIR=/assets/incoming
+    volumes:
+      - ./skills/dream_journal:/app/skills/dream_journal:ro
+      - ./data/dreams:/app/data/dreams
+      - ./assets/incoming:/assets/incoming
+      - lantern-logs:/app/logs
+    networks:
+      - lantern-headless
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   # Core CSF compression service (Rust binary)
   csf-worker:
     build:
@@ -12,6 +43,8 @@ services:
     image: lantern-os/csf:v0.8
     container_name: lantern-csf
     restart: unless-stopped
+    expose:
+      - "9000"
     volumes:
       - ./data/archives:/data/archives
       - ./data/logs:/data/logs
@@ -19,6 +52,8 @@ services:
       - CSF_POLICY=trusted
       - CSF_THREADS=4
       - CSF_LOG_LEVEL=info
+    networks:
+      - lantern-headless
     command: ["server", "--bind", "0.0.0.0:9000", "--data-dir", "/data/archives"]
     healthcheck:
       test: ["CMD", "/app/csf", "ping"]
@@ -46,6 +81,8 @@ services:
     environment:
       - CADD_BRAND_DIR=/assets/brand
       - CADD_LOG_LEVEL=info
+    networks:
+      - lantern-headless
     command: ["watch", "/assets/incoming", "--brand-dir", "/assets/brand"]
     depends_on:
       - csf-worker
@@ -67,7 +104,10 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+    networks:
+      - lantern-headless
     depends_on:
+      - dream-journal
       - csf-worker
     logging:
       driver: json-file
@@ -75,6 +115,11 @@ services:
         max-size: "5m"
         max-file: "2"
 
+networks:
+  lantern-headless:
+    driver: bridge
+
 volumes:
+  lantern-logs:
   caddy_data:
   caddy_config:

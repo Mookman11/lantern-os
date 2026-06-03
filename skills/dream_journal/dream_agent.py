@@ -25,6 +25,13 @@ except Exception:  # pragma: no cover - optional SDK boundary
 from .cognitive_layer import CognitiveJournal
 from .dream_journal import DreamJournal
 
+# Bridge to unified connector if available
+try:
+    from src.unified_agent_connector import UnifiedAgentConnector, get_connector
+except Exception:
+    UnifiedAgentConnector = None  # type: ignore
+    get_connector = None  # type: ignore
+
 
 SYSTEM_PROMPT = """You are Dream Journal inside Lantern OS.
 Stay grounded, concise, and privacy-preserving. Treat dream interpretation as
@@ -94,12 +101,44 @@ class DreamAgent:
         """Return recent local dreams."""
         return self.journal.get_recent(limit)
 
-    def mirror(self, text: str) -> DreamAgentResult:
-        """Reflect on text through a real agent runtime."""
+    def mirror(self, text: str, provider: Optional[str] = None, persona: Optional[str] = None) -> DreamAgentResult:
+        """Reflect on text through the best available agent runtime."""
         fallacies = self.cognitive.analyze(text)
         recent = self.recent(3)
-        prompt = self._build_prompt(text, fallacies, recent)
+        context = self._build_context(text, fallacies, recent)
 
+        # 1. Unified connector (multi-provider, slot-aware)
+        if get_connector is not None:
+            try:
+                connector = get_connector()
+                out = []
+                meta = {}
+                gen = connector.stream(text, persona_id=persona, provider=provider, context=context)
+                while True:
+                    try:
+                        token = next(gen)
+                        if isinstance(token, str):
+                            out.append(token)
+                        else:
+                            meta = dict(token) if hasattr(token, "items") else {}
+                    except StopIteration as exc:
+                        if exc.value and isinstance(exc.value, dict):
+                            meta = exc.value
+                        break
+                reply = "".join(out)
+                if reply:
+                    return DreamAgentResult(
+                        reply=reply,
+                        source=meta.get("provider", "unified"),
+                        fallacies=fallacies,
+                        recent_count=len(recent),
+                        agent_runtime=meta.get("provider", "unified"),
+                    )
+            except Exception as exc:
+                print(f"[warn] Unified connector failed: {exc}")
+
+        # 2. Legacy Ollama fallback
+        prompt = self._build_prompt(text, fallacies, recent)
         ollama_reply = self._run_ollama(prompt)
         if ollama_reply is not None:
             return DreamAgentResult(
@@ -110,6 +149,7 @@ class DreamAgent:
                 agent_runtime=f"ollama:{self.model}",
             )
 
+        # 3. OpenAI Agents SDK fallback
         if self._agent is not None and Runner is not None:
             try:
                 result = Runner.run_sync(self._agent, prompt)
@@ -132,7 +172,7 @@ class DreamAgent:
 
         if self.require_agent_runtime:
             return DreamAgentResult(
-                reply=self._held_reply("No Ollama runtime responded and OpenAI Agents SDK is not configured."),
+                reply=self._held_reply("No agent runtime responded."),
                 source="held_no_agent_runtime",
                 fallacies=fallacies,
                 recent_count=len(recent),
@@ -175,6 +215,20 @@ class DreamAgent:
             "",
             "Return: one mirror, one grounded interpretation, one next question.",
         ])
+
+    def _build_context(self, text: str, fallacies: List[Dict[str, Any]], recent: List[Dict[str, Any]]) -> str:
+        """Build context string for unified connector (not a full prompt)."""
+        recent_lines = [
+            f"- {item.get('timestamp', 'unknown')}: {item.get('content') or item.get('text', '')[:180]}"
+            for item in recent
+        ]
+        parts = [
+            f"Dreamer input: {text}",
+            f"Local fallacy hints: {fallacies}",
+        ]
+        if recent_lines:
+            parts.append("Recent local dream context:\n" + "\n".join(recent_lines))
+        return "\n".join(parts)
 
     def _run_ollama(self, prompt: str) -> Optional[str]:
         payload = json.dumps({
