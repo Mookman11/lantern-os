@@ -18,6 +18,7 @@ This document reflects the actual Docker setup in the repository.
 
 ### For Dream Journal V1.0.0
 - Use **one container** only: `apps/lantern-garage/Dockerfile`
+- `gm-agent-orchestrator` is a first-class dependency (sidecar or integrated)
 - Dream Journal chat + streaming runs inside Lantern Garage
 - No need for separate Dream Journal container in V1
 - Redis is **not required** for basic V1 chat + provider streaming
