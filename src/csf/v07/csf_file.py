@@ -190,11 +190,12 @@ class CSFFileReader:
         meta_len = struct.unpack_from(">I", self._data, self._offset)[0]
         self._offset += 4
         if meta_len > 0:
+            meta = self._data[self._offset:self._offset + meta_len]
+            self._offset += meta_len
             compressed_len = struct.unpack_from(">I", self._data, self._offset)[0]
             self._offset += 4
-            meta = self._data[self._offset:self._offset + meta_len]
-            compressed = self._data[self._offset + meta_len:self._offset + meta_len + compressed_len]
-            self._offset += meta_len + compressed_len
+            compressed = self._data[self._offset:self._offset + compressed_len]
+            self._offset += compressed_len
             self.baseline = decode_sparse(meta, compressed)
 
         # Delta stream

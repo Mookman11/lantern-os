@@ -114,11 +114,10 @@ def decompress_csf(csf_path: Path) -> str:
     if not reader.verify():
         raise ValueError("CSF file CRC verification failed")
 
-    # reader.baseline is already fully decompressed by decode_sparse()
-    # It contains the raw blob that compress_text produced:
-    #   dict_len(4) + dict_bytes + meta(16) + sparse_compressed
-    # where the WHOLE blob was zlib.compressed once by compress_text.
-    body = reader.baseline
+    # reader.baseline is the output of compress_text, which is a zlib-compressed
+    # blob containing: dict_len(4) + dict_bytes + meta(16) + sparse_compressed
+    # First decompress the outer zlib layer.
+    body = zlib.decompress(reader.baseline)
 
     offset = 0
     dict_len = struct.unpack_from(">I", body, offset)[0]
