@@ -1,28 +1,31 @@
-# Stage 1: Build dependencies
-FROM node:22-alpine as builder
+# Lantern Garage + Discord Bot (Single Container)
+FROM python:3.12-slim
 
 WORKDIR /app
 
+# Install system dependencies (Node + Python build tools)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    gnupg \
+    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy and install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy and install Node dependencies
 COPY package*.json ./
 RUN npm ci --production
 
-# Stage 2: Runtime
-FROM node:22-alpine
+# Copy application code
+COPY . .
 
-RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001
-
-WORKDIR /app
-
-COPY --from=builder --chown=nodejs:nodejs /app/node_modules ./node_modules
-COPY --chown=nodejs:nodejs . .
-
-USER nodejs
-
-ENV NODE_ENV=production
-ENV PORT=8080
+# Expose web port
 EXPOSE 8080
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:8080', (r) => r.statusCode === 200 ? process.exit(0) : process.exit(1))"
-
-CMD ["npm", "run", "start:cloud"]
+# Start both services
+# Web server + Discord bot
+CMD ["sh", "-c", "node server.js & python src/discord_lounge_bot/bot.py"]
