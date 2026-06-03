@@ -1969,6 +1969,54 @@ Tone: thoughtful, unhurried, human. Never clinical. Never sycophantic. Use the d
     return;
   }
 
+  // ── Multi-Bot Orchestrator — CADD/CSF v0.7 symbolic RP ───────────────
+  if (url.pathname === "/api/dream/orchestrate" && req.method === "POST") {
+    try {
+      const raw = await collectRequestBody(req);
+      const body = JSON.parse(raw || "{}");
+      const message = String(body.message || "").slice(0, maxDreamerTextLength).trim();
+      if (!message) {
+        sendJson(res, { reply: "The dream door is open, but I need a dream to work with.", agent: "Lantern", suggestions: ["Log a dream", "Tell me about the doors"] });
+        return;
+      }
+
+      const result = await new Promise((resolve) => {
+        const pyScript = path.join(repoRoot, "src", "dream_journal", "orchestrator.py");
+        const proc = spawn("python", [pyScript], { stdio: ["pipe", "pipe", "pipe"] });
+        let stdout = Buffer.alloc(0);
+        let stderr = "";
+        proc.stdout.on("data", (d) => { stdout = Buffer.concat([stdout, d]); });
+        proc.stderr.on("data", (d) => { stderr += d; });
+        proc.on("close", (code) => {
+          if (code === 0 && stdout.length > 0) {
+            try {
+              const output = JSON.parse(stdout.toString("utf-8"));
+              resolve({ success: true, output });
+            } catch {
+              resolve({ success: false, error: "Invalid JSON from orchestrator" });
+            }
+          } else {
+            resolve({ success: false, error: stderr || `exit ${code}` });
+          }
+        });
+        // Pass message as JSON via stdin
+        proc.stdin.write(JSON.stringify({ action: "process", message }) + "\n", "utf8");
+        proc.stdin.end();
+      });
+
+      if (result.success) {
+        sendJson(res, { ...result.output, generatedAt: new Date().toISOString(), online: true });
+      } else {
+        // Fallback to single-agent offline reply
+        const fallback = await dreamChatReply(message, readRecentDreams(5));
+        sendJson(res, { ...fallback, generatedAt: new Date().toISOString(), online: false, fallback: true });
+      }
+    } catch (error) {
+      sendJson(res, { reply: "The dream door stays open even when tangled.", agent: "Lantern", suggestions: ["Log a dream", "Tell me about the doors"], error: error.message }, 200);
+    }
+    return;
+  }
+
   if (url.pathname === "/api/dream/stats" && req.method === "GET") {
     try {
       const dreamDir = path.join(repoRoot, "data", "dream_journal");
