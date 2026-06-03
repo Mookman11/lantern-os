@@ -26,6 +26,14 @@ Local-first OS cockpit built by Alex Place.
 - No actual outreach automation (outreach scripts are drafts only).
 - No cloud data storage — all journal data stays on your machine.
 
+## Local Development URLs
+
+| Service | URL | Description |
+|---------|-----|-------------|
+| **Lantern Garage** | http://127.0.0.1:4177 | Main web server |
+| **Dream Journal (Orion)** | http://127.0.0.1:4177/dream-chat-orion.html | Clean V1 chat interface |
+| **Dream Journal (Classic)** | http://127.0.0.1:4177/dream-chat.html | Original chat UI |
+
 ## How to run
 
 ### Prerequisites
