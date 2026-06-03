@@ -1,5 +1,9 @@
 # Lantern OS
 
+[![CI](https://github.com/alex-place/lantern-os/actions/workflows/ci.yml/badge.svg)](https://github.com/alex-place/lantern-os/actions/workflows/ci.yml)
+[![Deploy](https://github.com/alex-place/lantern-os/actions/workflows/deploy.yml/badge.svg)](https://github.com/alex-place/lantern-os/actions/workflows/deploy.yml)
+[![Validate Dream Journal](https://github.com/alex-place/lantern-os/actions/workflows/validate-dream-journal.yml/badge.svg)](https://github.com/alex-place/lantern-os/actions/workflows/validate-dream-journal.yml)
+
 Local-first OS cockpit built by Alex Place. The repo contains a Dream Journal server, an Imagniverse/status-cube interface, a payment bridge stub, and the Lantern Garage Node.js server that ties them together.
 
 ## What it does today
