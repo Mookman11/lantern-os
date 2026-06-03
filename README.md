@@ -6,11 +6,12 @@ Local-first OS cockpit built by Alex Place. The repo contains a Dream Journal se
 
 | Component | Description |
 |-----------|-------------|
-| **Dream Journal** | Local journaling app (entries, emotions, tags, lucidity). Data stored in `data/dream_journal/*.jsonl`. |
+| **Dream Journal** | Freeform RP chat interface. No hardcoded fields — just talk. Chat at top, fixed input bar at bottom. Data stored in browser localStorage with JSONL export. |
 | **Lantern Garage server** | Node.js HTTP server (`apps/lantern-garage/server.js`). Serves the Dream Journal UI and REST API on port 4177. |
 | **Imagniverse / status cube** | 4D routing matrix for Lantern OS state — a routing and inspection interface, not physical hardware. Lives in `surfaces/`. |
 | **Payment bridge** | Stub for Stripe invoice workflows (`apps/lantern-garage/payment-bridge/`). Not connected to a live Stripe account. |
-| **GitHub Pages static UI** | The `gh-pages` branch hosts static surfaces (pitch, proof, pricing, wish-door). |
+| **CSF / CADD** | Convergence-Fitted Searchable Binary Archive format (v1.0 spec) + Context Archive for Dream Data. Used for memory exports and symbolic data compression. |
+| **GitHub Pages / Netlify static UI** | Static surfaces deployed from `apps/lantern-garage/public/` (pitch, proof, pricing, wish-door, dream-journal). |
 
 ## What is NOT in scope
 

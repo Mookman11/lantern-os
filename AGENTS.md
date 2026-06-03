@@ -32,18 +32,23 @@ python -c "import ast; ast.parse(open('src/mcp_server/server.py').read()); print
 # Lantern Garage web app (port 4177)
 node apps/lantern-garage/server.js
 
-# Dream Chat UI — open in browser after starting Garage:
+# Dream Journal (freeform RP) — open in browser after starting Garage:
+# http://127.0.0.1:4177/dream-journal/
+#
+# Dream Chat UI (ChatGPT-style) — alternative surface:
 # http://127.0.0.1:4177/dream-chat.html
 ```
 
 ### Key Entry Points
 | Surface | File | Port |
 |---|---|---|
+| Dream Journal (freeform RP chat) | `apps/lantern-garage/public/dream-journal/index.html` | 4177 / Netlify |
 | Dream Chat (ChatGPT-style) | `apps/lantern-garage/public/dream-chat.html` | 4177 |
 | Lantern Garage dashboard | `apps/lantern-garage/server.js` | 4177 |
 | MCP server (tools) | `src/mcp_server/server.py` | 8771 |
 | Dream Journal skill | `skills/dream_journal/dream_journal.py` | — |
 | Discord bot | `src/discord_lounge_bot/bot.py` | — |
+| CSF/CADD export | `reports/CSF-CADD-INGEST-EXPORT-*.md` | — |
 
 ---
 
@@ -80,13 +85,18 @@ node apps/lantern-garage/server.js
 ## Streaming Chat Architecture
 
 ```
-Browser (dream-chat.html)
+Browser (dream-chat.html or dream-journal/index.html)
   └── fetch GET /api/dream/stream?message=...
         └── server.js → Provider chain:
               1. Anthropic Claude (if ANTHROPIC_API_KEY set) → streaming SSE
               2. Ollama @ 127.0.0.1:11434 (if running) → streaming SSE
               3. Offline dreamChatReply() rule-engine → words streamed at 28ms
 ```
+
+**Surfaces:**
+- `dream-chat.html` — ChatGPT-style sidebar interface with provider selector
+- `dream-journal/` — Freeform RP chat. No hardcoded fields. Fixed input bar. localStorage-only.
+- Both hit the same `/api/dream/stream` endpoint.
 
 Environment variables:
 - `ANTHROPIC_API_KEY` — enables Claude responses
