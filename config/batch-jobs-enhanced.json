@@ -1,8 +1,8 @@
 {
   "schema": "lantern.batch_jobs.v2",
-  "description": "Automated batch jobs for Lantern OS with CI/CD integration and mutual validation",
-  "updatedAt": "2026-06-02",
-  "version": "2.0",
+  "description": "Automated batch jobs for Lantern OS v1.0.0 with CI/CD integration and mutual validation",
+  "updatedAt": "2026-06-03",
+  "version": "1.0.0",
   "enabledByDefault": true,
   "mutualValidation": true,
   "jobs": [

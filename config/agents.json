@@ -1,6 +1,6 @@
 {
-  "version": "2.0.0",
-  "description": "Lantern OS Diverse 36-Slot Convergence Fleet — claude, codex, gemini, devin distributed across 12 steps",
+  "version": "1.0.0",
+  "description": "Lantern OS v1.0.0 Diverse 36-Slot Convergence Fleet — claude, codex, gemini, devin distributed across 12 steps",
   "designedRingSlots": 36,
   "elasticPoolTarget": 64,
   "fleetClaimBoundary": "design contract only; live worker counts require local orchestrator evidence",

@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """
 Dream Journal Orchestrator — Multi-bot RP with symbolic memory.
-CADD + CSF v0.7 Symbolic Qutrit Edition
+CADD + CSF v0.3 Symbolic Qutrit Edition
+
+Integrates with src.csf for compressed symbolic archive export of dream memory.
 """
 
 from __future__ import annotations
@@ -90,10 +92,22 @@ class KeystoneBot(DreamBot):
         )
 
 
+try:
+    import sys
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    from csf.csf_file import CSFWriter, SymbolicDictionary
+    from csf.delta_stream import DeltaType
+    from csf.base3 import _to_scalar
+    _CSF_AVAILABLE = True
+except Exception:
+    _CSF_AVAILABLE = False
+
+
 class DreamJournalOrchestrator:
     """
     Main intelligence that routes dreams to the right bots and manages
-    conversation flow. Integrates with CSF v0.7 symbolic storage.
+    conversation flow. Integrates with CSF v0.3 symbolic storage for
+    compressed archive export of dream memory and tags.
     """
 
     def __init__(self, memory_path: Optional[Path] = None):
@@ -240,6 +254,55 @@ class DreamJournalOrchestrator:
         if "Lantern" in responders:
             suggestions.append("Walk me home")
         return suggestions[:4]
+
+    def export_csf(self, path: str | Path) -> Dict[str, Any]:
+        """
+        Export current dream memory to a CSF v0.3 compressed symbolic archive.
+        Returns metadata about the written archive.
+        """
+        if not _CSF_AVAILABLE:
+            return {"ok": False, "error": "CSF module not available", "path": str(path)}
+        try:
+            writer = CSFWriter()
+            # Encode symbolic tags into dictionary
+            for entry in self.memory:
+                for tag in entry.symbolic_tags:
+                    writer.dictionary.encode_name(tag)
+                for emo in entry.emotion_tags:
+                    writer.dictionary.encode_name(emo)
+                # Encode responder bot
+                if entry.responder:
+                    writer.dictionary.encode_name(entry.responder)
+            # Write lightweight baseline (empty for now; deltas carry content)
+            writer.set_baseline({})
+            # Add each dream as a delta record
+            for idx, entry in enumerate(self.memory):
+                payload = json.dumps({
+                    "id": entry.id,
+                    "qutrit_id": entry.qutrit_id,
+                    "content": entry.content[:512],
+                    "timestamp": entry.timestamp,
+                    "symbolic_tags": entry.symbolic_tags,
+                    "emotion_tags": entry.emotion_tags,
+                    "responder": entry.responder,
+                }, ensure_ascii=False).encode("utf-8")
+                writer.add_delta(
+                    level=1,
+                    dtype=DeltaType.CONVERGENCE_EVENT,
+                    position=(idx % 3, (idx // 3) % 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+                    payload=payload,
+                )
+            meta = writer.write(path)
+            return {
+                "ok": True,
+                "path": str(path),
+                "version": f"{meta.version[0]}.{meta.version[1]}",
+                "delta_count": meta.delta_count,
+                "dictionary_size": meta.dictionary_size,
+                "total_bytes": meta.total_bytes,
+            }
+        except Exception as exc:
+            return {"ok": False, "error": str(exc), "path": str(path)}
 
 
 def main():

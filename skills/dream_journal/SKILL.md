@@ -6,9 +6,9 @@ description: Dream Journal v2 for Lantern OS. Persistent characters (Fox, Tower)
 # Dream Journal v2
 
 Status: production-ready (feature/LAN-124-dream-journal-v2)  
-Scope: local operator dream logging, lucidity tracking, symbolic analysis, persistent character memory, Bayesian fallacy detection, Voice Lounge audio, Docker integration, merged symbolic-technical door system  
+Scope: local operator dream logging, lucidity tracking, symbolic analysis, persistent character memory, Bayesian fallacy detection, Voice Lounge audio, Docker integration, merged symbolic-technical door system, CSF v0.3 archive export  
 Source: Lantern OS dreamer notebooks (data/dreamer/), Discord bot, Flask API, cognitive_layer.py, symbolic/ + integration/ layers  
-Validation: convergence loop clean; MCP health checks pass; bot imports clean
+Validation: convergence loop clean; MCP health checks pass; bot imports clean; CSF export functional
 
 ## Simple Answer
 
@@ -21,6 +21,7 @@ A local-first, evidence-safe module for logging dreams with quantitative lucidit
 - `get_recent(limit)` — Retrieves recent structured dreams across monthly files.
 - `mirror_prompt(dream_id=None)` — Emits a ready-to-paste prompt for symbolic interpretation, waking-life goal connection, and personal flourishing insight (Orion/Mookman grounded tone).
 - `ingest_from_dreamer_notebooks()` — Scans existing `data/dreamer/notebooks/` for `kind=="dream"` entries and returns them in a normalized view (future: can backfill structured fields).
+- `export_csf(path)` — (Orchestrator) Exports dream memory to a CSF v0.3 compressed symbolic archive with encoded tags, emotions, and responder bots as delta records.
 - Designed for later tight integration with `bayesian-world-model` (claim updates on recurring symbols, lucidity trends as evidence classes) and `lucid_dreaming` protocols.
 
 ## Evidence / Source Discipline
