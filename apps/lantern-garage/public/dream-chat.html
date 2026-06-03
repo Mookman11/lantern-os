@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Dream Journal — Lantern OS</title>
+  <title>Dream Journal V1.0.0 — Lantern OS</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -78,6 +78,25 @@
       font-size: 0.75rem;
       color: var(--muted);
     }
+
+    /* Agent selector */
+    .selector-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: auto;
+    }
+    .selector-row select {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 0.78rem;
+      padding: 5px 8px;
+      border-radius: 8px;
+      outline: none;
+      cursor: pointer;
+    }
+    .selector-row select:focus { border-color: var(--accent); }
     .dot {
       width: 8px;
       height: 8px;
@@ -321,6 +340,16 @@
       <h1>Dream Journal</h1>
       <p>Lantern OS · private · local</p>
     </div>
+    <div class="selector-row">
+      <select id="agent-select" title="Agent"></select>
+      <select id="provider-select" title="Provider">
+        <option value="">Auto</option>
+        <option value="claude">Claude</option>
+        <option value="openai">OpenAI</option>
+        <option value="gemini">Gemini</option>
+        <option value="ollama">Ollama</option>
+      </select>
+    </div>
     <div class="status-dot">
       <div class="dot" id="status-dot"></div>
       <span id="status-label">connecting…</span>
@@ -331,13 +360,7 @@
     <div class="empty-state" id="empty-state">
       <div class="icon">🌙</div>
       <h2>The dream door is open.</h2>
-      <p>Tell me what you brought back from sleep. I am here, local, and private.</p>
-      <div class="starter-chips">
-        <button class="suggestion" onclick="sendStarter(this)">I had a dream last night</button>
-        <button class="suggestion" onclick="sendStarter(this)">Mirror my last dream</button>
-        <button class="suggestion" onclick="sendStarter(this)">Tell me about the doors</button>
-        <button class="suggestion" onclick="sendStarter(this)">What are my recent dreams?</button>
-      </div>
+      <p>Choose an agent and say something.</p>
     </div>
   </div>
 
@@ -368,26 +391,31 @@
   const statusDot = document.getElementById("status-dot");
   const statusLabel = document.getElementById("status-label");
   const emptyState = document.getElementById("empty-state");
+  const agentSelect = document.getElementById("agent-select");
+  const providerSelect = document.getElementById("provider-select");
 
   let isStreaming = false;
-  let currentEs = null;
-  let serverBase = window.location.origin;  // same origin — server.js serves this file
+  let serverBase = window.location.origin;
+  let agents = [];
 
-  // ── Status check ──────────────────────────────────────────────────────
-  async function checkStatus() {
+  // ── Load agents ───────────────────────────────────────────────────────
+  async function loadAgents() {
     try {
-      const r = await fetch(`${serverBase}/api/status`, { signal: AbortSignal.timeout(3000) });
+      const r = await fetch(`${serverBase}/api/agents`, { signal: AbortSignal.timeout(3000) });
       if (r.ok) {
+        const data = await r.json();
+        agents = data.agents || [];
+        agentSelect.innerHTML = agents.map((a) => `<option value="${a.id}">${a.name}</option>`).join("");
+        if (data.default) agentSelect.value = data.default;
         statusDot.className = "dot online";
         statusLabel.textContent = "online";
-        return true;
+        return;
       }
     } catch {}
     statusDot.className = "dot";
-    statusLabel.textContent = "offline mode";
-    return false;
+    statusLabel.textContent = "offline";
   }
-  checkStatus();
+  loadAgents();
 
   // ── Auto-resize textarea ──────────────────────────────────────────────
   inputEl.addEventListener("input", () => {
@@ -402,39 +430,21 @@
     }
   });
 
-  // ── Suggestion / starter chips ────────────────────────────────────────
-  function sendStarter(btn) {
-    inputEl.value = btn.textContent.trim();
-    sendMessage();
-  }
-
   // ── Send ──────────────────────────────────────────────────────────────
   function sendMessage() {
     const text = inputEl.value.trim();
     if (!text || isStreaming) return;
-
-    // Hide empty state
     if (emptyState) emptyState.style.display = "none";
-
-    // Show user bubble
     appendUserBubble(text);
-
-    // Clear input
     inputEl.value = "";
     inputEl.style.height = "auto";
-
-    // Stream agent response
     streamAgentResponse(text);
   }
 
-  // ── Append user bubble ────────────────────────────────────────────────
   function appendUserBubble(text) {
     const row = document.createElement("div");
     row.className = "msg-row user";
-    row.innerHTML = `
-      <div class="msg-label">You</div>
-      <div class="bubble">${escapeHtml(text)}</div>
-    `;
+    row.innerHTML = `<div class="msg-label">You</div><div class="bubble">${escapeHtml(text)}</div>`;
     messagesEl.appendChild(row);
     scrollToBottom();
   }
@@ -445,13 +455,13 @@
     sendBtn.disabled = true;
     setThinking(true);
 
-    // Create the agent row with empty bubble + cursor
+    const agentName = agents.find((a) => a.id === agentSelect.value)?.name || "Agent";
     const row = document.createElement("div");
     row.className = "msg-row agent";
 
     const label = document.createElement("div");
     label.className = "msg-label";
-    label.textContent = "Dream Journal";
+    label.textContent = agentName;
 
     const bubble = document.createElement("div");
     bubble.className = "bubble";
@@ -463,14 +473,13 @@
     row.appendChild(label);
     row.appendChild(bubble);
     messagesEl.appendChild(row);
-
     scrollToBottom();
 
     let fullText = "";
-    let thinkingShown = true;
-
-    // Use fetch + ReadableStream for SSE (works cross-browser, same-origin)
-    const url = `${serverBase}/api/dream/stream?message=${encodeURIComponent(message)}`;
+    let hasTokens = false;
+    const provider = providerSelect.value;
+    const agent = agentSelect.value;
+    const url = `${serverBase}/api/dream/stream?message=${encodeURIComponent(message)}${provider ? "&provider=" + encodeURIComponent(provider) : ""}${agent ? "&agent=" + encodeURIComponent(agent) : ""}`;
 
     fetch(url)
       .then((res) => {
@@ -485,99 +494,71 @@
         function read() {
           reader.read().then(({ done, value }) => {
             if (done) {
+              if (!hasTokens) {
+                bubble.textContent = "No response received.";
+              }
               finishStream(row, bubble, cursor, fullText, "done");
               return;
             }
-
             buf += decoder.decode(value, { stream: true });
             const lines = buf.split("\n");
-            buf = lines.pop(); // keep incomplete line
-
+            buf = lines.pop();
             for (const line of lines) {
               if (!line.startsWith("data:")) continue;
               const raw = line.slice(5).trim();
               if (!raw) continue;
               try {
                 const evt = JSON.parse(raw);
-
-                if (evt.token !== undefined) {
-                  // First token — remove thinking indicator, show cursor in bubble
-                  if (thinkingShown) {
-                    thinkingShown = false;
-                    setThinking(false);
-                  }
-                  fullText += evt.token;
-                  // Update bubble text before cursor
+                if (evt.type === "token" && evt.text) {
+                  if (!hasTokens) { hasTokens = true; setThinking(false); }
+                  fullText += evt.text;
                   cursor.remove();
                   bubble.textContent = fullText;
                   bubble.appendChild(cursor);
                   scrollToBottom();
                 }
-
-                if (evt.suggestions) {
-                  appendSuggestions(row, evt.suggestions);
+                if (evt.type === "error" && evt.text) {
+                  appendErrorNotice(row, evt.text);
                 }
-
-                if (evt.error) {
-                  appendErrorNotice(row, evt.error);
-                }
-
-                if (evt.done) {
-                  finishStream(row, bubble, cursor, fullText, evt.source);
+                if (evt.type === "done") {
+                  finishStream(row, bubble, cursor, fullText, evt.source, evt.error);
                 }
               } catch { /* skip malformed */ }
             }
-
             read();
           }).catch(() => finishStream(row, bubble, cursor, fullText, "error"));
         }
-
         read();
       })
       .catch((err) => {
         setThinking(false);
-        bubble.textContent = "Something tangled. The dream door stays open — try again.";
+        bubble.textContent = "Failed to reach the server.";
         cursor.remove();
         finishStream(row, bubble, cursor, "", "error");
       });
   }
 
-  function finishStream(row, bubble, cursor, text, source) {
+  function finishStream(row, bubble, cursor, text, source, error) {
     cursor.remove();
-    if (!text) {
+    if (!text && !error) {
       bubble.textContent = bubble.textContent || "…";
     }
-    // Add source badge
-    if (source && source !== "error") {
+    if (source === "unavailable" || error) {
+      const badge = document.createElement("div");
+      badge.className = "source-badge offline";
+      badge.textContent = error ? `unavailable — ${error}` : "unavailable";
+      row.appendChild(badge);
+    } else if (source && source !== "error") {
       const badge = document.createElement("div");
       badge.className = `source-badge ${source}`;
-      badge.textContent = source === "offline" ? "✦ offline mode" :
-                          source === "anthropic" ? "✦ claude" :
-                          source === "ollama" ? "✦ ollama" : `✦ ${source}`;
+      const names = { anthropic: "Claude", openai: "OpenAI", gemini: "Gemini", ollama: "Ollama" };
+      badge.textContent = `✦ ${names[source] || source}`;
       row.appendChild(badge);
     }
     isStreaming = false;
     sendBtn.disabled = false;
     setThinking(false);
-    statusDot.className = "dot online";
-    statusLabel.textContent = "online";
     scrollToBottom();
-  }
-
-  function appendSuggestions(row, suggestions) {
-    const container = document.createElement("div");
-    container.className = "suggestions";
-    for (const s of suggestions) {
-      const btn = document.createElement("button");
-      btn.className = "suggestion";
-      btn.textContent = s;
-      btn.onclick = () => {
-        inputEl.value = s;
-        sendMessage();
-      };
-      container.appendChild(btn);
-    }
-    row.appendChild(container);
   }
 
   function appendErrorNotice(row, msg) {
@@ -602,11 +583,7 @@
   }
 
   function escapeHtml(s) {
-    return s
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
 </script>
 </body>

@@ -1657,6 +1657,19 @@ async function route(req, res) {
     return;
   }
 
+  // ── Agents list ─────────────────────────────────────────────────────
+  if (url.pathname === "/api/agents" && req.method === "GET") {
+    sendJson(res, {
+      agents: AGENT_PERSONAS.map((a) => ({
+        id: a.id,
+        name: a.name,
+        symbol: a.symbol,
+      })),
+      default: AGENT_PERSONAS[0].id,
+    });
+    return;
+  }
+
   // ── Agentic Workspace — Unified Connector Endpoints ──────────────────
   if (url.pathname === "/api/dream/greet" && req.method === "GET") {
     try {
@@ -1776,25 +1789,29 @@ async function route(req, res) {
     return;
   }
 
-  // ── Streaming dream chat — ChatGPT-style SSE endpoint ──────────────────
-  // GET /api/dream/stream?message=...&user=...
-  // Streams tokens via text/event-stream. Tries Anthropic API first (if
-  // ANTHROPIC_API_KEY is set), then Ollama (http://127.0.0.1:11434), then
-  // falls back to the offline dreamChatReply rule-engine streamed word-by-word.
+  // Dream Journal V1.0.0 — Streaming chat (strict provider mode)
+  // GET /api/dream/stream?message=...&provider=claude|openai|gemini
+  // Requires explicit provider. Fails if selected provider cannot respond.
+  // No hardcoded or offline fallbacks allowed.
   if ((url.pathname === "/api/dream/stream" && req.method === "GET") ||
       (url.pathname === "/api/dream/chat/stream" && req.method === "POST")) {
     let message = "";
     let user = "dreamer";
+    let requestedAgent = "";
+    let requestedProvider = "";
     if (req.method === "GET") {
       message = String(url.searchParams.get("message") || "").slice(0, maxDreamerTextLength).trim();
       user = normalizeDreamerUser(url.searchParams.get("user") || "dreamer");
+      requestedAgent = String(url.searchParams.get("agent") || "").trim();
+      requestedProvider = String(url.searchParams.get("provider") || "").trim().toLowerCase();
     } else {
-      // POST — read body
       try {
         const rawBody = await collectRequestBody(req);
         const body = JSON.parse(rawBody || "{}");
         message = String(body.message || "").slice(0, maxDreamerTextLength).trim();
         user = normalizeDreamerUser(body.user || "dreamer");
+        requestedAgent = String(body.agent || "").trim();
+        requestedProvider = String(body.provider || "").trim().toLowerCase();
       } catch { /* message stays empty */ }
     }
 
@@ -1808,7 +1825,9 @@ async function route(req, res) {
 
     const recentDreams = readRecentDreams(5);
 
-    const agent = selectAgent(message);
+    const agent = requestedAgent
+      ? (AGENT_PERSONAS.find((a) => a.id === requestedAgent) || selectAgent(message))
+      : selectAgent(message);
     const dreamContext = recentDreams.length > 0
       ? `Recent journal entries:\n${recentDreams.slice(0, 3).map((d, i) =>
           `${i + 1}. ${String(d.text || d.content || "").slice(0, 200)}`
@@ -1844,7 +1863,7 @@ Tone: thoughtful, unhurried, human. Never clinical. Never sycophantic. Use the d
 
     // ── Provider 1: Anthropic Claude (streaming) ──────────────────────────
     const anthropicKey = process.env.ANTHROPIC_API_KEY;
-    if (anthropicKey && message) {
+    if (anthropicKey && message && (!requestedProvider || requestedProvider === "claude" || requestedProvider === "anthropic")) {
       try {
         const payload = JSON.stringify({
           model: process.env.ANTHROPIC_MODEL || "claude-3-5-haiku-20241022",
@@ -1899,7 +1918,6 @@ Tone: thoughtful, unhurried, human. Never clinical. Never sycophantic. Use the d
           req2.end();
         });
 
-        // Log the full reply
         await appendConversationEntry({
           recordedAt: new Date().toISOString(),
           surface: "dream-chat-stream",
@@ -1907,17 +1925,17 @@ Tone: thoughtful, unhurried, human. Never clinical. Never sycophantic. Use the d
           text: fullReply.slice(0, maxConversationTextLength),
         }).catch(() => {});
 
-        sendDone("anthropic", { suggestions: ["Log this as a dream", "Mirror a dream", "Tell me about the doors"], agent: agent.name, online: true });
+        sendDone("anthropic", { agent: agent.name, online: true });
         return;
       } catch (err) {
         sendError(`anthropic_unavailable: ${err.message}`);
-        // fall through to Ollama
+        if (requestedProvider) { sendDone("unavailable", { error: err.message, agent: agent.name }); return; }
       }
     }
 
     // ── Provider 2: OpenAI (streaming) ────────────────────────────────────
     const openaiKey = process.env.OPENAI_API_KEY;
-    if (openaiKey && message) {
+    if (openaiKey && message && (!requestedProvider || requestedProvider === "openai" || requestedProvider === "gpt")) {
       try {
         const payload = JSON.stringify({
           model: process.env.OPENAI_MODEL || "gpt-4o-mini",
@@ -1977,18 +1995,84 @@ Tone: thoughtful, unhurried, human. Never clinical. Never sycophantic. Use the d
           role: "lantern",
           text: fullReply.slice(0, maxConversationTextLength),
         }).catch(() => {});
-        sendDone("openai", { suggestions: ["Log this as a dream", "Mirror a dream", "Tell me about the doors"], agent: agent.name, online: true });
+        sendDone("openai", { agent: agent.name, online: true });
         return;
       } catch (err) {
         sendError(`openai_unavailable: ${err.message}`);
-        // fall through to Ollama
+        if (requestedProvider) { sendDone("unavailable", { error: err.message, agent: agent.name }); return; }
       }
     }
 
-    // ── Provider 3: Ollama (streaming) ────────────────────────────────────
+    // ── Provider 3: Gemini (streaming) ────────────────────────────────────
+    const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+    if (geminiKey && message && (!requestedProvider || requestedProvider === "gemini" || requestedProvider === "google")) {
+      try {
+        const payload = JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: `${systemPrompt}\n\n${message}` }] }],
+          generationConfig: { maxOutputTokens: 1024, temperature: 0.7 },
+        });
+        const geminiModel = process.env.GEMINI_MODEL || "gemini-1.5-flash";
+        await new Promise((resolve, reject) => {
+          const https = require("https");
+          const req2 = https.request({
+            hostname: "generativelanguage.googleapis.com",
+            path: `/v1beta/models/${geminiModel}:streamGenerateContent?alt=sse&key=${geminiKey}`,
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Content-Length": Buffer.byteLength(payload),
+            },
+          }, (upstream) => {
+            if (upstream.statusCode !== 200) {
+              upstream.resume();
+              reject(new Error(`gemini_status_${upstream.statusCode}`));
+              return;
+            }
+            let buf = "";
+            upstream.on("data", (chunk) => {
+              buf += chunk.toString();
+              const lines = buf.split("\n");
+              buf = lines.pop();
+              for (const line of lines) {
+                if (!line.startsWith("data: ")) continue;
+                const raw = line.slice(6).trim();
+                if (!raw) continue;
+                try {
+                  const evt = JSON.parse(raw);
+                  const parts = evt.candidates?.[0]?.content?.parts || [];
+                  for (const p of parts) {
+                    const token = p.text || "";
+                    if (token) { fullReply += token; sendToken(token); }
+                  }
+                } catch { /* skip malformed */ }
+              }
+            });
+            upstream.on("end", () => resolve());
+            upstream.on("error", reject);
+          });
+          req2.on("error", reject);
+          req2.setTimeout(15000, () => { req2.destroy(); reject(new Error("gemini_timeout")); });
+          req2.write(payload);
+          req2.end();
+        });
+        await appendConversationEntry({
+          recordedAt: new Date().toISOString(),
+          surface: "dream-chat-stream",
+          role: "lantern",
+          text: fullReply.slice(0, maxConversationTextLength),
+        }).catch(() => {});
+        sendDone("gemini", { agent: agent.name, online: true });
+        return;
+      } catch (err) {
+        sendError(`gemini_unavailable: ${err.message}`);
+        if (requestedProvider) { sendDone("unavailable", { error: err.message, agent: agent.name }); return; }
+      }
+    }
+
+    // ── Provider 4: Ollama (streaming) ────────────────────────────────────
     const ollamaBase = process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434";
     const ollamaModel = process.env.OLLAMA_MODEL || "llama3";
-    if (message) {
+    if (message && (!requestedProvider || requestedProvider === "ollama" || requestedProvider === "local")) {
       try {
         const payload = JSON.stringify({
           model: ollamaModel,
@@ -2056,33 +2140,18 @@ Tone: thoughtful, unhurried, human. Never clinical. Never sycophantic. Use the d
             role: "lantern",
             text: fullReply.slice(0, maxConversationTextLength),
           }).catch(() => {});
-          sendDone("ollama", { suggestions: ["Log this as a dream", "Mirror a dream", "Tell me about the doors"], agent: agent.name, online: true });
+          sendDone("ollama", { agent: agent.name, online: true });
           return;
         }
       } catch (err) {
         sendError(`ollama_unavailable: ${err.message}`);
-        // fall through to offline fallback
+        if (requestedProvider) { sendDone("unavailable", { error: err.message, agent: agent.name }); return; }
       }
     }
 
-    // ── Provider 3: Offline fallback — stream words from rule-engine ─────
-    const fallback = await dreamChatReply(message, recentDreams);
-    const words = String(fallback.reply || "").split(" ");
-    for (const word of words) {
-      sendToken(word + " ");
-      await new Promise((r) => setTimeout(r, 28)); // typewriter pacing
-    }
-    await appendConversationEntry({
-      recordedAt: new Date().toISOString(),
-      surface: "dream-chat-stream",
-      role: "lantern",
-      text: String(fallback.reply || "").slice(0, maxConversationTextLength),
-    }).catch(() => {});
-    sendDone("offline", {
-      suggestions: fallback.suggestions || [],
-      agent: fallback.agent,
-      online: false,
-    });
+    // ── No provider available — clean failure ───────────────────────────────
+    sendError("All providers unavailable. Set ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, or start Ollama.");
+    sendDone("unavailable", { error: "no_provider", agent: agent.name, online: false });
     return;
   }
 
