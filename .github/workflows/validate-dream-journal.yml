@@ -1,0 +1,42 @@
+name: Validate Dream Journal
+
+on:
+  push:
+    branches: ["master"]
+    paths:
+      - "apps/lantern-garage/**"
+      - ".github/workflows/validate-dream-journal.yml"
+  pull_request:
+    branches: ["master"]
+    paths:
+      - "apps/lantern-garage/**"
+  workflow_dispatch:
+
+concurrency:
+  group: dream-journal-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-validate:
+    name: Lint & validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Validate HTML
+        run: |
+          npx html-validate apps/lantern-garage/public/dream-chat.html || true
+
+      - name: Check server starts
+        run: |
+          node apps/lantern-garage/server.js &
+          PID=$!
+          sleep 3
+          curl -sf http://127.0.0.1:4177/api/status || (echo "Server failed to start"; kill $PID 2>/dev/null; exit 1)
+          curl -sf http://127.0.0.1:4177/api/agents || (echo "Agents endpoint missing"; kill $PID 2>/dev/null; exit 1)
+          kill $PID 2>/dev/null
+          echo "✓ Server starts and /api/agents responds"
