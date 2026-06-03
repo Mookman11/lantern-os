@@ -45,3 +45,14 @@ data/dreamer/notebooks/*.jsonl
 .tmp.drivedownload/
 .claude/worktrees/
 data/dream_journal/*.jsonl
+
+# Deployment weight reduction (static site deploy)
+.git/
+.claude/
+artifacts/
+data/dream_journal/
+data/dollhouse/csf/
+data/agent-fleet/
+*.tmp
+*.log
+__pycache__/
