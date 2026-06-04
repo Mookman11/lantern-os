@@ -35,6 +35,8 @@ from csf.v07.csf_file import CSFFileReader, CSFFileWriter
 # File discovery
 # ------------------------------------------------------------------
 
+# Directories that are legacy, skill sprawl, or not part of core convergence docs.
+# These are excluded from CSF consolidation.
 EXCLUDES = {
     ".git",
     "node_modules",
@@ -44,14 +46,64 @@ EXCLUDES = {
     "dist",
     "build",
     ".pytest_cache",
+    # Legacy / sprawl directories
+    "skills",
+    "surfaces",
+    "services",
+    "templates",
+    "tickets",
+    "test-results",
+    "repo-seeds",
+    "profiles",
+    "ops",
+    "dual-boot",
+    "aws-deployment",
+    "artifacts",
+    "offers",
+    "ledger",
+    "infra",
+    "dashboard",
+    "art",
+    # Old source trees (preserved in archive; not core docs)
+    "src/discord_lounge_bot",
+    "src/hff-api",
+    "src/mcp_server",
+    "src/dream_journal",
+    "dream_journal",  # root-level legacy crystallization engine
+    # Data / runtime dirs
+    "data",
+    "archive",
+}
+
+# Only top-level READMEs and docs under these paths are considered core.
+CORE_DOC_PATHS = {
+    "README.md",
+    "docs",
+    "src/csf",
+    "src/convergence_io_engine.py",
+    "src/tesseract_convergence.py",
+    "src/unified_agent_connector.py",
+    "src/agent_tool_hooks.py",
+    "src/csf_cache_manager.py",
+    "apps/lantern-garage",
+    "scripts",
+    "config",
+    "manifests",
+    ".github",
+    "benchmarks",
 }
 
 
 def find_md_files(root: Path) -> List[Path]:
-    """Find all .md files under root, excluding common noise directories."""
+    """Find core .md files relevant to convergence / CSF, excluding legacy sprawl."""
     paths: List[Path] = []
     for p in root.rglob("*.md"):
+        rel = p.relative_to(root).as_posix()
+        # Skip anything inside excluded dirs
         if any(part in EXCLUDES for part in p.parts):
+            continue
+        # Only include files that live under a core doc path
+        if not any(rel.startswith(cp) for cp in CORE_DOC_PATHS):
             continue
         paths.append(p)
     paths.sort()

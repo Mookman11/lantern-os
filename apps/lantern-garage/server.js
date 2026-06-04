@@ -11,7 +11,6 @@ const host = process.env.LANTERN_GARAGE_HOST || (process.env.PORT ? "0.0.0.0" : 
 const conversationLogPath = path.join(repoRoot, "data", "conversations", "garage-conversations.jsonl");
 const flatRagHousePath = path.join(repoRoot, "data", "rag-house", "flat-rag-house-latest.json");
 const flatRagHouseManifestPath = path.join(repoRoot, "manifests", "FLAT-RAG-HOUSE-LATEST.md");
-const orchestratorQueueDir = process.env.ORCHESTRATOR_QUEUE_DIR || path.join(repoRoot, "data", "orchestrator-queue");
 const operatorNotesPath = path.join(repoRoot, "data", "operator-notes", "notes.jsonl");
 const cloudMirrorsPath = path.join(repoRoot, "manifests", "cloud-mirrors.json");
 const maxConversationTextLength = 4000;
@@ -280,70 +279,6 @@ async function appendDreamerEntry(user, entry) {
   await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
   await fs.promises.appendFile(filePath, JSON.stringify(record) + "\n", "utf8");
   return record;
-}
-
-/**
- * Compress text into CSF v0.7 symbolic format.
- * Spawns Python script; falls back gracefully if Python/CSF unavailable.
- */
-function compressCsf(text, outPath) {
-  return new Promise((resolve) => {
-    const pyScript = path.join(repoRoot, "scripts", "_csf_compress_text.py");
-    // Inline Python compressor for portability
-    const pyCode = `
-import sys, zlib, struct, io, re
-
-def _tokenize(t):
-    return re.findall(r"[A-Za-z_]+|[.,;!?—\\-]", t)
-
-def _pack_varints(vals):
-    buf = bytearray()
-    for v in vals:
-        while v >= 128:
-            buf.append((v & 0x7F) | 0x80)
-            v >>= 7
-        buf.append(v)
-    return bytes(buf)
-
-def compress_text(text):
-    tokens = _tokenize(text)
-    vocab = {t: i+1 for i, t in enumerate(sorted(set(tokens)))}
-    ids = [vocab[t] for t in tokens]
-    id_bytes = _pack_varints(ids)
-    dict_bytes = b"|".join(f"{k}:{v}".encode() for k, v in sorted(vocab.items()))
-    body = io.BytesIO()
-    body.write(struct.pack(">I", len(dict_bytes)))
-    body.write(dict_bytes)
-    body.write(struct.pack(">I", len(id_bytes)))
-    body.write(id_bytes)
-    return zlib.compress(body.getvalue(), level=3)
-
-text = sys.stdin.read()
-compressed = compress_text(text)
-sys.stdout.buffer.write(compressed)
-`;
-    // Write temp script if not exists
-    if (!fs.existsSync(pyScript)) {
-      fs.mkdirSync(path.dirname(pyScript), { recursive: true });
-      fs.writeFileSync(pyScript, pyCode, "utf8");
-    }
-    const proc = spawn("python", [pyScript], { stdio: ["pipe", "pipe", "pipe"] });
-    let stdout = Buffer.alloc(0);
-    let stderr = "";
-    proc.stdout.on("data", (d) => { stdout = Buffer.concat([stdout, d]); });
-    proc.stderr.on("data", (d) => { stderr += d; });
-    proc.on("close", (code) => {
-      if (code === 0 && stdout.length > 0) {
-        fs.mkdirSync(path.dirname(outPath), { recursive: true });
-        fs.writeFileSync(outPath, stdout);
-        resolve({ success: true, bytes: stdout.length });
-      } else {
-        resolve({ success: false, error: stderr || `exit ${code}` });
-      }
-    });
-    proc.stdin.write(text, "utf8");
-    proc.stdin.end();
-  });
 }
 
 function readDreamerNotebook(user) {
@@ -810,20 +745,7 @@ function normalizeRagCacheItem(input) {
 
 function readOperatorQueue() {
   const items = [];
-  // Read orchestrator queue tasks
-  try {
-    if (fs.existsSync(orchestratorQueueDir)) {
-      const files = fs.readdirSync(orchestratorQueueDir).filter(f => f.endsWith(".md"));
-      for (const file of files) {
-        const content = fs.readFileSync(path.join(orchestratorQueueDir, file), "utf8").replace(/^﻿/, "");
-        const title = /^#\s+(.+)/m.exec(content)?.[1] || file.replace(/\.md$/, "").replace(/-/g, " ");
-        const priority = /priority:\s*(P\d)/i.exec(content)?.[1] || "P1";
-        const owner = /owner:\s*(\S+)/i.exec(content)?.[1] || "unassigned";
-        const blocked = /blocked.?by:\s*(.+)/i.exec(content)?.[1]?.trim() || null;
-        items.push({ type: "task", file, title, priority, owner, blocked, source: "orchestrator" });
-      }
-    }
-  } catch { /* orchestrator dir may not exist */ }
+  // Read local operator notes
   // Read local operator notes
   const notes = readJsonl(path.relative(repoRoot, operatorNotesPath), 50).filter(n => !n.parseError);
   for (const note of notes) {
@@ -850,12 +772,6 @@ function repoSources() {
       name: "human-flourishing-frameworks",
       path: process.env.HFF_REPO_PATH || path.join(repoRoot, "..", "human-flourishing-frameworks-scan"),
       role: "HFF scan, COMET LEAP docs and PDFs, prior convergence evidence",
-      archiveDecision: "source_evidence_only",
-    },
-    {
-      name: "gm-agent-orchestrator",
-      path: process.env.ORCHESTRATOR_REPO_PATH || path.join(repoRoot, "..", "gm-agent-orchestrator"),
-      role: "local MCP/orchestrator, agents, queue, service supervision",
       archiveDecision: "source_evidence_only",
     },
     {
@@ -1732,21 +1648,10 @@ async function route(req, res) {
       const monthFile = path.join(dreamDir, `dreams_${new Date().toISOString().substring(0, 7)}.jsonl`);
       await appendJsonlQueued(monthFile, entry);
 
-      // CSF v0.7 symbolic compression (best-effort, non-blocking)
-      let csfResult = null;
-      if (entry.text && entry.text.length > 20) {
-        const csfDir = path.join(repoRoot, "data", "dream_journal", "csf");
-        const csfPath = path.join(csfDir, `${dreamId}.csf`);
-        csfResult = await compressCsf(entry.text, csfPath);
-      }
-
       sendJson(res, {
         id: dreamId,
         saved: true,
         entry,
-        csf: csfResult && csfResult.success
-          ? { compressed: true, bytes: csfResult.bytes, path: csfResult.path }
-          : { compressed: false },
       });
     } catch (error) {
       sendJson(res, { error: error.message }, 400);
@@ -2152,54 +2057,6 @@ Tone: thoughtful, unhurried, human. Never clinical. Never sycophantic. Use the d
     // ── No provider available — clean failure ───────────────────────────────
     sendError("All providers unavailable. Set ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, or start Ollama.");
     sendDone("unavailable", { error: "no_provider", agent: agent.name, online: false });
-    return;
-  }
-
-  // ── Multi-Bot Orchestrator — CADD/CSF v0.7 symbolic RP ───────────────
-  if (url.pathname === "/api/dream/orchestrate" && req.method === "POST") {
-    try {
-      const raw = await collectRequestBody(req);
-      const body = JSON.parse(raw || "{}");
-      const message = String(body.message || "").slice(0, maxDreamerTextLength).trim();
-      if (!message) {
-        sendJson(res, { reply: "The dream door is open, but I need a dream to work with.", agent: "Lantern", suggestions: ["Log a dream", "Tell me about the doors"] });
-        return;
-      }
-
-      const result = await new Promise((resolve) => {
-        const pyScript = path.join(repoRoot, "src", "dream_journal", "orchestrator.py");
-        const proc = spawn("python", [pyScript], { stdio: ["pipe", "pipe", "pipe"] });
-        let stdout = Buffer.alloc(0);
-        let stderr = "";
-        proc.stdout.on("data", (d) => { stdout = Buffer.concat([stdout, d]); });
-        proc.stderr.on("data", (d) => { stderr += d; });
-        proc.on("close", (code) => {
-          if (code === 0 && stdout.length > 0) {
-            try {
-              const output = JSON.parse(stdout.toString("utf-8"));
-              resolve({ success: true, output });
-            } catch {
-              resolve({ success: false, error: "Invalid JSON from orchestrator" });
-            }
-          } else {
-            resolve({ success: false, error: stderr || `exit ${code}` });
-          }
-        });
-        // Pass message as JSON via stdin
-        proc.stdin.write(JSON.stringify({ action: "process", message }) + "\n", "utf8");
-        proc.stdin.end();
-      });
-
-      if (result.success) {
-        sendJson(res, { ...result.output, generatedAt: new Date().toISOString(), online: true });
-      } else {
-        // Fallback to single-agent offline reply
-        const fallback = await dreamChatReply(message, readRecentDreams(5));
-        sendJson(res, { ...fallback, generatedAt: new Date().toISOString(), online: false, fallback: true });
-      }
-    } catch (error) {
-      sendJson(res, { reply: "The dream door stays open even when tangled.", agent: "Lantern", suggestions: ["Log a dream", "Tell me about the doors"], error: error.message }, 200);
-    }
     return;
   }
 
