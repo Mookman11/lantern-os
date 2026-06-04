@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Dream Journal · Orion</title>
+  <title>Dream Journal · Orion · v1.0.0</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -45,9 +45,8 @@
 
     .header-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
 
-    /* Switch block dropdown */
     .kind-label { font-size: 0.72rem; color: var(--muted); white-space: nowrap; }
-    select.kind-select {
+    select.kind-select, select.agent-select {
       background: var(--surface2); border: 1px solid var(--border);
       color: var(--text); font-size: 0.82rem; font-family: inherit;
       padding: 5px 26px 5px 8px; border-radius: 8px;
@@ -55,8 +54,8 @@
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236b7094'/%3E%3C/svg%3E");
       background-repeat: no-repeat; background-position: right 8px center;
       transition: border-color 0.15s; }
-    select.kind-select:focus { border-color: var(--accent); }
-    select.kind-select:hover { border-color: #3a3f60; }
+    select.kind-select:focus, select.agent-select:focus { border-color: var(--accent); }
+    select.kind-select:hover, select.agent-select:hover { border-color: #3a3f60; }
 
     .status-pill { display: flex; align-items: center; gap: 5px;
       font-size: 0.72rem; color: var(--muted); white-space: nowrap; }
@@ -105,6 +104,9 @@
       border-radius: 4px; background: rgba(74,222,128,0.08);
       border: 1px solid rgba(74,222,128,0.2); margin-top: 4px; }
 
+    .source-badge { font-size: 0.62rem; color: var(--muted); padding: 2px 7px;
+      margin-top: 2px; }
+
     /* ── Empty state ── */
     .empty-state { flex: 1; display: flex; flex-direction: column;
       align-items: center; justify-content: center; gap: 14px;
@@ -142,6 +144,7 @@
       justify-content: space-between; margin-top: 8px; padding: 0 2px; }
     .input-meta .hint { font-size: 0.7rem; color: var(--muted); }
     .input-meta .kind-select { font-size: 0.78rem; padding: 3px 22px 3px 7px; }
+    .input-meta .agent-select { font-size: 0.78rem; padding: 3px 22px 3px 7px; }
   </style>
 </head>
 <body>
@@ -150,10 +153,13 @@
     <div class="logo">🌙</div>
     <div class="title-block">
       <h1>Dream Journal</h1>
-      <p>Orion · private · local</p>
+      <p>Orion · v1.0.0 · local</p>
     </div>
     <div class="header-right">
-      <!-- Switch block: entry kind selector -->
+      <span class="kind-label">Agent</span>
+      <select id="agent-header" class="agent-select" title="Choose agent">
+        <option value="auto">Auto</option>
+      </select>
       <span class="kind-label">Mode</span>
       <select id="kind-header" class="kind-select" title="Entry kind">
         <option value="dream">Dream</option>
@@ -176,7 +182,7 @@
     <div class="empty-state" id="empty-state">
       <div class="icon">🔮</div>
       <h2>The dream door is open.</h2>
-      <p>Choose an entry kind above, then share a dream, a symbol, or a feeling. Orion is listening.</p>
+      <p>Choose an agent and entry kind above, then share a dream, a symbol, or a feeling.</p>
       <div class="starter-chips">
         <button class="chip" onclick="fillInput('I dreamed of ')">I dreamed of…</button>
         <button class="chip" onclick="fillInput('A symbol appeared: ')">A symbol</button>
@@ -211,6 +217,10 @@
           <option value="character">Character</option>
           <option value="place">Place</option>
         </select>
+        <span class="kind-label" style="margin-left:8px">Agent</span>
+        <select id="agent-inline" class="agent-select">
+          <option value="auto">Auto</option>
+        </select>
       </div>
       <span class="hint">Enter ↵ to send · Shift+Enter for newline</span>
     </div>
@@ -226,69 +236,56 @@
   const emptyState  = document.getElementById('empty-state');
   const kindHeader  = document.getElementById('kind-header');
   const kindInline  = document.getElementById('kind-inline');
+  const agentHeader = document.getElementById('agent-header');
+  const agentInline = document.getElementById('agent-inline');
 
   let isStreaming = false;
   let serverOnline = false;
+  let agents = [];
   const conversationHistory = [];
 
-  // Sync both kind selectors
   kindHeader.addEventListener('change', () => { kindInline.value = kindHeader.value; });
   kindInline.addEventListener('change', () => { kindHeader.value = kindInline.value; });
+  agentHeader.addEventListener('change', () => { agentInline.value = agentHeader.value; });
+  agentInline.addEventListener('change', () => { agentHeader.value = agentInline.value; });
 
-  // ── Local dream chat responses ────────────────────────────────────────────
-  const ORION_REPLIES = {
-    dream: [
-      "That's a vivid one. What feeling stayed with you when you woke up?",
-      "Dreams like that often carry something worth sitting with. What stands out most?",
-      "The images in dreams always mean something to the dreamer. What do you think this one was about?",
-      "I've saved this dream. Would you like to note any symbols or recurring themes?",
-      "Interesting. Flying, falling, searching — what was the main movement or action in the dream?",
-    ],
-    note: [
-      "Got it. I've saved that note. Anything else you want to add while it's fresh?",
-      "Noted. Sometimes writing it twice helps it stick.",
-      "I'll keep this one for you. You can always come back to build on it.",
-      "That's saved. Does it connect to something you've been thinking about?",
-    ],
-    symbol: [
-      "Symbols often mean something specific to the dreamer. What does this one feel like to you?",
-      "That's a powerful symbol. Where did you first encounter it — in a dream, or waking life?",
-      "I've logged this symbol. Recurring symbols are worth watching over time.",
-      "Interesting choice of symbol. What does it protect, or what does it point toward?",
-    ],
-    mirror: [
-      "Reflection is how we see ourselves more clearly. What do you notice looking back?",
-      "Mirrors in dreams often show us what we're not ready to see directly. What feeling does this bring up?",
-      "I've saved this mirror entry. What changed between the original experience and this reflection?",
-    ],
-    event: [
-      "Logged. Events anchor the timeline of your story. When did this happen?",
-      "I've saved this event. Was this a turning point, or more of a stepping stone?",
-      "Recorded. Would you rate this event's significance — high, medium, or low?",
-    ],
-    lore: [
-      "Lore is the hidden structure of a world. What system or rule does this describe?",
-      "I've added this to your lore. How does it connect to what you've already built?",
-      "Lore entries are the bones of the story. What would happen if this rule broke?",
-    ],
-    character: [
-      "Every character carries a piece of the story's soul. What does this one want?",
-      "I've noted this character. What do they fear, and what do they love?",
-      "Interesting. Is this character an ally, a shadow, or something more complicated?",
-    ],
-    place: [
-      "Places hold memory. What's the feeling you get when you think of this one?",
-      "I've recorded this place. Is it somewhere you've actually been, or somewhere you go in dreams?",
-      "Noted. Every place in a story has a secret. What's this one hiding?",
-    ],
+  // ── Offline fallback replies (only used when server is unreachable) ───
+  const OFFLINE_REPLIES = {
+    dream: "I'm offline right now, but I've noted your dream. When the connection returns, we can explore it together.",
+    note: "Saved locally. I'll be back online soon to reflect on this with you.",
+    symbol: "Symbol noted. When I reconnect, let's trace where it leads.",
+    mirror: "Mirror entry saved. Reflection works even in silence.",
+    event: "Event logged locally. We'll anchor it on the timeline when I'm back.",
+    lore: "Lore recorded. The world-building continues even offline.",
+    character: "Character noted. We'll bring them to life when reconnected.",
+    place: "Place saved. Every location holds a secret — we'll find it together.",
   };
 
-  function localReply(kind) {
-    const pool = ORION_REPLIES[kind] || ORION_REPLIES.dream;
-    return pool[Math.floor(Math.random() * pool.length)];
+  // ── Load agents from server ───────────────────────────────────────────
+  async function loadAgents() {
+    try {
+      const r = await fetch('/api/agents', { signal: AbortSignal.timeout(3000) });
+      if (!r.ok) return;
+      const data = await r.json();
+      if (!Array.isArray(data.agents) || data.agents.length === 0) return;
+      agents = data.agents;
+      populateAgentSelects(data.agents, data.default);
+    } catch { /* server not available — keep Auto only */ }
   }
 
-  // ── Server ping ───────────────────────────────────────────────────────────
+  function populateAgentSelects(agentList, defaultId) {
+    [agentHeader, agentInline].forEach(sel => {
+      sel.innerHTML = '<option value="auto">Auto</option>';
+      for (const a of agentList) {
+        const opt = document.createElement('option');
+        opt.value = a.id;
+        opt.textContent = a.name;
+        sel.appendChild(opt);
+      }
+    });
+  }
+
+  // ── Server ping ───────────────────────────────────────────────────────
   async function ping() {
     try {
       const r = await fetch('/api/dreamer?user=orion', { signal: AbortSignal.timeout(2000) });
@@ -296,9 +293,11 @@
     } catch { serverOnline = false; }
     setStatus(serverOnline ? 'online' : 'offline');
   }
+
+  loadAgents();
   ping();
 
-  // ── Auto-grow textarea ────────────────────────────────────────────────────
+  // ── Auto-grow textarea ────────────────────────────────────────────────
   inputEl.addEventListener('input', () => {
     inputEl.style.height = 'auto';
     inputEl.style.height = Math.min(inputEl.scrollHeight, 160) + 'px';
@@ -333,12 +332,12 @@
     scrollToBottom();
   }
 
-  function createAgentBubble() {
+  function createAgentBubble(agentName) {
     const row = document.createElement('div');
     row.className = 'msg-row agent';
     const label = document.createElement('div');
     label.className = 'msg-label';
-    label.textContent = 'Orion';
+    label.textContent = agentName || 'Agent';
     const bubble = document.createElement('div');
     bubble.className = 'bubble';
     const cursor = document.createElement('span');
@@ -351,9 +350,145 @@
     return { row, bubble, cursor };
   }
 
-  // ── Stream text word-by-word locally ─────────────────────────────────────
-  async function streamText(bubble, cursor, text) {
-    const words = text.split(/(\s+)/);
+  function getSelectedAgent() {
+    const val = agentInline.value;
+    return val === 'auto' ? '' : val;
+  }
+
+  function getAgentName(agentId) {
+    if (!agentId) return 'Orion';
+    const found = agents.find(a => a.id === agentId);
+    return found ? found.name : 'Orion';
+  }
+
+  // ── SSE streaming from /api/dream/chat/stream ─────────────────────────
+  async function streamFromServer(text, kind, agentId) {
+    const agentName = getAgentName(agentId);
+    const { row, bubble, cursor } = createAgentBubble(agentName);
+    setStatus('thinking');
+
+    let fullReply = '';
+    let source = 'stream';
+
+    try {
+      const resp = await fetch('/api/dream/chat/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: `[${kind}] ${text}`,
+          user: 'orion',
+          agent: agentId || '',
+          provider: '',
+        }),
+        signal: AbortSignal.timeout(30000),
+      });
+
+      if (!resp.ok || !resp.body) throw new Error('Stream unavailable');
+
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const event = JSON.parse(line.slice(6));
+            if (event.type === 'token' && event.text) {
+              fullReply += event.text;
+              cursor.remove();
+              bubble.textContent = fullReply;
+              bubble.appendChild(cursor);
+              scrollToBottom();
+            } else if (event.type === 'done') {
+              source = event.source || 'stream';
+            } else if (event.type === 'error') {
+              if (!fullReply) throw new Error(event.text || 'Stream error');
+            }
+          } catch (parseErr) {
+            if (parseErr.message === 'Stream error' || parseErr.message.startsWith('Stream')) throw parseErr;
+          }
+        }
+      }
+
+      cursor.remove();
+      if (!fullReply) throw new Error('Empty response');
+      bubble.textContent = fullReply;
+    } catch (err) {
+      cursor.remove();
+      if (fullReply) {
+        bubble.textContent = fullReply;
+      } else {
+        const fallback = await nonStreamingFallback(text, kind);
+        fullReply = fallback.reply;
+        source = fallback.source;
+        if (fallback.agent) label.textContent = fallback.agent;
+        bubble.textContent = fullReply;
+        if (fallback.saved) {
+          const badge = document.createElement('div');
+          badge.className = 'saved-badge';
+          badge.textContent = `✓ Saved as ${kind}`;
+          row.appendChild(badge);
+        }
+      }
+    }
+
+    const srcBadge = document.createElement('div');
+    srcBadge.className = 'source-badge';
+    srcBadge.textContent = source === 'offline' ? '⚡ offline' : `via ${source}`;
+    row.appendChild(srcBadge);
+
+    addSuggestions(row, kind);
+    conversationHistory.push({ role: 'assistant', content: fullReply });
+    return fullReply;
+  }
+
+  // ── Non-streaming fallback via /api/dreamer/chat ──────────────────────
+  async function nonStreamingFallback(text, kind) {
+    try {
+      const r = await fetch('/api/dreamer/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user: 'orion',
+          kind,
+          text,
+          history: conversationHistory.slice(-10),
+        }),
+        signal: AbortSignal.timeout(15000),
+      });
+      if (r.ok) {
+        const data = await r.json();
+        return {
+          reply: data.reply || offlineReply(kind),
+          saved: !!data.saved,
+          source: data.source || 'api',
+          agent: data.agent || null,
+        };
+      }
+    } catch {}
+    return { reply: offlineReply(kind), saved: false, source: 'offline' };
+  }
+
+  function offlineReply(kind) {
+    return OFFLINE_REPLIES[kind] || OFFLINE_REPLIES.dream;
+  }
+
+  // ── Offline-only path (no server at all) ──────────────────────────────
+  async function sendOffline(text, kind) {
+    const { row, bubble, cursor } = createAgentBubble('Orion');
+    setStatus('thinking');
+    const reply = offlineReply(kind);
+
+    // Simulate brief typing for offline
+    const words = reply.split(/(\s+)/);
     let built = '';
     for (const word of words) {
       if (!word) continue;
@@ -362,14 +497,21 @@
       bubble.textContent = built;
       bubble.appendChild(cursor);
       scrollToBottom();
-      const isPunct = /[.!?,;:]$/.test(word.trim());
-      await new Promise(r => setTimeout(r, isPunct ? 60 + Math.random() * 80 : 20 + Math.random() * 30));
+      await new Promise(r => setTimeout(r, 20 + Math.random() * 20));
     }
     cursor.remove();
-    bubble.textContent = built;
+    bubble.textContent = reply;
+
+    const srcBadge = document.createElement('div');
+    srcBadge.className = 'source-badge';
+    srcBadge.textContent = '⚡ offline';
+    row.appendChild(srcBadge);
+
+    addSuggestions(row, kind);
+    conversationHistory.push({ role: 'assistant', content: reply });
   }
 
-  // ── Main send handler ─────────────────────────────────────────────────────
+  // ── Main send handler ─────────────────────────────────────────────────
   async function send() {
     const text = inputEl.value.trim();
     if (!text || isStreaming) return;
@@ -377,6 +519,7 @@
     if (emptyState) emptyState.style.display = 'none';
 
     const kind = kindInline.value;
+    const agentId = getSelectedAgent();
     isStreaming = true;
     sendBtn.disabled = true;
 
@@ -386,65 +529,31 @@
 
     conversationHistory.push({ role: 'user', content: `[${kind}] ${text}` });
 
-    const { row, bubble, cursor } = createAgentBubble();
-    setStatus('thinking');
-
-    let reply = null;
-    let saved = false;
-
     if (serverOnline) {
-      try {
-        const r = await fetch('/api/dreamer/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            user: 'orion',
-            kind,
-            text,
-            history: conversationHistory.slice(-10),
-          }),
-          signal: AbortSignal.timeout(15000),
-        });
-        if (r.ok) {
-          const data = await r.json();
-          reply = data.reply || null;
-          saved = !!data.saved;
-        }
-      } catch {}
-    }
-
-    if (!reply) reply = localReply(kind);
-
-    conversationHistory.push({ role: 'assistant', content: reply });
-
-    await streamText(bubble, cursor, reply);
-
-    // Suggestions
-    const suggestions = getSuggestions(kind);
-    if (suggestions.length) {
-      const chips = document.createElement('div');
-      chips.className = 'suggestions';
-      for (const s of suggestions) {
-        const btn = document.createElement('button');
-        btn.className = 'chip';
-        btn.textContent = s;
-        btn.onclick = () => fillInput(s + ' ');
-        chips.appendChild(btn);
-      }
-      row.appendChild(chips);
-    }
-
-    if (saved) {
-      const badge = document.createElement('div');
-      badge.className = 'saved-badge';
-      badge.textContent = `✓ Saved as ${kind}`;
-      row.appendChild(badge);
+      await streamFromServer(text, kind, agentId);
+    } else {
+      await sendOffline(text, kind);
     }
 
     setStatus(serverOnline ? 'online' : 'offline');
     isStreaming = false;
     sendBtn.disabled = false;
     scrollToBottom();
+  }
+
+  function addSuggestions(row, kind) {
+    const suggestions = getSuggestions(kind);
+    if (!suggestions.length) return;
+    const chips = document.createElement('div');
+    chips.className = 'suggestions';
+    for (const s of suggestions) {
+      const btn = document.createElement('button');
+      btn.className = 'chip';
+      btn.textContent = s;
+      btn.onclick = () => fillInput(s + ' ');
+      chips.appendChild(btn);
+    }
+    row.appendChild(chips);
   }
 
   function getSuggestions(kind) {
@@ -458,8 +567,7 @@
       character: ['What do they want?', 'Log a related event', 'Add a symbol for them'],
       place: ['What happened here?', 'Log a character from this place', 'Add lore'],
     };
-    const pool = map[kind] || [];
-    return pool.slice(0, 3);
+    return (map[kind] || []).slice(0, 3);
   }
 </script>
 </body>

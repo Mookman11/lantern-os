@@ -120,28 +120,17 @@
       "parallelTasks": 1
     },
     {
-      "id": "super-jarvis-default",
-      "agent": "super-jarvis",
-      "provider": "mcp",
-      "taskBudget": "low",
-      "requiredEnvVars": ["MCP_SERVER_URL"],
-      "capabilities": ["convergence", "validation", "git", "safety-check"],
-      "fallbackChain": ["claude-primary", "codex-primary", "gemini-primary"],
-      "cliCommand": ["powershell", "-File", "scripts/orchestration/Invoke-OrchestratorAgentAction.ps1"],
-      "maxTokens": 50000,
-      "parallelTasks": 1
-    },
-    {
-      "id": "super-jarvis-primary",
-      "agent": "super-jarvis",
-      "provider": "mcp",
+      "id": "convergence-io",
+      "agent": "convergence-io",
+      "provider": "pcsf-chain",
       "taskBudget": "medium",
-      "requiredEnvVars": ["MCP_SERVER_URL", "DISCORD_BOT_TOKEN"],
-      "capabilities": ["convergence", "validation", "git", "dispatch", "safety-check", "evidence-recording"],
-      "fallbackChain": ["super-jarvis-default", "claude-primary"],
-      "cliCommand": ["powershell", "-File", "scripts/orchestration/Invoke-OrchestratorAgentAction.ps1"],
-      "maxTokens": 50000,
-      "parallelTasks": 1
+      "requiredEnvVars": [],
+      "capabilities": ["convergence", "validation", "git", "dispatch", "safety-check", "evidence-recording", "pcsf-routing", "nap-authority", "aapf-provenance", "ccf-capability", "dcf-classification"],
+      "fallbackChain": ["claude-primary", "codex-primary", "gemini-primary", "ollama-primary"],
+      "module": "src/convergence_io",
+      "maxTokens": 200000,
+      "parallelTasks": 3,
+      "note": "Replaces super-jarvis-default and super-jarvis-primary. See docs/CONVERGENCE-IO-v1.0.0.md"
     }
   ]
 }
