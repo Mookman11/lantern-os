@@ -153,7 +153,7 @@ function Invoke-JsonScript {
     $runId = [Guid]::NewGuid().ToString("N")
     $stdoutPath = Join-Path ([System.IO.Path]::GetTempPath()) ("orch-mcp-{0}.out" -f $runId)
     $stderrPath = Join-Path ([System.IO.Path]::GetTempPath()) ("orch-mcp-{0}.err" -f $runId)
-    $argumentList = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $ScriptPath) + @($Arguments)
+    $argumentList = @("-NoProfile", "-NoLogo", "-ExecutionPolicy", "Bypass", "-File", $ScriptPath) + @($Arguments)
     try {
         $process = Start-Process -FilePath "powershell" -ArgumentList $argumentList -Wait -PassThru -WindowStyle Hidden -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
         $exitCode = [int]$process.ExitCode
