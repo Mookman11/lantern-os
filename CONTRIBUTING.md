@@ -6,7 +6,12 @@ Linear is the canonical backlog. GitHub Issues are intake only — they may be t
 
 ## Dev setup
 
-Requirements: Node.js v20 or higher.
+Requirements:
+- Node.js v20 or higher
+- Python 3.11 or higher
+- Ollama (optional, for fully offline mode)
+
+### Node.js (Lantern Garage server)
 
 ```bash
 git clone <repo-url> lantern-os
@@ -15,11 +20,32 @@ node apps/lantern-garage/server.js
 # server runs at http://127.0.0.1:4177
 ```
 
-No global npm installs are required for the server. If you need Playwright for end-to-end tests:
+If you need Playwright for end-to-end tests:
 
 ```bash
 npm install --prefix apps/lantern-garage
 ```
+
+### Python (MCP server + Convergence IO)
+
+```bash
+# Set PYTHONPATH so imports resolve
+export PYTHONPATH=src:$PYTHONPATH
+
+# Optional: create a .env.local for provider API keys
+cat > .env.local << 'EOF'
+ANTHROPIC_API_KEY=your_key_here
+OPENAI_API_KEY=your_key_here
+OLLAMA_BASE_URL=http://localhost:11434
+EOF
+
+# Start MCP server
+python src/mcp_server/server.py
+# or via PowerShell
+scripts/orchestration/Start-OrchMcpServer.ps1
+```
+
+No virtualenv is strictly required — the project uses the standard library plus minimal deps. If you need additional packages, add them to `requirements.txt` with a comment.
 
 ## Testing
 
@@ -39,10 +65,11 @@ Both suites must pass before opening a PR.
 
 ## Branch convention
 
-- Branch off `dev` for all work.
-- Open PRs targeting `dev`.
-- `dev` is merged into `master` for releases only.
-- Branch naming: `dev/<short-description>` (e.g., `dev/docs-readme-contributing`).
+- Branch off `master` for all work.
+- Open PRs targeting `master`.
+- `master` is the canonical branch; releases are tagged from `master`.
+- Branch naming: `<type>/<short-description>` (e.g., `feat/convergence-io-tier`, `fix/mcp-dotenv`).
+- Valid types: `feat`, `fix`, `docs`, `chore`, `test`, `refactor`.
 
 ## Repo contract
 
@@ -53,6 +80,7 @@ The following belong in this repository:
 - `tests/` — automated tests
 - `scripts/` — active utility scripts
 - `src/` — source modules
+  - `src/convergence_io/` — Convergence IO runtime (PCSF, CCF, NAP, DCF, AAPF, Engine)
 - `data/` — local runtime data (gitignored where it contains personal entries)
 - `manifests/` — system manifests
 - `docs/` — documentation
@@ -71,5 +99,11 @@ Everything else (stale deployment guides, one-off migration docs, duplicate orch
 ## Code style
 
 - Node.js: vanilla JS, no framework required for the server layer.
-- Python: standard library preferred; add dependencies to `requirements.txt` with a comment explaining why.
+- Python:
+  - Standard library preferred; add dependencies to `requirements.txt` with a comment.
+  - Use `from __future__ import annotations` at the top of every module.
+  - Type hints are required for public APIs (dataclasses, function signatures).
+  - Prefer `dataclasses` over raw dictionaries for structured data.
+  - Use `datetime.now(timezone.utc)` for all timestamps (never naive datetimes).
+  - Convergence IO primitives follow the RPS naming: PCSF, CCF, NAP, DCF, AAPF.
 - No generated or minified files in source commits.

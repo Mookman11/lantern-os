@@ -1,10 +1,44 @@
-# Dream Journal === ORION === Roadmap
+# Dream Journal === ORION === Roadmap (Canonical)
 
 **Updated:** June 4, 2026
 
 ---
 
-## 0. What Changed from CSF to Convergence IO
+## 0. Agent Contract — Integration Hooks
+
+This section documents how the Dream Journal, Convergence IO, and CSF are wired together.
+
+### Integration Map
+
+```
+Dream Journal Orchestrator
+    → DCF: classify new dreams (dream_content, symbolic_data, user_identity)
+    → CCF: verify bot capabilities before response generation
+    → NAP: check tier-based restrictions (art limits, content policy)
+    → AAPF: record provenance for every dream_processed action
+    → CSF: export dreams + DCF labels + CIO snapshot as delta records
+```
+
+### Hook Points
+
+| Hook | File | Description |
+|---|---|---|
+| `add_dream()` DCF classification | `src/dream_journal/orchestrator.py:217` | Every new dream gets DCF labels auto-assigned |
+| `process_dream()` AAPF provenance | `src/dream_journal/orchestrator.py:285` | ActionRecord with integrity hash written to ledger |
+| `export_csf()` CIO embedding | `src/dream_journal/orchestrator.py:376` | CSF delta payload includes DCF + CIO health snapshot |
+| `ConvergenceIO` init | `src/dream_journal/orchestrator.py:147` | CIO engine instantiated with repo_root for full RPS |
+
+### Data Flow
+
+1. **Dream Entry** → DCF classified (`dream_content`, `symbolic_data`)
+2. **Bot Selection** → CCF check (do bots claim `dream_process` capability?)
+3. **Response** → NAP check (tier enforcement: Wanderer vs DeepDreamer vs Guild)
+4. **Archive** → CSF export with embedded DCF + CIO metadata
+5. **Audit** → AAPF ledger with SHA-256 integrity proof
+
+---
+
+## 1. What Changed from CSF to Convergence IO
 
 **CSF (Convergence Symbolic Format)** was the data storage and compression format — focused on symbolic memory, sparse matrices, qutrit-inspired encoding, and efficient storage of dreams and lore.
 
