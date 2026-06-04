@@ -65,11 +65,10 @@ EXCLUDES = {
     "dashboard",
     "art",
     # Old source trees (preserved in archive; not core docs)
-    "src/discord_lounge_bot",
-    "src/hff-api",
-    "src/mcp_server",
-    "src/dream_journal",
-    "dream_journal",  # root-level legacy crystallization engine
+    "discord_lounge_bot",
+    "hff-api",
+    "mcp_server",
+    "dream_journal",
     # Data / runtime dirs
     "data",
     "archive",
@@ -80,11 +79,6 @@ CORE_DOC_PATHS = {
     "README.md",
     "docs",
     "src/csf",
-    "src/convergence_io_engine.py",
-    "src/tesseract_convergence.py",
-    "src/unified_agent_connector.py",
-    "src/agent_tool_hooks.py",
-    "src/csf_cache_manager.py",
     "apps/lantern-garage",
     "scripts",
     "config",
@@ -103,7 +97,7 @@ def find_md_files(root: Path) -> List[Path]:
         if any(part in EXCLUDES for part in p.parts):
             continue
         # Only include files that live under a core doc path
-        if not any(rel.startswith(cp) for cp in CORE_DOC_PATHS):
+        if not any(rel == cp or rel.startswith(cp + "/") for cp in CORE_DOC_PATHS):
             continue
         paths.append(p)
     paths.sort()
@@ -133,11 +127,11 @@ def build_corpus(files: List[Path], root: Path) -> str:
 # Compression
 # ------------------------------------------------------------------
 
-def compress_corpus(text: str, block_size: int = 512) -> Tuple[bytes, CompressionResult]:
+def compress_corpus(text: str, block_size: int = 512) -> Tuple[bytes, CompressionResult, ClassicalCompressor]:
     """Compress the combined markdown corpus using CSF v0.7 classical pipeline."""
     compressor = ClassicalCompressor(block_size=block_size)
     compressed, result = compressor.compress_text(text)
-    return compressed, result
+    return compressed, result, compressor
 
 
 def write_csf(
@@ -276,21 +270,12 @@ def main(argv: list[str] | None = None) -> int:
 
     # Compress
     print("Compressing with CSF v0.7 classical pipeline ...")
-    compressed, result = compress_corpus(corpus)
+    compressed, result, compressor = compress_corpus(corpus)
     print(f"  Dictionary size: {result.dictionary_size} tokens")
     print(f"  Compressed: {result.compressed_bytes:,} bytes")
     print(f"  Ratio: {result.ratio:.2%}")
 
     # Write CSF
-    compressor = ClassicalCompressor()
-    compressor.dictionary = SymbolicDictionary()  # dummy; we'll rebuild from compressed
-    # Actually we need the real dictionary from the compression step.
-    # compress_corpus creates a new compressor each time. We need to capture it.
-    # Let me fix this by re-compressing and capturing the compressor instance.
-
-    # Re-do with captured compressor
-    compressor = ClassicalCompressor(block_size=512)
-    compressed, result = compressor.compress_text(corpus)
     file_size = write_csf(compressed, compressor.dictionary, original_bytes, output)
 
     print(f"\nWrote {output}")

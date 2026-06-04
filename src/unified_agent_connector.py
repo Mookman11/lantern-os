@@ -25,6 +25,13 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_DIR = REPO_ROOT / "config"
 DATA_DIR = REPO_ROOT / "data"
 
+# Load local env overrides if present
+try:
+    from dotenv import load_dotenv
+    load_dotenv(REPO_ROOT / ".env.local")
+except Exception:
+    pass
+
 # Agent hooks + CSF cache enforcement
 sys.path.insert(0, str(REPO_ROOT / "src"))
 try:
@@ -52,11 +59,20 @@ class ProviderConfig:
     @classmethod
     def from_env(cls, name: str, provider: str) -> "ProviderConfig":
         prefix = provider.upper()
+        api_key = os.environ.get(f"{prefix}_API_KEY") or os.environ.get(f"{prefix}_KEY")
+        # Support alternate env var names used by some users
+        if not api_key:
+            if provider == "deepseek":
+                api_key = os.environ.get("DEEPSEEK_AUTH_TOKEN")
+            elif provider == "gemini":
+                api_key = os.environ.get("GEMINI_AUTH")
+            elif provider == "groq":
+                api_key = os.environ.get("GROK_API_KEY")
         return cls(
             name=name,
             provider=provider,
             model=os.environ.get(f"{prefix}_MODEL", cls._default_model(provider)),
-            api_key=os.environ.get(f"{prefix}_API_KEY") or os.environ.get(f"{prefix}_KEY"),
+            api_key=api_key,
             base_url=os.environ.get(f"{prefix}_BASE_URL") or cls._default_base_url(provider),
             max_tokens=int(os.environ.get(f"{prefix}_MAX_TOKENS", "1024")),
             temperature=float(os.environ.get(f"{prefix}_TEMPERATURE", "0.7")),

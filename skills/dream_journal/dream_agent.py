@@ -14,7 +14,16 @@ import os
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+# Load local env overrides if present
+_repo_root = Path(__file__).resolve().parents[2]
+try:
+    from dotenv import load_dotenv
+    load_dotenv(_repo_root / ".env.local")
+except Exception:
+    pass
 
 try:
     from agents import Agent, Runner

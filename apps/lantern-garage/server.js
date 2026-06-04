@@ -746,7 +746,6 @@ function normalizeRagCacheItem(input) {
 function readOperatorQueue() {
   const items = [];
   // Read local operator notes
-  // Read local operator notes
   const notes = readJsonl(path.relative(repoRoot, operatorNotesPath), 50).filter(n => !n.parseError);
   for (const note of notes) {
     items.push({ type: "note", title: note.text, priority: note.priority || "P2", owner: "operator", source: "local", createdAt: note.createdAt });
@@ -827,7 +826,7 @@ function buildFlatRagHouse() {
   const conversations = readConversationLog(20);
   return {
     generatedAt: new Date().toISOString(),
-    purpose: "One flat RAG house over Lantern OS, HFF, orchestrator, and GM source repos.",
+    purpose: "One flat RAG house over Lantern OS, HFF, and GM source repos.",
     boundary: "Read-only source ingestion. Old repos are archived by manifest status, not deleted.",
     sources,
     ragRecordCount: ragRecords.length,
@@ -1652,6 +1651,7 @@ async function route(req, res) {
         id: dreamId,
         saved: true,
         entry,
+        csf: { compressed: false },
       });
     } catch (error) {
       sendJson(res, { error: error.message }, 400);

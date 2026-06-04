@@ -9,6 +9,14 @@ import json
 import os
 from pathlib import Path
 
+# Load local env overrides if present
+_repo_root = Path(__file__).resolve().parents[1]
+try:
+    from dotenv import load_dotenv
+    load_dotenv(_repo_root / ".env.local")
+except Exception:
+    pass
+
 try:
     from skills.dream_journal import DreamAgent
     HAS_DREAM_AGENT = True
