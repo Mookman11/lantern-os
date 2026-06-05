@@ -414,14 +414,15 @@ async function route(req, res) {
           text: String(result.reply || "").slice(0, maxConversationTextLength),
         });
       } catch { /* logging is non-critical */ }
+      if (!result.reply) {
+        sendJson(res, { error: result.error || "no_provider_configured", agent: result.agent, online: false }, 503);
+        return;
+      }
       sendJson(res, { ...result, generatedAt: new Date().toISOString() });
     } catch (error) {
-      // Even on parse error, stay in character and online.
       sendJson(res, {
-        reply: `${DREAM_DOORS.founder.phrase} Something tangled, but the dream door stays open.`,
-        suggestions: Object.values(DREAM_DOORS).slice(0, 3).map((d) => d.name),
-        online: false,
         error: error.message,
+        online: false,
       });
     }
     return;

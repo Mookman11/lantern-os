@@ -255,6 +255,9 @@
   </div>
 
   <script>
+    function escapeHtml(t) {
+      return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
     const API = {
       create: async (data) => {
         const res = await fetch('/api/dream/create', {
