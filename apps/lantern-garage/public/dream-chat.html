@@ -931,6 +931,13 @@
   function sendMessage() {
     const text = inputEl.value.trim();
     if (!text || isStreaming) return;
+    // !debug toggles the analytics panel without sending a message
+    if (text === "!debug") {
+      inputEl.value = "";
+      inputEl.style.height = "auto";
+      toggleDebug();
+      return;
+    }
     if (emptyState) emptyState.style.display = "none";
     appendUserBubble(text);
     inputEl.value = "";
