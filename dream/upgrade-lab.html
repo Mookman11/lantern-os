@@ -65,6 +65,19 @@
     .receipt th, .receipt td { padding: 10px; border-bottom: 1px solid rgba(197, 208, 207, 0.72); text-align: left; vertical-align: top; }
     .receipt th { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; }
     footer { margin-top: 18px; color: var(--muted); font-size: 0.84rem; }
+    .support { margin-top: 18px; padding: 26px 22px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.94); }
+    .support-header { display: flex; flex-direction: column; gap: 6px; margin-bottom: 20px; }
+    .support-header .eyebrow { margin: 0; }
+    .support-header h2 { margin: 0; font-size: 1.38rem; }
+    .support-header p { margin: 0; color: var(--muted); font-size: 0.98rem; line-height: 1.48; max-width: 640px; }
+    .tier-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 20px; }
+    .tier { padding: 16px; border: 1px solid var(--line); background: #f9f7f2; }
+    .tier-name { margin: 0 0 2px; font-size: 1rem; font-weight: 900; color: var(--ink); }
+    .tier-price { margin: 0 0 12px; font-size: 0.82rem; color: var(--teal); font-weight: 900; text-transform: uppercase; }
+    .tier ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 0.9rem; line-height: 1.52; }
+    .patreon-btn { display: inline-grid; place-items: center; min-height: 42px; padding: 9px 20px; border: 1px solid var(--amber); background: var(--amber); color: white; text-decoration: none; font-weight: 900; font-size: 0.92rem; }
+    .patreon-btn:hover { background: #8a5508; border-color: #8a5508; color: white; }
+    @media (max-width: 600px) { .tier-grid { grid-template-columns: 1fr; } }
     @media (max-width: 900px) { .hero, .grid, .wide { grid-template-columns: 1fr; } .visual { min-height: 320px; } .topbar { align-items: flex-start; flex-direction: column; } }
   </style>
 </head>
@@ -127,6 +140,35 @@
             </tbody>
           </table>
         </article>
+      </section>
+
+      <section class="support" aria-label="Support the project">
+        <div class="support-header">
+          <p class="eyebrow">Support the project</p>
+          <h2>Keep the lantern lit</h2>
+          <p>Patreon memberships fund continued development of the Dream Journal, local-first tools, and the open upgrade workflow you're reading right now. Every tier helps ship faster and keeps the project public.</p>
+        </div>
+        <div class="tier-grid">
+          <article class="tier">
+            <p class="tier-name">Wanderer</p>
+            <p class="tier-price">$5 / month</p>
+            <ul>
+              <li>Early access to Dream Journal feature builds</li>
+              <li>Monthly dev log with behind-the-scenes notes</li>
+              <li>Name in the project credits</li>
+            </ul>
+          </article>
+          <article class="tier">
+            <p class="tier-name">Lantern Keeper</p>
+            <p class="tier-price">$15 / month</p>
+            <ul>
+              <li>Everything in Wanderer, plus priority feature requests</li>
+              <li>Access to private changelog and upgrade receipts</li>
+              <li>Direct feedback channel with the developer</li>
+            </ul>
+          </article>
+        </div>
+        <a class="patreon-btn" href="https://www.patreon.com/c/lanterndreamjournal" target="_blank" rel="noopener">Join on Patreon</a>
       </section>
     </main>
 
