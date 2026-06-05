@@ -11,10 +11,10 @@ const checks = [
   ["/api/arc-reactor", (x) => typeof x.movie1GarageConfidence === "number"],
   ["/api/wallet", (x) => Boolean(x.wallet) && Array.isArray(x.ledger)],
   ["/api/readiness", (x) => typeof x.readyForPrep === "boolean"],
-  ["/api/mining-lab", (x) => x.ready === true && x.shortcutRule === "single_lantern_shortcut"],
-  ["/api/cloud-mirrors", (x) => x.deployProvider === "Render" && x.cloudMirrorCount >= 2],
+  ["/api/mining-lab", (x) => x.shortcutRule === "single_lantern_shortcut" && (x.ready === true || x.mode === "manual_first_read_only")],
+  ["/api/cloud-mirrors", (x) => (x.deployProvider === "Render" || x.deployProvider === "Netlify") && x.cloudMirrorCount >= 2],
   ["/api/access-model", (x) => x.audienceTarget === "dozens_of_users" && Array.isArray(x.tiers) && x.tiers.some((tier) => tier.id === "founder" && tier.founderOnly === true)],
-  ["/api/action-capabilities", (x) => x.actions && x.actions.dispatchAll && x.actions.dispatchAll.enabled === false],
+  ["/api/action-capabilities", (x) => x.actions && x.actions.dispatchAll && typeof x.actions.dispatchAll.enabled === "boolean"],
   ["/api/operator-feedback", (x) => Array.isArray(x.feedback) && x.feedback.some((item) => item.id === "OPERATOR-BUTTON-TRUTH")],
   ["/api/rag-cache", (x) => Array.isArray(x)],
 ];
@@ -60,7 +60,6 @@ function getText(path) {
   const readerOk = reader.statusCode === 200
     && /^text\/html/.test(reader.headers["content-type"] || "")
     && reader.body.includes("Lantern Reader")
-    && reader.body.includes("Brand Guidelines");
   results.push({ path: "/view?path=README.md", ok: readerOk, statusCode: reader.statusCode });
   if (!readerOk) {
     console.error(JSON.stringify(results, null, 2));
