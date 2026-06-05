@@ -278,7 +278,62 @@ async function handleStreamChat(req, url, res) {
     }
   }
 
-  // Provider 4: Ollama (streaming)
+  // Provider 4: Grok / xAI (streaming — OpenAI-compatible)
+  const xaiKey = process.env.XAI_API_KEY;
+  if (xaiKey && message && (!requestedProvider || requestedProvider === "grok" || requestedProvider === "xai")) {
+    try {
+      const payload = JSON.stringify({
+        model: process.env.XAI_MODEL || "grok-3-mini",
+        stream: true,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: message },
+        ],
+      });
+      await new Promise((resolve, reject) => {
+        const req2 = https.request({
+          hostname: "api.x.ai",
+          path: "/v1/chat/completions",
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${xaiKey}`,
+            "Content-Length": Buffer.byteLength(payload),
+          },
+        }, (upstream) => {
+          if (upstream.statusCode !== 200) { upstream.resume(); reject(new Error(`xai_status_${upstream.statusCode}`)); return; }
+          let buf = "";
+          upstream.on("data", (chunk) => {
+            buf += chunk.toString();
+            const lines = buf.split("\n"); buf = lines.pop();
+            for (const line of lines) {
+              if (!line.startsWith("data: ")) continue;
+              const raw = line.slice(6).trim();
+              if (raw === "[DONE]" || !raw) continue;
+              try {
+                const evt = JSON.parse(raw);
+                const token = evt.choices?.[0]?.delta?.content || "";
+                if (token) { fullReply += token; sendToken(token); }
+              } catch { /* skip */ }
+            }
+          });
+          upstream.on("end", () => resolve());
+          upstream.on("error", reject);
+        });
+        req2.on("error", reject);
+        req2.setTimeout(15000, () => { req2.destroy(); reject(new Error("xai_timeout")); });
+        req2.write(payload); req2.end();
+      });
+      await appendConversationEntry({ recordedAt: new Date().toISOString(), surface: "dream-chat-stream", role: "lantern", text: fullReply.slice(0, maxConversationTextLength) }).catch(() => {});
+      sendDone("grok", { agent: agent.name, online: true });
+      return;
+    } catch (err) {
+      sendError(`grok_unavailable: ${err.message}`);
+      if (requestedProvider) { sendFail(err.message); return; }
+    }
+  }
+
+  // Provider 5: Ollama (streaming)
   const ollamaBase = process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434";
   const ollamaModel = process.env.OLLAMA_MODEL || "llama3";
   if (message && (!requestedProvider || requestedProvider === "ollama" || requestedProvider === "local")) {
