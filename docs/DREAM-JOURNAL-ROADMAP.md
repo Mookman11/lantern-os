@@ -479,6 +479,26 @@ These refinements extend the CSF Memory Engine and Convergence IO based on produ
 | **P2** | Temporal lineage | 2 files | Memory evolution |
 | **P3** | Metadata filtering | 2 files | Query precision |
 
+### Implementation Notes (Post-Review)
+
+Implemented 2026-06-05 in `src/csf/memory_engine.py` + `caad/schema/memory.schema.json`.
+
+**Bugs found and fixed during review:**
+1. `promote()` lost new fields (`keywords`, `entities`, `metadata`, `actor_*`, `staleness_signals`) — fixed to copy all fields.
+2. `write_async()` imported `asyncio` inside method and had a race-prone `remove()` callback — moved to module level, used safe `_on_async_done()` handler.
+3. `_async_write()` duplicated sync `write()` body — now delegates to `self.write(record)`.
+4. `check_staleness()` silently mutated record and ignored `threshold` parameter — docstring now clearly documents mutation behavior, threshold used as confidence floor, added `entity_type` guard to avoid false positives.
+5. `_multi_signal_score()` hardcoded `semantic = 0.5` regardless of record — now falls back to `rec.confidence`.
+6. Module docstring omitted `PROCEDURAL` tier — updated.
+
+**Remaining limitations (acceptable for current scope):**
+- `_multi_signal_score()` still needs real vector similarity integration when embeddings are available.
+- `query()` is O(n) across registries; no keyword/entity indexes yet.
+- `create_procedure()` is not yet covered by tests.
+- Temporal lineage (`lineage_event` with evolution type) is partially implemented via `promotion_chain` but lacks a structured event object.
+
+**Test status:** 15/15 existing tests pass.
+
 
 ---
 
