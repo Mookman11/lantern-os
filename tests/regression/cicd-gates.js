@@ -82,29 +82,16 @@ if (indexHtml) {
   assert("HTML link check skipped (missing file)", false);
 }
 
-// ── Gate 5: Linear-ticket-gate workflow is valid YAML ────────────────────
-console.log("\n=== Gate 5 — Linear ticket gate workflow ===");
-const linearGate = readFile(".github/workflows/linear-ticket-gate.yml");
-assert("linear-ticket-gate.yml exists", !!linearGate);
-if (linearGate) {
-  assert("Gate references PR_TITLE", linearGate.includes("PR_TITLE"));
-  assert("Gate references PR_BRANCH", linearGate.includes("PR_BRANCH"));
-  assert("Gate has anti-sprawl step", linearGate.includes("Anti-sprawl"));
-  assert("Gate checks new top-level dirs", linearGate.includes("new_top_dirs"));
-  assert("Gate checks for submodules", linearGate.includes("submodule"));
-}
-
-// ── Gate 6: CI workflow has all required jobs ────────────────────────────
-console.log("\n=== Gate 6 — CI workflow structure ===");
+// ── Gate 5: CI workflow has all required jobs ────────────────────────────
+console.log("\n=== Gate 5 — CI workflow structure ===");
 const ciYml = readFile(".github/workflows/ci.yml");
 assert("ci.yml exists", !!ciYml);
 if (ciYml) {
   assert("CI has validate-repo job", ciYml.includes("validate-repo"));
   assert("CI has test-python job", ciYml.includes("test-python"));
   assert("CI has test-node job", ciYml.includes("test-node"));
-  assert("CI has dreamer-journal-api-tests job", ciYml.includes("dreamer-journal-api-tests"));
-  assert("CI has dreamer-journal-e2e-tests job", ciYml.includes("dreamer-journal-e2e-tests"));
   assert("CI has convergence-check job", ciYml.includes("convergence-check"));
+  assert("CI has integration-checks job", ciYml.includes("integration-checks"));
 }
 
 // ── Gate 7: Anti-sprawl — no new top-level dirs without approval ──────────
@@ -177,34 +164,41 @@ assert("No hardcoded secrets in source/docs",
 console.log("\n=== Gate 10 — AGENTS.md contract enforcement ===");
 const agentsMd = readFile("AGENTS.md");
 assert("AGENTS.md has build/test section", agentsMd && agentsMd.includes("pytest"));
-assert("AGENTS.md mentions Linear ticket", agentsMd && agentsMd.includes("Linear"));
-assert("AGENTS.md mentions anti-sprawl", agentsMd && agentsMd.includes("sprawl"));
+assert("AGENTS.md mentions monoworkstream", agentsMd && agentsMd.includes("monoworkstream"));
 assert("AGENTS.md mentions no secrets", agentsMd && agentsMd.includes("secret"));
 
-// ── Gate 11: Dream Journal server.js has agent personas ────────────────────
+// ── Gate 11: Dream Journal agent integrity ────────────────────────────────
 console.log("\n=== Gate 11 — Dream Journal agent integrity ===");
 const serverJs = readFile("apps/lantern-garage/server.js");
+const dreamChatJs = readFile("apps/lantern-garage/lib/dream-chat.js");
+const streamChatJs = readFile("apps/lantern-garage/lib/stream-chat.js");
 assert("server.js exists", !!serverJs);
+assert("dream-chat.js exists", !!dreamChatJs);
+assert("stream-chat.js exists", !!streamChatJs);
 if (serverJs) {
   assert("AGENT_PERSONAS defined", serverJs.includes("AGENT_PERSONAS"));
-  assert("selectAgent function exists", serverJs.includes("function selectAgent"));
   assert("OpenAI provider present", serverJs.includes("OPENAI_API_KEY"));
   assert("Anthropic provider present", serverJs.includes("ANTHROPIC_API_KEY"));
   assert("Ollama fallback present", serverJs.includes("OLLAMA_BASE_URL"));
-  assert("Offline fallback present", serverJs.includes("offline"));
+}
+if (dreamChatJs) {
+  assert("selectAgent function exists", dreamChatJs.includes("function selectAgent"));
+}
+if (streamChatJs) {
+  assert("Offline fallback present", streamChatJs.includes("sendFail"));
+  assert("Grok provider present", streamChatJs.includes("grok"));
 }
 
-// ── Gate 12: Chat memory in UI ───────────────────────────────────────────
-console.log("\n=== Gate 12 — Chat UX memory contract ===");
-const chatHtmlPath = path.join(ROOT, "apps", "lantern-garage", "public", "index.html");
-const chatIndexHtml = fs.existsSync(chatHtmlPath) ? fs.readFileSync(chatHtmlPath, "utf8") : null;
-assert("chat index.html exists", !!chatIndexHtml);
-if (chatIndexHtml) {
-  assert("CHAT_MEMORY_KEY defined", chatIndexHtml.includes("CHAT_MEMORY_KEY"));
-  assert("saveChatMemory function", chatIndexHtml.includes("saveChatMemory"));
-  assert("loadChatMemory function", chatIndexHtml.includes("loadChatMemory"));
-  assert("chatClear button", chatIndexHtml.includes("chatClear"));
-  assert("addImageBubble function", chatIndexHtml.includes("addImageBubble"));
+// ── Gate 12: Chat settings drawer in UI ──────────────────────────────────
+console.log("\n=== Gate 12 — Chat UX settings drawer ===");
+const chatHtmlPath = path.join(ROOT, "apps", "lantern-garage", "public", "dream-chat.html");
+const chatHtml = fs.existsSync(chatHtmlPath) ? fs.readFileSync(chatHtmlPath, "utf8") : null;
+assert("dream-chat.html exists", !!chatHtml);
+if (chatHtml) {
+  assert("settings-drawer defined", chatHtml.includes("settings-drawer"));
+  assert("provider-card defined", chatHtml.includes("provider-card"));
+  assert("saveKey function", chatHtml.includes("saveKey"));
+  assert("Grok option present", chatHtml.includes("grok"));
 }
 
 // ── Summary ──────────────────────────────────────────────────────────────

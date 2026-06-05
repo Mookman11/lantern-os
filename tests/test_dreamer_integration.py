@@ -173,8 +173,8 @@ class TestBoundaryMessages(unittest.TestCase):
         r = api("POST", "/api/dream/chat", {"message": "I had a nightmare"})
         self.assertEqual(r["status"], 200)
         reply = r["body"]["reply"].lower()
-        # Should ask questions, not command
-        self.assertNotRegex(reply, r"you must|you should|you need to")
+        # Should ask questions, not command. "need to" is allowed in questions (e.g. "what do you need to return?")
+        self.assertNotRegex(reply, r"you must\b|you should\b")
 
 
 @unittest.skipUnless(_server_reachable(), _SKIP_MSG)

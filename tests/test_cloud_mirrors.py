@@ -68,11 +68,12 @@ def test_cloud_runtime_keeps_write_methods_explicitly_bounded() -> None:
 
 
 def test_server_supports_cloud_port_and_mirror_api() -> None:
-    text = (ROOT / "apps" / "lantern-garage" / "server.js").read_text(encoding="utf-8")
-    assert "process.env.PORT" in text
-    assert "0.0.0.0" in text
-    assert '"/api/cloud-mirrors"' in text
-    assert "LANTERN_CLOUD_MIRROR_URLS" in text
+    server = (ROOT / "apps" / "lantern-garage" / "server.js").read_text(encoding="utf-8")
+    routes = (ROOT / "apps" / "lantern-garage" / "routes" / "status.js").read_text(encoding="utf-8")
+    assert "process.env.PORT" in server
+    assert "0.0.0.0" in server
+    assert '"/api/cloud-mirrors"' in routes
+    assert "LANTERN_CLOUD_MIRROR_URLS" in server
 
 
 def test_dashboard_holds_unverified_aws_url_as_local_front_door() -> None:
