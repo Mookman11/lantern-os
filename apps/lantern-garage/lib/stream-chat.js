@@ -102,6 +102,10 @@ The door options should feel like natural continuations — not questions, not c
     sendError(`no_provider: ${reason}`);
     sendDone("failed", { agent: agent.name, online: false });
   };
+  const sendLocalFallback = (reason) => {
+    sendError(`local_fallback: ${reason}`);
+    sendDone("offline", { agent: agent.name, online: false });
+  };
 
   await appendConversationEntry({
     recordedAt: new Date().toISOString(),
