@@ -42,6 +42,7 @@ const flatRagHousePath = path.join(repoRoot, "data", "rag-house", "flat-rag-hous
 const flatRagHouseManifestPath = path.join(repoRoot, "manifests", "FLAT-RAG-HOUSE-LATEST.md");
 const operatorNotesPath = path.join(repoRoot, "data", "operator-notes", "notes.jsonl");
 const cloudMirrorsPath = path.join(repoRoot, "manifests", "cloud-mirrors.json");
+const cloudMirrorUrls = process.env.LANTERN_CLOUD_MIRROR_URLS || "";
 const maxConversationTextLength = 4000;
 const maxDreamerTextLength = 2000;
 
@@ -54,6 +55,10 @@ async function route(req, res) {
       "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type",
       "Cache-Control": "no-store",
+      "X-Content-Type-Options": "nosniff",
+      "Referrer-Policy": "no-referrer",
+      "X-Frame-Options": "DENY",
+      "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
     });
     res.end();
     return;

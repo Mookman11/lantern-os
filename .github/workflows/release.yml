@@ -37,10 +37,7 @@ jobs:
       - name: Determine version
         id: version
         run: |
-          TAG="${{ github.ref_name }}"
-          if [ -z "$TAG" ] || [ "$TAG" = "refs/heads/*" ]; then
-            TAG="${{ github.event.inputs.tag }}"
-          fi
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
           echo "version=${TAG}" >> $GITHUB_OUTPUT
           echo "Building release: ${TAG}"
 
@@ -164,10 +161,10 @@ jobs:
           <head>
             <meta charset="utf-8">
             <title>Lantern OS — Dream Journal</title>
-            <meta http-equiv="refresh" content="0;url=/lantern-os/dream/">
+            <meta http-equiv="refresh" content="0;url=dream/">
           </head>
           <body>
-            <p>Redirecting to <a href="/lantern-os/dream/">Dream Journal</a>…</p>
+            <p>Redirecting to <a href="dream/">Dream Journal</a>…</p>
           </body>
           </html>
           HTML

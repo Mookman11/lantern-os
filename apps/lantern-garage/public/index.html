@@ -119,33 +119,6 @@
         </div>
       </section>
 
-      <section class="dream-panel" aria-label="Dream Journal Chat">
-        <div class="panel-header">
-          <h2>Talk to your Dream Journal</h2>
-          <p class="panel-desc">Share a dream, ask about the doors, or just say hello.</p>
-        </div>
-        <div class="panel-body">
-          <div id="message"></div>
-          <div class="chat-card">
-            <div class="chat-header">
-              <span>🌙</span>
-              <strong>Dream Journal</strong>
-              <span class="chat-status">
-                <span class="status-dot" id="statusDot"></span>
-                <span id="statusText">Online</span>
-              </span>
-            </div>
-            <div class="chat-log" id="chatLog"></div>
-            <div class="chat-suggestions" id="chatSuggestions"></div>
-            <div class="chat-input-row">
-              <input type="text" id="chatInput" placeholder="Tell me a dream, a door, or a feeling..." autocomplete="off">
-              <button id="chatSend" type="button">Send</button>
-              <button id="chatClear" type="button" title="Clear chat memory">Clear</button>
-            </div>
-          </div>
-        </div>
-      </section>
-
       <section class="dream-panel" id="stats-section" aria-label="Journal entries and form">
         <div class="panel-header">
           <h2>Your Journal</h2>
@@ -174,6 +147,7 @@
             <button type="button" id="refresh">Refresh</button>
             <button type="button" id="mirrorPrompt">Copy Mirror Prompt</button>
             <button type="button" id="exportJsonl">Export JSONL</button>
+            <button type="button" id="exportCsv">Export CSV</button>
           </section>
 
           <h3 id="form-section" style="margin:20px 0 10px;font-family:'Cormorant Garamond',serif;font-size:1.1rem;color:var(--celestial-ink);">New Entry</h3>
@@ -531,19 +505,6 @@
     });
 
     document.getElementById('refresh').addEventListener('click', loadStats);
-
-    // ---------------------------------------------------------------- //
-    // Dream Journal Chat — always responds, online or offline.
-    // ---------------------------------------------------------------- //
-    const DOORS = [
-      { id: "xenon", name: "Xenon Door", tagline: "Gateway to Forever", image: "/images/doors/xenon-door.jpg", phrase: "Build beyond one world.", keywords: ["xenon", "courtney", "shelby", "planetary", "alignment", "gateway", "forever", "stars"] },
-      { id: "garden", name: "God's Garden Door", tagline: "Sea of Fog and Clouds", image: "/images/doors/garden-door.jpg", phrase: "Leave it better than you found it.", keywords: ["garden", "god", "fog", "clouds", "sanctuary", "peace", "rest", "odin"] },
-      { id: "xp", name: "Gage's Windows XP Door", tagline: "Chaos. Creativity. Nostalgia. Possibilities.", image: "/images/doors/xp-door.jpg", phrase: "Never log off. Level up always.", keywords: ["xp", "windows", "gage", "childhood", "chaos", "creativity", "nostalgia", "pixels"] },
-      { id: "hearts", name: "Kingdom of Hearts", tagline: "I am the King of the Kingdom of Hearts.", image: "/images/doors/kingdom-of-hearts.jpg", phrase: "I fight for the love of all the birds and the bees.", keywords: ["hearts", "kingdom", "king", "odin", "love", "birds", "bees", "courage"] },
-      { id: "founder", name: "Founder's Wish Door", tagline: "Hold the center. Protect the wish. Return to the anchor.", image: "/images/doors/founder-door.jpg", phrase: "Hold the center. Protect the wish. Return to the anchor.", keywords: ["founder", "wish", "anchor", "love", "safety", "truth", "return"] },
-      { id: "sigil", name: "Sigil / City of Doors", tagline: "You hold the keys. You protect the doors. You are never alone.", image: "/images/doors/sigil-door.jpg", phrase: "You hold the keys. You protect the doors. You are never alone.", keywords: ["sigil", "city", "doors", "keys", "community", "alone"] },
-      { id: "orion", name: "Orion — Dream Journal", tagline: "Every dream is a door. Every memory is a home.", image: "/images/doors/orion-door.jpg", phrase: "Your dreams. Your space. Always private.", keywords: ["orion", "journal", "dream", "record", "reflect", "private"] }
-    ];
 
     loadStats();
     setInterval(loadStats, 10000);

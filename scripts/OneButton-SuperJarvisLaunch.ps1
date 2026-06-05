@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [int]$Port = 8787,
+    [int]$Port = 4177,
     [int]$Passes = 10,
     [switch]$NoBrowser
 )
@@ -54,7 +54,7 @@ try {
         powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Start-LanternRepoApp.ps1 -Port $Port
     }
 
-    Write-Step "Done. App URL: http://127.0.0.1:$Port/surfaces/tony-garage/index.html"
+    Write-Step "Done. App URL: http://127.0.0.1:$Port/"
     Write-Step "Backup/log folder: $backupDir"
 } finally {
     Pop-Location

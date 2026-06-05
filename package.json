@@ -4,7 +4,8 @@
   "private": true,
   "description": "Lantern OS — Dream Journal",
   "scripts": {
-    "start": "node apps/lantern-garage/cloud-server.js",
+    "start": "node apps/lantern-garage/server.js",
+    "start:cloud": "node apps/lantern-garage/cloud-server.js",
     "dev": "node apps/lantern-garage/server.js"
   },
   "engines": {
