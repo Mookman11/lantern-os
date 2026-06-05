@@ -13,6 +13,7 @@ import time
 
 from work_queue import WorkQueue, JobSpec
 from agent_controller import AgentController
+from slot_loader import load_slots, get_fallback_chain
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -22,16 +23,25 @@ class WorkDispatcher:
         self.queue = WorkQueue(redis_url)
         self.scheduler = BackgroundScheduler()
         self.dispatch_interval = dispatch_interval_minutes
-        
-        # Initialize agent controllers
-        self.agents = {
-            "dream_journal": AgentController(
-                agent_name="dream_journal",
-                agent_type="dream_journal",
-                container_name="lantern-dream-journal"
+
+        # Load slot configuration
+        slots = load_slots()
+        self.slots = slots
+
+        # Initialize agent controllers from slots
+        self.agents = {}
+        for slot_id, slot in slots.items():
+            agent_type = slot.get("responsibilities", [slot_id])[0]
+            container = slot.get("container", f"lantern-{slot_id}")
+            agent = AgentController(
+                agent_name=slot_id,
+                agent_type=agent_type,
+                container_name=container
             )
-        }
-        
+            # Key by agent_type and also by slot_id
+            self.agents[agent_type] = agent
+            self.agents[slot_id] = agent
+
         self.dispatch_stats = {
             "total_dispatches": 0,
             "total_jobs_processed": 0,
@@ -70,28 +80,45 @@ class WorkDispatcher:
         total_jobs = 0
         for agent_type, jobs in jobs_by_agent.items():
             logger.info(f"\n[AGENT] {agent_type.upper()} - {len(jobs)} jobs to process")
-            
+
             if agent_type not in self.agents:
                 logger.warning(f"[ERROR] Agent type '{agent_type}' not configured")
                 continue
-            
-            agent = self.agents[agent_type]
-            
-            # Wake agent
-            logger.info(f"[WAKE] Starting agent container...")
-            if not agent.wake():
-                logger.error(f"[ERROR] Failed to wake agent {agent_type}")
+
+            # Find the primary agent (may be keyed by agent_type or we need to find it)
+            primary_agent = self.agents[agent_type]
+            primary_slot_id = primary_agent.agent_name
+
+            # Try primary agent first, then fallbacks
+            fallback_chain = get_fallback_chain(self.slots, primary_slot_id)
+            agent_chain = [primary_agent] + [self.agents.get(fid) for fid in fallback_chain]
+            agent_chain = [a for a in agent_chain if a is not None]
+
+            agent_woken = None
+            for attempt_agent in agent_chain:
+                # Wake agent
+                logger.info(f"[WAKE] Starting agent container ({attempt_agent.agent_name})...")
+                if attempt_agent.wake():
+                    agent_woken = attempt_agent
+                    break
+                else:
+                    logger.warning(f"[WAKE FAILED] {attempt_agent.agent_name}, trying fallback...")
+
+            if not agent_woken:
+                logger.error(f"[ERROR] Failed to wake any agent in chain for {agent_type}")
                 for job in jobs:
-                    self.queue.mark_failed(job.job_id, "Agent wake failed")
+                    self.queue.mark_failed(job.job_id, "All agents in chain failed to wake")
                 continue
-            
+
+            agent = agent_woken
+
             # Process batch of jobs
-            logger.info(f"[BATCH] Processing {len(jobs)} jobs...")
+            logger.info(f"[BATCH] Processing {len(jobs)} jobs with {agent.agent_name}...")
             for job in jobs:
                 self.queue.mark_processing(job.job_id)
-                
+
                 result = agent.process_job(job.payload)
-                
+
                 if result.get("success"):
                     self.queue.mark_completed(job.job_id, result)
                     logger.info(f"[OK] Job {job.job_id} completed in {result.get('elapsed_ms', 0)}ms")
@@ -100,13 +127,13 @@ class WorkDispatcher:
                     self.queue.mark_failed(job.job_id, result.get("error", "Unknown error"))
                     logger.error(f"[FAIL] Job {job.job_id}: {result.get('error')}")
                     self.dispatch_stats["failed_jobs"] += 1
-                
+
                 total_jobs += 1
-            
+
             # Sleep agent (free memory)
             logger.info(f"[SLEEP] Returning agent to sleep...")
             agent.sleep()
-            logger.info(f"[METRIC] {agent_type} freed ~173 MB memory")
+            logger.info(f"[METRIC] {agent.agent_name} freed ~173 MB memory")
         
         # Summary
         logger.info(f"\n{'='*70}")
