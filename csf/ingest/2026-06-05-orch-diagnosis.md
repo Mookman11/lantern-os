@@ -49,19 +49,35 @@ self.agents = {
 
 **File:** `services/dispatcher/dispatcher.py`, lines 81–85
 
-When `agent.wake()` fails, jobs are immediately marked failed — the fallback chains defined in `agent-slots.json` are never followed.
+When `agent.wake()` fails, jobs are immediately marked failed:
+
+```python
+if not agent.wake():
+    logger.error(f"[ERROR] Failed to wake agent {agent_type}")
+    for job in jobs:
+        self.queue.mark_failed(job.job_id, "Agent wake failed")
+    continue
+```
+
+`agent-slots.json` defines `quotaTracking.fallbackAgent` for every slot (e.g. `claude-slot-1` → `codex-slot-1` → `gemini-slot-1` → `claude-slot-1`). These fallback chains are never followed; a single failed wake permanently fails the batch.
+
+Additionally, `agent.wake()` always tries to `docker start` even if the agent is already `AWAKE`. A pre-wake health check (or a guard on `agent.state`) should skip the wake attempt when the agent is already ready.
 
 **Fix required:**
-1. In `AgentController.wake()`, return `True` immediately when `self.state == AgentState.AWAKE`.
-2. In `WorkDispatcher.dispatch_work()`, when a wake fails, follow the slot's `fallbackAgent` chain before marking jobs failed.
+1. In `AgentController.wake()`, return `True` immediately (with no Docker call) when `self.state == AgentState.AWAKE`.
+2. In `WorkDispatcher.dispatch_work()`, when a wake fails, look up the slot's `fallbackAgent` from the loaded slot config and retry on that agent before marking jobs failed.
 
 ---
 
-## Bug 4 — Agent state is in-process only; not PCSF-persistent
+## Bug 4 — `AgentController` state is in-process only; not PCSF-persistent
 
-Agent state (`SLEEPING`, `WAKING`, `AWAKE`, `PROCESSING`) is held in-memory only. Process restarts reset all agents to `SLEEPING` and lose the state log. Health signals from `monitoring.alerts` in `agent-slots.json` can never persist across restarts.
+**File:** `services/dispatcher/agent_controller.py`
 
-**Fix required:** Write agent state transitions to a PCSF-compatible store on each `log_state()` call. Reload on `WorkDispatcher.__init__`.
+Agent state (`SLEEPING`, `WAKING`, `AWAKE`, `PROCESSING`) is held in-memory on the `AgentController` instance. If the dispatcher process restarts, all agents reset to `SLEEPING` and the state log is lost. There is no PCSF write-back of agent health or last-known state.
+
+This is lower priority than bugs 1–3 but means health signals from `monitoring.alerts` in `agent-slots.json` (`slotUnhealthy → remove_from_pool`) can never be persisted or acted on across restarts.
+
+**Fix required:** Write agent state transitions to a PCSF-compatible store (e.g. a JSON file under `csf/` or a Redis key) on each `log_state()` call. On `WorkDispatcher.__init__`, reload last-known state from that store before the first dispatch cycle.
 
 ---
 
@@ -69,20 +85,20 @@ Agent state (`SLEEPING`, `WAKING`, `AWAKE`, `PROCESSING`) is held in-memory only
 
 | File | Change |
 |---|---|
-| `work_queue.py` | Fix filter to re-queue non-matching jobs |
-| `dispatcher.py` | Load `agent-slots.json`; build agent pool; implement fallback chain |
-| `agent_controller.py` | Skip wake if already AWAKE; persist state to PCSF |
-| New: `slot_loader.py` | Parse `agent-slots.json`, expose fallback chain and affinity map |
+| `work_queue.py` | Fix `get_pending_jobs` filter to re-queue non-matching jobs, or move to per-type queues |
+| `dispatcher.py` | Load `agent-slots.json` on init; build agent pool from slots; implement fallback chain on wake failure; respect affinity rules |
+| `agent_controller.py` | Skip wake if already AWAKE; persist state to PCSF on each transition |
+| New: `slot_loader.py` | Parse `agent-slots.json`, expose slot → fallback chain and affinity map |
 
-Estimated diff: ~120–180 lines across four files.
+Estimated diff: ~120–180 lines of net-new/changed code across four files. Not reducible below 50 lines without leaving one of the critical routing gaps open.
 
 ---
 
-## Routing rules as they should work
+## Routing rules as they should work (from `agent-slots.json`)
 
 1. Incoming job carries `agent_type` (maps to slot responsibilities).
 2. Check affinity: `strategic_decisions → claude-slot-1`, `implementation_work → codex-slot-1`, `analysis_tasks → gemini-slot-1`, `engineering_work → devin-slot-1`.
-3. If primary slot healthy, wake and assign.
-4. If wake fails or quota ≥ 0.80, follow `fallbackAgent` chain.
-5. If all fallbacks exhausted, re-queue with backoff (do not mark failed).
-6. After processing, persist token-usage and health state to PCSF.
+3. If primary slot is healthy (`status == "ready"`, health-check passes), wake and assign.
+4. If primary slot fails wake or is at quota (`quotaUtilization >= 0.80`), follow `fallbackAgent` chain until a healthy slot is found.
+5. If all fallbacks exhausted, re-queue the job (do not mark failed) with a backoff timestamp.
+6. After processing, persist updated token-usage and health state to PCSF.
