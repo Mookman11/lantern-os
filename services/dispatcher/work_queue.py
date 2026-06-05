@@ -39,6 +39,7 @@ class WorkQueue:
     def get_pending_jobs(self, agent_type: str = None, limit: int = 100) -> List[JobSpec]:
         """Pop and return pending jobs, optionally filtered by agent type"""
         jobs = []
+        non_matching = []
         for _ in range(limit):
             job_json = self.redis_client.lpop(f"{self.queue_prefix}:pending")
             if job_json is None:
@@ -48,6 +49,13 @@ class WorkQueue:
 
             if agent_type is None or job.agent_type == agent_type:
                 jobs.append(job)
+            else:
+                # Collect non-matching jobs to re-queue — never discard
+                non_matching.append(job_json)
+
+        # Re-queue non-matching jobs before returning
+        for job_json in non_matching:
+            self.redis_client.rpush(f"{self.queue_prefix}:pending", job_json)
 
         return jobs
     
