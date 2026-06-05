@@ -33,7 +33,45 @@ class AgentController:
             "jobs_processed": 0,
             "total_processing_time": 0,
         }
+
+        # Load state from CSF if it exists
+        self._load_state_from_csf()
     
+    def _load_state_from_csf(self):
+        """Load last-known state from CSF storage"""
+        state_file = Path(__file__).parent.parent.parent / "csf" / "agent-state" / f"{self.agent_name}.json"
+        if state_file.exists():
+            try:
+                with open(state_file) as f:
+                    data = json.load(f)
+                    # Restore state, log, and metrics
+                    if "state" in data:
+                        self.state = AgentState(data["state"])
+                    if "metrics" in data:
+                        self.metrics = data["metrics"]
+                    if "state_log" in data:
+                        self.state_log = data["state_log"]
+            except Exception as e:
+                print(f"[WARNING] Failed to load state for {self.agent_name}: {str(e)}")
+
+    def _write_state_to_csf(self):
+        """Write current state to CSF storage"""
+        state_dir = Path(__file__).parent.parent.parent / "csf" / "agent-state"
+        state_dir.mkdir(parents=True, exist_ok=True)
+        state_file = state_dir / f"{self.agent_name}.json"
+        try:
+            with open(state_file, "w") as f:
+                json.dump({
+                    "agent_name": self.agent_name,
+                    "agent_type": self.agent_type,
+                    "state": self.state.value,
+                    "metrics": self.metrics,
+                    "state_log": self.state_log,
+                    "last_update": datetime.utcnow().isoformat()
+                }, f, indent=2)
+        except Exception as e:
+            print(f"[ERROR] Failed to write state for {self.agent_name}: {str(e)}")
+
     def log_state(self, new_state: AgentState, details: str = ""):
         """Log state transition"""
         transition = {
@@ -45,12 +83,19 @@ class AgentController:
         self.state_log.append(transition)
         self.state = new_state
         print(f"[{self.agent_name}] {self.state.value.upper()} - {details}")
+        # Persist to CSF
+        self._write_state_to_csf()
     
     def wake(self):
         """Wake agent from sleep"""
+        # If already awake, return immediately
+        if self.state == AgentState.AWAKE:
+            print(f"[WAKE] {self.agent_name} already AWAKE, skipping wake sequence")
+            return True
+
         print(f"\n[WAKE] {self.agent_name}...")
         self.log_state(AgentState.WAKING, "Initializing container")
-        
+
         try:
             # Docker: start container
             result = subprocess.run(

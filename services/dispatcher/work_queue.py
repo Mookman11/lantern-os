@@ -27,8 +27,13 @@ class WorkQueue:
         """Add job to queue"""
         job_dict = asdict(job)
         job_json = json.dumps(job_dict)
+        
+        # Add to pending queue
         self.redis_client.lpush(f"{self.queue_prefix}:pending", job_json)
+        
+        # Set job key for tracking
         self.redis_client.set(f"{self.queue_prefix}:job:{job.job_id}", job_json)
+        
         return job.job_id
     
     def get_pending_jobs(self, agent_type: str = None, limit: int = 100) -> List[JobSpec]:
@@ -76,6 +81,7 @@ class WorkQueue:
         job_dict = asdict(job)
         if result:
             job_dict["result"] = result
+        
         job_json = json.dumps(job_dict)
         self.redis_client.set(f"{self.queue_prefix}:job:{job_id}", job_json)
         self.redis_client.lpush(f"{self.queue_prefix}:completed", job_json)
@@ -86,6 +92,7 @@ class WorkQueue:
         job.status = "failed"
         job_dict = asdict(job)
         job_dict["error"] = error
+        
         job_json = json.dumps(job_dict)
         self.redis_client.set(f"{self.queue_prefix}:job:{job_id}", job_json)
         self.redis_client.lpush(f"{self.queue_prefix}:failed", job_json)
@@ -98,3 +105,22 @@ class WorkQueue:
             "completed": self.redis_client.llen(f"{self.queue_prefix}:completed"),
             "failed": self.redis_client.llen(f"{self.queue_prefix}:failed"),
         }
+
+if __name__ == "__main__":
+    # Test
+    queue = WorkQueue()
+    
+    job = JobSpec(
+        job_id="job_20260602_001",
+        agent_type="dream_journal",
+        priority=5,
+        payload={
+            "content": "Test dream",
+            "lucidity": 0.7
+        },
+        created_at=datetime.utcnow().isoformat()
+    )
+    
+    queue.enqueue_job(job)
+    print(f"Enqueued: {job.job_id}")
+    print(f"Stats: {queue.queue_stats()}")
