@@ -60,6 +60,11 @@ async function handleStreamChat(req, url, res) {
     ? (AGENT_PERSONAS.find((a) => a.id === requestedAgent) || selectAgent(message))
     : selectAgent(message);
 
+  // ── Keystone debug mode ───────────────────────────────────────────────
+  // When Keystone is selected, bypass persona/doors and talk raw to the model
+  // about app dev, repo state, and convergence. Direct API access from the UX.
+  const isKeystoneDebug = agent.id === "keystone";
+
   const dreamContext = recentDreams.length > 0
     ? `Recent journal entries:\n${recentDreams.slice(0, 3).map((d, i) =>
         `${i + 1}. ${String(d.text || d.content || "").slice(0, 200)}`
@@ -99,12 +104,27 @@ async function handleStreamChat(req, url, res) {
     : "";
 
   // Three Doors instruction — equally weighted future-tense canaries
-  // grounded in the last door opened and the dreamer's personal symbol mesh.
   const DOORS_INSTRUCTION = `\n\nAt the end of every response, imagine exactly 3 forward-facing doors — canaries the dreamer is sending ahead into their waking and dreaming life. Each door should be a brief, future-tense, equally weighted sensory or experiential path grounded in the last door mentioned and the dreamer's personal symbol mesh. All 3 should carry equal weight — no door is more important. They represent what the dreamer wants to see, hear, feel, taste, touch, or live. Write them as a single hidden line:
 [DOORS: door one | door two | door three]
 Rules: future tense, first person, short (under 8 words), no questions, no commands, equally weighted, rooted in the conversation and symbol mesh.${meshHint}`;
 
-  const systemPrompt = `${agent.systemPrompt}\n\n${dreamContext}${historyContext}\n\nTone: thoughtful, unhurried, human. Never clinical. Never sycophantic. Use the dreamer's own words back to them.${DOORS_INSTRUCTION}`;
+  // Keystone debug prompt — raw dev access, no persona, no doors
+  const KEYSTONE_DEBUG_PROMPT = `You are Keystone, a direct debug interface for Lantern OS development. You have access to the full repo context below. Respond as a senior engineer — concise, honest, actionable. No dream persona, no doors, no metaphors.
+
+Repo state:
+- Server: apps/lantern-garage/server.js (modular routes under routes/)
+- Streaming: lib/stream-chat.js (Gemini→Claude→OpenAI→Grok→Ollama chain)
+- Dream journal: ${allRecent.length} entries in data/dream_journal/
+- Providers configured: ${['GEMINI_API_KEY','ANTHROPIC_API_KEY','OPENAI_API_KEY','XAI_API_KEY'].filter(k => process.env[k]).join(', ') || 'none'}
+- Symbol mesh: ${symbolMesh.slice(0, 5).join(', ') || 'empty'}
+- Co-occurrence: ${topPairs || 'none'}
+${historyContext}
+
+Answer the developer's question directly. If they ask about code, reference file paths. If they ask about state, check the PCSF manifests in data/pcsf/. If they ask what to work on, check manifests/dream-journal-v1-agent-slots.json and csf/ingest/*.md.`;
+
+  const systemPrompt = isKeystoneDebug
+    ? KEYSTONE_DEBUG_PROMPT
+    : `${agent.systemPrompt}\n\n${dreamContext}${historyContext}\n\nTone: thoughtful, unhurried, human. Never clinical. Never sycophantic. Use the dreamer's own words back to them.${DOORS_INSTRUCTION}`;
 
   // Parse [DOORS: A | B | C] out of the full reply and return cleaned text + doors array
   function extractDoors(text) {
@@ -119,6 +139,8 @@ Rules: future tense, first person, short (under 8 words), no questions, no comma
   const FALLBACK_DOORS = ["Open the door I just described", "Take me through a different door", "Help me understand what I saw"];
 
   function doorsOrFallback(text) {
+    // Keystone debug mode: no doors, no parsing, raw text
+    if (isKeystoneDebug) return { cleanText: text.trim(), suggestions: [] };
     const { cleanText, doors } = extractDoors(text);
     const finalDoors = doors.length === 3 ? doors : [...doors, ...FALLBACK_DOORS].slice(0, 3);
     return { cleanText, suggestions: finalDoors };
