@@ -4,140 +4,312 @@
 [![Deploy](https://github.com/alex-place/lantern-os/actions/workflows/deploy.yml/badge.svg)](https://github.com/alex-place/lantern-os/actions/workflows/deploy.yml)
 [![Validate Dream Journal](https://github.com/alex-place/lantern-os/actions/workflows/validate-dream-journal.yml/badge.svg)](https://github.com/alex-place/lantern-os/actions/workflows/validate-dream-journal.yml)
 
-**Local-first OS cockpit for symbolic memory, agentic convergence, and dream journaling.**
+Lantern OS is a local-first operating cockpit for dream journaling, symbolic memory, agent-assisted workflows, and evidence-backed convergence.
 
-Built by Alex Place. All data stays on your machine. No accounts required.
+It combines a web app, local memory systems, MCP tooling, provider fallback, and a structured convergence loop so work can move from raw context to validated artifacts with clear receipts.
 
-**Current Focus (2026-06):** Dream Journal V1.0.0 Orion Edition + single-container web/Discord convergence.
+Current focus: Dream Journal Orion Edition, local/private agent workflows, and professional repo consolidation.
 
 ---
 
-## Purpose & Philosophy
+## Table of Contents
 
-Lantern OS is designed around three principles:
+1. [Overview](#overview)
+2. [Current Capabilities](#current-capabilities)
+3. [Dream Journal and Personas](#dream-journal-and-personas)
+4. [Getting Started](#getting-started)
+5. [Architecture](#architecture)
+6. [Core Concepts](#core-concepts)
+7. [PCSF Provider Capacity Fallback](#pcsf-provider-capacity-fallback)
+8. [Convergence and Receipts](#convergence-and-receipts)
+9. [Memory, RAG, and CSF/CADD](#memory-rag-and-csfcadd)
+10. [MCP and Agent Runtime](#mcp-and-agent-runtime)
+11. [Run Locally](#run-locally)
+12. [Testing and Validation](#testing-and-validation)
+13. [Documentation Map](#documentation-map)
+14. [Planned Documentation Migration](#planned-documentation-migration)
+15. [Contributing](#contributing)
+16. [Privacy](#privacy)
 
-1. **Local-first** — Your journal, memories, and agent conversations never leave your device unless you explicitly export them.
-2. **Privacy-first** — No telemetry, no cloud storage, no accounts. API keys are stored in `.env.local` (gitignored).
-3. **Agentic convergence** — Multiple AI agents (personas) route through a unified provider chain, converging on a single coherent response. The system learns from interaction patterns and stores them in a symbolic memory engine (CSF/CADD).
+---
 
-### What it does today
+## Overview
 
-| Component | Description |
-|-----------|-------------|
-| **Dream Journal** | Freeform RP chat interface. No hardcoded fields — just talk. Data stored in browser `localStorage` with JSONL export. Multi-provider AI streaming with persona routing. |
-| **Lantern Garage** | Node.js HTTP server (`apps/lantern-garage/server.js`) serving the Dream Journal UI and REST API on port 4177. |
-| **Convergence IO Engine** | 12-phase orchestrator (`src/convergence_io_engine.py`) that inspects repo state, identifies sources, validates health, and recommends next work items. |
-| **CSF / CADD Memory Engine** | Context Archive for Dream Data (`src/csf/memory_engine.py`). JSONL-based memory tiers (Trace -> Anchor -> Entity -> Skill -> Export) with keyword/entity inverted indexes. |
-| **Multi-Provider Gateway** | Unified connector (`src/unified_agent_connector.py`) routing to Gemini, Claude, OpenAI, Grok, and Ollama with health checks and fallback chains. |
-| **Discord Bot** | Slash-command Discord bot (`src/discord_lounge_bot/bot.py`) with role-gated tiered access, sharing the same convergence pipeline as the web UI. |
-| **MCP Server** | Model Context Protocol server (`src/mcp_server/server.py`) exposing repo health, task intake, fleet status, and skill dispatch to IDE agents (Windsurf/Cascade). |
-| **PWA** | Installable offline app (`apps/lantern-garage/public/sw.js`) with IndexedDB queue and background sync for offline dream creation. |
+Lantern OS is built around a simple operating model:
 
-### What is NOT in scope
+```text
+capture context
+  -> classify work
+  -> route through convergence
+  -> validate with receipts
+  -> store evidence in RAG / CSF
+  -> promote, hold, or archive
+```
 
-- No live trading or financial execution.
-- No production Stripe integration (payment bridge is a stub).
-- No actual outreach automation (outreach scripts are drafts only).
-- No cloud data storage — all journal data stays on your machine.
+The project is intentionally local-first. Runtime data, dream journal entries, local receipts, and private operational state are designed to stay on the operator machine unless explicitly exported.
+
+The README is intended as the public-facing entry point. Detailed runtime, convergence, and archive policies live in the linked docs and manifests.
+
+---
+
+## Current Capabilities
+
+| Area | Current Capability |
+|---|---|
+| Dream Journal | Freeform chat-style dream journal with local browser storage, JSONL export, and multi-turn chat flow. |
+| Lantern Garage | Node.js web server for the Dream Journal UI, API routes, static assets, and installable PWA surface. |
+| Persona Routing | Symbolic personas route messages through the same provider/backend pipeline with different system prompts. |
+| Convergence Loop | 12-step operating method for inspection, evidence mapping, validation, and promotion decisions. |
+| Agent Fleet Design | 36-slot convergence-agent matrix with a 64-worker elastic target as a planning and receipt contract. |
+| CSF/CADD | Symbolic memory/archive path for structured, searchable, convergence-fitted data. |
+| Internal RAG House | Source-linked evidence index with paths, hashes, and evidence classes. |
+| MCP Connector | Local-first connector path for verifying tools, endpoints, and agent-facing runtime surfaces. |
+| Provider Gateway | Multi-provider routing for local and external model access where configured. |
+| PCSF | Provider Capacity Safety Frame for capacity class, fallback routing, and provider/local claim clarity. |
+| Discord Bot | Optional Discord integration using the same broader convergence and access model. |
+
+---
+
+## Dream Journal and Personas
+
+The Dream Journal is the main user-facing surface. It is designed for conversational capture instead of rigid forms.
+
+| Surface | Description |
+|---|---|
+| Dream Journal chat | Freeform local journaling flow for dreams, memories, symbolic material, and follow-up reflection. |
+| Local export | JSONL-style export path for portable review and future CSF/CADD ingestion. |
+| PWA mode | Browser-installable surface with offline-friendly behavior where supported. |
+| Provider routing | Uses configured local or external providers through the unified connector. |
+
+Lantern personas provide different interaction modes over the same backend pipeline.
+
+| Persona | Routing cues | Role |
+|---|---|---|
+| Keystone | truth, pattern, anchor | Grounded integration and direct technical review. |
+| Waterfall | water, reconnection, patient reflection | Gentle reflective mode. |
+| Xenon | spacecraft, navigation, exploration | Exploratory and collaborative mode. |
+| Blinkbug | static, glitch, chaos | Creative divergent mode. |
+| Comet Leap | trajectory, momentum, flourishing | Fast synthesis and execution framing. |
+| Founder | wish, protection, lantern | Protective operator-oriented framing. |
+
+---
+
+## Getting Started
+
+For the main local web surface:
+
+```bash
+npm start --prefix apps/lantern-garage
+```
+
+Open:
+
+```text
+http://127.0.0.1:4177
+```
+
+The longer local setup, optional MCP server, optional Discord bot, and validation commands are listed below.
 
 ---
 
 ## Architecture
 
-```
+```text
 lantern-os/
 ├── apps/
-│   └── lantern-garage/          # Node.js web server + Dream Journal UI
-│       ├── server.js             # Entry point (90 lines, loads routes)
-│       ├── routes/               # 7 domain route modules
-│       ├── lib/                  # streaming, chat, store modules
-│       └── public/               # HTML surfaces, PWA manifest, service worker
+│   └── lantern-garage/          # Web server, Dream Journal UI, REST API, PWA assets
+│       ├── server.js            # Main Node.js entry point
+│       ├── routes/              # Domain API routes
+│       ├── lib/                 # Chat, streaming, and storage helpers
+│       └── public/              # Browser UI, manifest, service worker
 ├── src/
-│   ├── convergence_io_engine.py  # 12-phase orchestrator (health, inspect, loop, converge)
-│   ├── unified_agent_connector.py# Multi-provider AI gateway with health checks
-│   ├── csf/
-│   │   └── memory_engine.py      # Symbolic memory engine (JSONL tiers + indexes)
-│   ├── mcp_server/
-│   │   └── server.py             # MCP tools for IDE integration
-│   ├── discord_lounge_bot/
-│   │   └── bot.py                # Discord slash-command bot
-│   └── hff-api/                  # Research API (bias monitoring, public datasets)
+│   ├── convergence_io_engine.py # Convergence inspection and orchestration
+│   ├── unified_agent_connector.py
+│   ├── csf/                     # CSF memory/archive components
+│   ├── mcp_server/              # MCP server and local agent tool surface
+│   └── discord_lounge_bot/      # Discord integration
 ├── data/
-│   └── pcsf/                     # Provider Convergence State Files (health, models, agents)
-├── manifests/                    # System manifests, architecture docs, work queues
-├── csf/ingest/                   # CSF ingestion docs = task queue (pick one and implement)
-├── tests/                        # Node.js + Python test suites
-├── docs/                         # User guides, quickstarts, connector docs
-└── scripts/                      # Utility scripts, validation, orchestration
+│   ├── internal-rag-house/      # Source-linked internal RAG index
+│   └── pcsf/                    # Provider capacity and agent state files
+├── manifests/                   # Contracts, validation receipts, repo state, gates
+├── csf/ingest/                  # CSF/CADD ingest queue and implementation notes
+├── docs/                        # User, architecture, connector, and operating docs
+├── scripts/                     # Local validation, export, orchestration, setup scripts
+└── tests/                       # Node.js and Python tests
 ```
 
 ---
 
-## The Convergence System
+## Core Concepts
 
-Lantern OS uses a **Tesseract Engine** with 4 layers that route work from fast/fault-tolerant (inner) to slow/deliberate (outer):
-
-| Layer | Name | Role |
-|-------|------|------|
-| 1 | **Surface** | Persona matching, keyword routing, quick replies |
-| 2 | **Interface** | Provider selection, health checks, rate-limit handling |
-| 3 | **Convergence** | MemOS semantic retrieval, RAG fallback, context assembly |
-| 4 | **Core** | Model inference, streaming, response generation |
-
-The **Convergence IO Engine** (`src/convergence_io_engine.py`) runs a 12-phase loop:
-
-```bash
-# Check system health
-python src/convergence_io_engine.py health
-
-# Run the full convergence loop
-python src/convergence_io_engine.py loop
-
-# Ask the orchestrator what to work on next
-python src/convergence_io_engine.py converge --message "what should I work on next" --persona keystone
-
-# Inspect slots, metrics, and circuits
-python src/convergence_io_engine.py inspect
-```
-
-Read the full architecture in `manifests/TESSERACT-ARCHITECTURE.md`.
+| Concept | Role |
+|---|---|
+| Convergence Loop | The operating and release-decision method. |
+| Convergence Agent Fleet | A 36-slot planning, dispatch, and receipt matrix based on the 12-step loop. |
+| Action Pooling | A method for grouping similar low-risk work into typed queues. |
+| MCP Connector | The local verification surface for agent tools and runtime capability. |
+| Internal RAG House | A source-linked evidence index for repo files, hashes, and receipts. |
+| CSF | Convergence-Fitted Searchable Archive for structured symbolic data. |
+| CADD | Capture, Assess, Distill, Dock pipeline for moving material into CSF. |
+| PCSF | Provider Capacity Safety Frame for routing capacity and fallback decisions. |
 
 ---
 
-## Agent System
+## PCSF Provider Capacity Fallback
 
-Lantern OS uses **6 symbolic personas** that route based on keyword matching in user messages:
+PCSF means **Provider Capacity Safety Frame**.
 
-| Persona | Symbol | Vibe |
-|---------|--------|------|
-| **Keystone** | truth, pattern, anchor | Grounded integrator |
-| **Waterfall** | water flowing, reconnection | Gentle, healing, patient |
-| **Xenon** | spacecraft, navigation | Exploratory, collaborative |
-| **Blinkbug** | static, glitch, chaos | Chaotic, creative, unhinged |
-| **Comet Leap** | trajectory, momentum | Fast, energetic, flourishing |
-| **Founder** | wish, protection, lantern | Protective, honest, grounded |
+PCSF is the project’s capacity and fallback layer. It keeps local, private, server-side, and external-provider work clearly labeled.
 
-All personas share the same multi-provider backend but receive different system prompts. The **Keystone** persona can bypass the normal flow for raw dev/debug access.
+Lantern OS can operate across several capacity lanes:
 
-The agent system is described in detail in `src/unified_agent_connector.py` and `data/pcsf/agent.pcsf.json`.
+| Capacity Lane | Description |
+|---|---|
+| Local operator machine | Local scripts, repo checks, browser storage, local services, and local model endpoints. |
+| Private orchestrator / MCP | Registered local agent slots, tool descriptors, dispatch gates, and local runtime receipts. |
+| Server-farm candidate lane | Inventoried machines, local model endpoints, storage, networking, and runtime health receipts. |
+| Provider-backed lane | External AI/API services, CI runners, hosted tooling, and other metered or account-backed services. |
+| Manual operator lane | Human approval, physical actions, account actions, publishing, and hardware changes. |
+
+The PCSF rule is:
+
+```text
+Describe capacity by evidence class, source, privacy boundary, and fallback path.
+```
+
+Capacity-sensitive receipts should use fields like:
+
+```json
+{
+  "generatedAt": "...",
+  "capacityClass": "designed_capacity",
+  "provider": "local",
+  "metered": false,
+  "privacyBoundary": "internal",
+  "localProof": "path-or-not_observed",
+  "providerProof": "path-or-citation-or-not_used",
+  "fallbackUsed": false,
+  "claimBoundary": "design_or_validated_or_live"
+}
+```
+
+Provider-backed work is labeled separately from local/offline work. Local/offline work is treated as internal capacity bounded by hardware, queue time, storage, network, power, thermals, maintenance, and operator policy.
 
 ---
 
-## How to run
+## Convergence and Receipts
 
-### Prerequisites
+Lantern OS uses a 12-step convergence loop:
 
-```bash
-node --version   # v20 or higher
-python --version # 3.11 or higher (optional, for MCP + Convergence IO)
+1. Inspect current repo state.
+2. Identify source repos and dirty state.
+3. Read manifests and open issues.
+4. State the next safest objective.
+5. Retire old surfaces or label them clearly.
+6. Map claims to evidence.
+7. Classify capability, boundary, and rollback path.
+8. Run the cheapest relevant validation checks.
+9. Fix the first 2–4 actionable failures.
+10. Re-run validation.
+11. Record evidence and remaining blockers.
+12. Promote, hold, or reject artifacts.
+
+The convergence-agent design maps those 12 steps into a 36-slot matrix:
+
+```text
+12 convergence steps x 3 review roles = 36 ring slots
 ```
 
-### Local (default)
+Each convergence step should produce a receipt containing:
+
+```json
+{
+  "step": 1,
+  "stepName": "Inspect current repo state",
+  "primaryAgent": "Repo-state inspector",
+  "backupA": "Git/status verifier",
+  "backupB": "File-surface verifier",
+  "evidence": [],
+  "claims": [],
+  "boundaries": [],
+  "validation": "pass | fail | held | not_run",
+  "rollback": "short rollback path",
+  "nextAction": "smallest useful next move"
+}
+```
+
+---
+
+## Memory, RAG, and CSF/CADD
+
+Lantern OS uses multiple memory and evidence layers.
+
+| Layer | Purpose |
+|---|---|
+| Browser/local app storage | Local Dream Journal and UI state. |
+| JSONL exports | Portable structured event and journal data. |
+| Internal RAG House | Source-linked repo evidence, paths, hashes, and index files. |
+| CSF | Searchable, convergent, symbolic archive format for structured data. |
+| CADD | Capture, Assess, Distill, Dock pipeline for moving material into CSF. |
+
+CADD flow:
+
+```text
+Capture
+  -> Assess
+      -> Distill
+          -> Dock
+```
+
+A typical receipt flow:
+
+```text
+convergence receipt
+  -> validation JSON
+      -> Internal RAG index
+          -> CSF/CADD archive candidate
+              -> release or migration decision
+```
+
+---
+
+## MCP and Agent Runtime
+
+Lantern OS includes an MCP server for local tool and agent integration.
+
+The MCP path is used to verify:
+
+| Runtime Surface | Purpose |
+|---|---|
+| MCP server health | Confirms the local server is reachable. |
+| Tool discovery | Captures the tools actually exposed by the runtime. |
+| Agent registration | Tracks callable agent slots and heartbeat status. |
+| Dispatch gate | Keeps runtime dispatch operator-controlled. |
+| Receipts | Records proof of runtime state and task results. |
+
+The orchestrator dependency currently centers on named agent slots such as Claude, Codex, Gemini, and GPT, each of which must register, discover tools, bind context, and remain callable through the operator-controlled dispatch path.
+
+---
+
+## Run Locally
+
+Prerequisites:
 
 ```bash
-# Start the main web server
+node --version
+python --version
+```
+
+Start the main web server:
+
+```bash
 node apps/lantern-garage/server.js
-# opens at http://127.0.0.1:4177
+```
+
+Open:
+
+```text
+http://127.0.0.1:4177
 ```
 
 Or with npm:
@@ -146,97 +318,141 @@ Or with npm:
 npm start --prefix apps/lantern-garage
 ```
 
-### All services
+Optional MCP server:
 
 ```bash
-# Terminal 1 — Garage (web UI + API)
-node apps/lantern-garage/server.js
-
-# Terminal 2 — MCP Server (optional, for IDE integration)
 python src/mcp_server/server.py
+```
 
-# Terminal 3 — Discord Bot (requires DISCORD_BOT_TOKEN)
+Optional Discord bot:
+
+```bash
 python src/discord_lounge_bot/bot.py
 ```
 
-### Cloud (Railway)
-
-Railway auto-deploys from `master`. Set `PORT` in Railway environment variables; the server binds to `0.0.0.0` when `PORT` is present.
-
-### Static UI (GitHub Pages)
-
-Static surfaces deploy from the `gh-pages` branch via GitHub Actions in `.github/workflows/`.
-
 ---
 
-## Testing
+## Testing and Validation
+
+Core checks:
 
 ```bash
-# Node.js API tests (requires running server)
-node tests/test_dream_journal_api.js       # 18 tests
-node tests/test_dream_chat_multiturns.js     # 11 tests
-
-# Python tests
-python -m pytest tests/ -q --tb=short --ignore=tests/test_anti_entropy_memory.py --ignore=tests/test_audit_chain.py --ignore=tests/test_discord_bot.py --ignore=tests/test_discord_voice_gate.py
-
-# Validate from garage directory
+node tests/test_dream_journal_api.js
+node tests/test_dream_chat_multiturns.js
 npm run validate --prefix apps/lantern-garage
+```
+
+Python checks:
+
+```bash
+python -m pytest tests/ -q --tb=short
+```
+
+Convergence fleet count validation:
+
+```bash
+python scripts/Test-ConvergenceAgentFleet.py --write-json manifests/validation/CONVERGENCE-FLEET-LATEST.json
+```
+
+MCP connector validation:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Test-LanternMcpConnector.ps1
+```
+
+Internal RAG update:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Update-InternalHouseRag.ps1
 ```
 
 ---
 
-## Documentation
+## Documentation Map
 
 | Document | Purpose |
-|----------|---------|
-| **[AGENTS.md](AGENTS.md)** | Critical reading for AI coding agents. Token-saving contract, real-vs-design rules, monoworkstream workflow, key file locations. **Read this first before editing.** |
-| **[CONTRIBUTING.md](CONTRIBUTING.md)** | Dev setup, branch conventions, repo contract, code style, secrets policy. |
-| **[CHANGELOG.MD](CHANGELOG.MD)** | Release notes, known bugs, verification status. |
-| **[docs/DREAM-JOURNAL-USER-GUIDE.md](docs/DREAM-JOURNAL-USER-GUIDE.md)** | Full user guide for the Dream Journal chat interface. |
-| **[docs/DREAM-JOURNAL-QUICKSTART.md](docs/DREAM-JOURNAL-QUICKSTART.md)** | Quick-start guide for new users. |
-| **manifests/TESSERACT-ARCHITECTURE.md** | 4-layer hypercube architecture deep-dive. |
-| **csf/ingest/*.md** | CSF ingestion docs = the task queue. Each file has problem + implementation sketch + files to change. |
+|---|---|
+| [AGENTS.md](AGENTS.md) | Required operating instructions for AI coding agents. |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Development workflow, branch model, and repo rules. |
+| [docs/DREAM-JOURNAL-USER-GUIDE.md](docs/DREAM-JOURNAL-USER-GUIDE.md) | Dream Journal user guide. |
+| [docs/DREAM-JOURNAL-QUICKSTART.md](docs/DREAM-JOURNAL-QUICKSTART.md) | Dream Journal quick start. |
+| [docs/CONVERGENCE-LOOP.md](docs/CONVERGENCE-LOOP.md) | 12-step convergence operating method. |
+| [manifests/CONVERGENCE-LOOP-AGENT-FLEET.md](manifests/CONVERGENCE-LOOP-AGENT-FLEET.md) | 36-slot convergence-agent design and receipt contract. |
+| [docs/MCP-CONNECTOR.md](docs/MCP-CONNECTOR.md) | Local-first MCP connector and safety contract. |
+| [docs/LANTERN-ORCHESTRATOR-DEPENDENCY.md](docs/LANTERN-ORCHESTRATOR-DEPENDENCY.md) | Agent slot registration, dispatch gate, and orchestrator dependency. |
+| [docs/ACTION-POOLING-AND-BATCHING.md](docs/ACTION-POOLING-AND-BATCHING.md) | Work pooling and batching method. |
+| [docs/CSF-FORMAT-SPECIFICATION.md](docs/CSF-FORMAT-SPECIFICATION.md) | CSF archive format specification. |
+| [caad/dollhouse-csf-upgrade.md](caad/dollhouse-csf-upgrade.md) | CADD intake flow for CSF archives. |
+| [docs/PUBLIC-REPORT-EVIDENCE-BOUNDARY.md](docs/PUBLIC-REPORT-EVIDENCE-BOUNDARY.md) | Evidence and claim-labeling guidance for reports. |
+| [docs/REPO-CONTRACT.md](docs/REPO-CONTRACT.md) | Repository scope and cleanup contract. |
 
 ---
 
-## IDE Integration (Windsurf / Cascade MCP)
+## Planned Documentation Migration
 
-The Lantern OS MCP server links to Windsurf/Cascade via a stdio bridge.
+The repository is being consolidated so SCM contains source code, tests, deployable scripts, active manifests, validation receipts, and code-facing documentation.
 
-1. Start the MCP server:
-   ```bash
-   python src/mcp_server/server.py
-   ```
-2. Windsurf reads `.windsurf/mcp.json` and connects through `scripts/mcp_stdio_bridge.py`.
-3. Exposed tools: `queue_status`, `task_intake`, `dispatch_work`, `boot_check`, `list_skills`, `get_status`, `fleet_status`.
+Historical packets, large generated artifacts, screenshots, narrative archives, old planning bundles, and non-runtime evidence collections are planned for migration to external archive storage such as Google Drive.
 
----
+Planned migration process:
 
-## Deployed URLs
+1. Classify files using `docs/REPO-CONTRACT.md`.
+2. Export non-SCM material into a dated archive bundle.
+3. Generate a manifest with source path, destination path, hash, and reason.
+4. Upload the archive bundle to Google Drive or external archive storage.
+5. Keep a small SCM pointer manifest with archive title, date, hash, and summary.
+6. Retire or remove migrated files from active repo surfaces after review.
+7. Re-run validation and update the internal RAG index.
 
-| Environment | URL | Description |
-|-------------|-----|-------------|
-| **GitHub Pages** | https://alex-place.github.io/lantern-os/ | Static UI (pitch, proof, pricing, wish-door, dream-journal) |
-| **Repository** | https://github.com/alex-place/lantern-os | Source code, issues, PRs |
+Suggested archive naming convention:
+
+```text
+Lantern OS Non-SCM Archive - YYYY-MM-DD
+```
+
+Suggested SCM pointer file:
+
+```text
+manifests/external-archives/LANTERN-OS-NON-SCM-ARCHIVE-YYYY-MM-DD.md
+```
+
+Suggested pointer format:
+
+```md
+# Lantern OS Non-SCM Archive - YYYY-MM-DD
+
+Storage: Google Drive
+Archive title: Lantern OS Non-SCM Archive - YYYY-MM-DD
+Archive type: documentation / evidence / historical packet
+Manifest hash: ...
+Created by: operator
+Repo cleanup status: pending | complete
+Summary:
+- ...
+```
 
 ---
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for full details.
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
-Quick reference:
-- Branch off `master`: `<type>/<short-description>` (e.g., `feat/convergence-io-tier`, `fix/mcp-dotenv`)
-- One open PR at a time (monoworkstream rule)
-- Both Node.js and Python test suites must pass before merging
-- Never commit secrets — `.env` and `data/dream_journal/` are gitignored
+Quick workflow:
+
+```text
+branch from master
+  -> make one logical change
+      -> run relevant validation
+          -> update receipts/manifests if needed
+              -> open reviewable PR
+```
+
+Before adding new files, check `docs/REPO-CONTRACT.md` and prefer the smallest durable surface that helps ship or validate the product.
 
 ---
 
-## License & Privacy
+## Privacy
 
-All dream journal data is stored locally in your browser and in `data/dream_journal/` (gitignored). See [PRIVACY_AND_OFFLINE.md](PRIVACY_AND_OFFLINE.md) for the family-marketing privacy stance.
+Lantern OS is local-first. Dream journal data and local runtime receipts are designed to remain on the operator machine unless explicitly exported.
 
----
-
-*Last updated: 2026-06-05 — Dream Journal Orion Edition v1.0.0*
+Secrets, API keys, local credentials, private folders, and personal runtime data should remain outside source control. Use local `.env` files and gitignored runtime directories for private configuration.
