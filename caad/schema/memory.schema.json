@@ -8,7 +8,7 @@
     "memory_id": { "type": "string", "pattern": "^[a-z0-9_-]+$" },
     "tier": {
       "type": "string",
-      "enum": ["trace", "correction", "anchor", "entity", "relation", "ritual", "skill", "export"]
+      "enum": ["trace", "correction", "anchor", "entity", "relation", "ritual", "skill", "procedural", "export"]
     },
     "created_at": { "type": "string", "format": "date-time" },
     "updated_at": { "type": "string", "format": "date-time" },
@@ -50,6 +50,38 @@
       "type": "array",
       "items": { "type": "number" },
       "description": "Optional semantic embedding for similarity search"
+    },
+    "keywords": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Extracted keywords for BM25 keyword retrieval"
+    },
+    "entities": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Extracted named entities for entity-overlap scoring"
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Structured metadata for scoped filtering (project, time range, etc.)"
+    },
+    "actor_id": {
+      "type": "string",
+      "description": "Identifier of the actor that created this memory"
+    },
+    "actor_type": {
+      "type": "string",
+      "enum": ["user", "agent", "system", "inferred"],
+      "description": "Type of actor that originated this memory"
+    },
+    "confidence_reasoning": {
+      "type": "string",
+      "description": "Explanation for why this memory exists and its confidence level"
+    },
+    "staleness_signals": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Signals indicating this memory may be stale or contradicted"
     }
   },
   "definitions": {
@@ -133,6 +165,17 @@
         "tested": { "type": "boolean", "default": false },
         "test_results": { "type": "array", "items": { "type": "object" } },
         "crystallized_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "ProceduralContent": {
+      "type": "object",
+      "required": ["name", "steps"],
+      "properties": {
+        "name": { "type": "string" },
+        "steps": { "type": "array", "items": { "type": "string" } },
+        "tool_invocations": { "type": "array", "items": { "type": "string" } },
+        "success_rate": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "last_applied_at": { "type": "string", "format": "date-time" }
       }
     },
     "ExportContent": {
