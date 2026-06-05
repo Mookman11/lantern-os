@@ -34,7 +34,7 @@ async function writeTextQueued(filePath, text) {
 
 function readText(relativePath, fallback = "") {
   try {
-    return fs.readFileSync(path.join(path.resolve(__dirname, "..", ".."), relativePath), "utf8").replace(/^\uFEFF/, "");
+    return fs.readFileSync(path.join(path.resolve(__dirname, "..", "..", ".."), relativePath), "utf8").replace(/^\uFEFF/, "");
   } catch {
     return fallback;
   }
