@@ -32,7 +32,16 @@ Choose your surface:
 
 **Lantern Garage:** Open your browser to **http://127.0.0.1:4177** for the full dashboard with analytics.
 
-### 2. Create Your First Entry
+### 2. Debug & Analytics Panel
+In the chat interface, click the **📊 button** in the bottom-right corner or press the **D** key to toggle the analytics panel. It shows:
+- Session duration, messages sent, tokens received
+- Errors, fallbacks, average latency
+- Last provider used and active agent
+- Real-time event log
+
+You can also type **!debug** in the chat input to toggle the panel.
+
+### 3. Create Your First Entry
 Click **Dreamer** or **New Entry** and you'll see a form with:
 - **Type:** What kind of entry (dream, note, memory, etc.)
 - **Text:** What you remember or want to record
