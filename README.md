@@ -15,9 +15,7 @@ Local-first OS cockpit built by Alex Place.
 | **Dream Journal** | Freeform RP chat interface. No hardcoded fields — just talk. Chat at top, fixed input bar at bottom. Data stored in browser localStorage with JSONL export. |
 | **Lantern Garage server** | Node.js HTTP server (`apps/lantern-garage/server.js`). Serves the Dream Journal UI and REST API on port 4177. |
 | **Imagniverse / status cube** | 4D routing matrix for Lantern OS state — a routing and inspection interface, not physical hardware. Lives in `surfaces/`. |
-| **Payment bridge** | Stub for Stripe invoice workflows (`apps/lantern-garage/payment-bridge/`). Not connected to a live Stripe account. |
 | **CSF / CADD** | Convergence-Fitted Searchable Binary Archive format (v1.0 spec) + Context Archive for Dream Data. Used for memory exports and symbolic data compression. |
-| **GitHub Pages / Netlify static UI** | Static surfaces deployed from `apps/lantern-garage/public/` (pitch, proof, pricing, wish-door, dream-journal). |
 
 ## What is NOT in scope
 
@@ -31,7 +29,6 @@ Local-first OS cockpit built by Alex Place.
 | Service | URL | Description |
 |---------|-----|-------------|
 | **Lantern Garage** | http://127.0.0.1:4177 | Main web server |
-| **Dream Journal (Orion)** | http://127.0.0.1:4177/dream-chat-orion.html | Clean V1 chat interface |
 | **Dream Journal (Classic)** | http://127.0.0.1:4177/dream-chat.html | Original chat UI |
 
 ## How to run
@@ -118,7 +115,7 @@ The Lantern OS MCP server is linked to Windsurf/Cascade via a stdio bridge.
 
 ## Backlog
 
-Linear is the source of truth for the backlog. GitHub Issues are intake only and may lag behind Linear.
+ GitHub Issues
 
 ## Contributing
 
