@@ -1,8 +1,6 @@
 {
   "mcpServers": {
     "lantern-os": {
-      "name": "Lantern OS MCP",
-      "transport": "stdio",
       "command": "python",
       "args": [
         "scripts/mcp_stdio_bridge.py"
@@ -10,8 +8,7 @@
       "env": {
         "MCP_SERVER_URL": "http://127.0.0.1:8771",
         "PYTHONPATH": "src"
-      },
-      "description": "Lantern OS Model Context Protocol server — task queue, agent dispatch, skill registry, fleet status"
+      }
     }
   }
 }
