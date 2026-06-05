@@ -38,6 +38,7 @@ class Tier(str, Enum):
     RELATION = "relation"
     RITUAL = "ritual"
     SKILL = "skill"
+    PROCEDURAL = "procedural"
     EXPORT = "export"
 
 
@@ -72,6 +73,13 @@ class MemoryRecord:
     agents: List[str] = field(default_factory=list)
     checksum: str = ""
     vector_embedding: Optional[List[float]] = None
+    keywords: List[str] = field(default_factory=list)
+    entities: List[str] = field(default_factory=list)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    actor_id: str = ""
+    actor_type: str = "system"  # user | agent | system | inferred
+    confidence_reasoning: str = ""
+    staleness_signals: List[str] = field(default_factory=list)
 
     def __post_init__(self):
         if not self.checksum:
@@ -137,6 +145,7 @@ class MemoryEngine:
         self.base.mkdir(parents=True, exist_ok=True)
         for part in CubePartition:
             (self.base / part.value).mkdir(exist_ok=True)
+        self._pending: List[Any] = []  # async write queue
 
     def _path(self, record: MemoryRecord) -> Path:
         tier_dir = self.base / record.cube_partition.value / record.tier.value
@@ -154,6 +163,27 @@ class MemoryEngine:
             json.dump(record.to_dict(), f, indent=2, ensure_ascii=False, default=str)
         self._append_registry(record)
         return path
+
+    def write_async(self, record: MemoryRecord):
+        """Fire-and-forget async write. Tracks pending queue depth."""
+        import asyncio
+        task = asyncio.create_task(self._async_write(record))
+        self._pending.append(task)
+        task.add_done_callback(lambda t: self._pending.remove(t) if t in self._pending else None)
+        return task
+
+    async def _async_write(self, record: MemoryRecord):
+        record.updated_at = _now()
+        record.checksum = record._compute_checksum()
+        path = self._path(record)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(record.to_dict(), f, indent=2, ensure_ascii=False, default=str)
+        self._append_registry(record)
+        return path
+
+    @property
+    def pending_queue_depth(self) -> int:
+        return len([t for t in self._pending if not t.done()])
 
     def _append_registry(self, record: MemoryRecord):
         reg = self._registry_path(record.cube_partition)
@@ -177,10 +207,21 @@ class MemoryEngine:
         tags: Optional[List[str]] = None,
         min_confidence: float = 0.0,
         source_surface: Optional[str] = None,
+        metadata_filter: Optional[Dict[str, Any]] = None,
+        keywords: Optional[List[str]] = None,
+        entities: Optional[List[str]] = None,
         limit: int = 100,
+        use_multi_signal: bool = False,
     ) -> List[MemoryRecord]:
+        """Query memory records with optional multi-signal retrieval.
+
+        When use_multi_signal=True and keywords/entities are provided,
+        results are scored and ranked by fused semantic + keyword + entity signals.
+        """
         results: List[MemoryRecord] = []
+        scored: List[tuple[float, MemoryRecord]] = []
         partitions = [partition] if partition else list(CubePartition)
+
         for part in partitions:
             reg = self._registry_path(part)
             if not reg.exists():
@@ -204,10 +245,52 @@ class MemoryEngine:
                         continue
                     if tags and not any(t in rec.tags for t in tags):
                         continue
-                    results.append(rec)
-                    if len(results) >= limit:
-                        return results
+                    if metadata_filter and not self._metadata_matches(rec.metadata, metadata_filter):
+                        continue
+
+                    if use_multi_signal and (keywords or entities):
+                        score = self._multi_signal_score(rec, keywords or [], entities or [])
+                        scored.append((score, rec))
+                    else:
+                        results.append(rec)
+                        if len(results) >= limit:
+                            return results
+
+        if use_multi_signal and scored:
+            scored.sort(key=lambda x: x[0], reverse=True)
+            return [rec for _, rec in scored[:limit]]
         return results
+
+    @staticmethod
+    def _metadata_matches(record_meta: Dict[str, Any], filter_meta: Dict[str, Any]) -> bool:
+        """Check if record metadata contains all filter key-value pairs."""
+        for key, value in filter_meta.items():
+            if key not in record_meta:
+                return False
+            if record_meta[key] != value:
+                return False
+        return True
+
+    @staticmethod
+    def _multi_signal_score(
+        rec: MemoryRecord,
+        query_keywords: List[str],
+        query_entities: List[str],
+    ) -> float:
+        """Fused retrieval score: semantic 0.5 + keyword 0.3 + entity 0.2."""
+        semantic = 0.5  # Placeholder: vector similarity would be computed externally
+        keyword_score = 0.0
+        entity_score = 0.0
+
+        if query_keywords and rec.keywords:
+            matched = sum(1 for kw in query_keywords if kw.lower() in [k.lower() for k in rec.keywords])
+            keyword_score = matched / max(len(query_keywords), 1)
+
+        if query_entities and rec.entities:
+            matched = sum(1 for ent in query_entities if ent.lower() in [e.lower() for e in rec.entities])
+            entity_score = matched / max(len(query_entities), 1)
+
+        return semantic * 0.5 + keyword_score * 0.3 + entity_score * 0.2
 
     def promote(
         self,
@@ -267,7 +350,7 @@ def _next_cube(current: CubePartition, target_tier: Tier) -> CubePartition:
     """Determine cube partition based on tier promotion."""
     if target_tier == Tier.EXPORT:
         return CubePartition.ARCHIVE
-    if target_tier in (Tier.SKILL, Tier.RITUAL):
+    if target_tier in (Tier.SKILL, Tier.RITUAL, Tier.PROCEDURAL):
         return CubePartition.CANON
     if target_tier in (Tier.ENTITY, Tier.RELATION, Tier.ANCHOR):
         return CubePartition.REFINED
@@ -391,3 +474,61 @@ def create_skill(
         rec.promoted_from = source_ritual_id
         rec.promotion_chain = [f"ritual→skill"]
     return rec
+
+
+def create_procedure(
+    name: str,
+    steps: List[str],
+    tool_invocations: Optional[List[str]] = None,
+    confidence: float = 0.6,
+    privacy_scope: PrivacyScope = PrivacyScope.INTERNAL,
+    source_trace_id: Optional[str] = None,
+) -> MemoryRecord:
+    """Factory: create a procedural memory record (how-to workflow)."""
+    rec = MemoryRecord(
+        memory_id=f"proc_{name.lower().replace(' ', '_')}_{uuid.uuid4().hex[:6]}",
+        tier=Tier.PROCEDURAL,
+        created_at=_now(),
+        updated_at=_now(),
+        content={
+            "name": name,
+            "steps": steps,
+            "tool_invocations": tool_invocations or [],
+            "success_rate": 0.0,
+            "invocation_count": 0,
+            "last_applied_at": None,
+        },
+        confidence=confidence,
+        privacy_scope=privacy_scope,
+        cube_partition=CubePartition.CANON,
+    )
+    if source_trace_id:
+        rec.promoted_from = source_trace_id
+        rec.promotion_chain = [f"trace→procedural"]
+    return rec
+
+
+def check_staleness(record: MemoryRecord, candidate: MemoryRecord, threshold: float = 0.7) -> bool:
+    """Lightweight contradiction check between two same-entity memories.
+
+    Returns True if candidate contradicts record (same entity, conflicting content).
+    When True, caller should halve confidence of the older record.
+    """
+    if record.memory_id == candidate.memory_id:
+        return False
+    # Simple heuristic: same entity name in content but different key values
+    old_name = record.content.get("name", "")
+    new_name = candidate.content.get("name", "")
+    if old_name and new_name and old_name == new_name:
+        # Check for conflicting fields (description, employer, location, etc.)
+        conflict_fields = ["description", "employer", "location", "status", "value"]
+        for field in conflict_fields:
+            old_val = record.content.get(field)
+            new_val = candidate.content.get(field)
+            if old_val and new_val and old_val != new_val:
+                record.staleness_signals.append(
+                    f"contradiction:{field}:{_ts()}"
+                )
+                record.confidence = max(record.confidence * 0.5, 0.0)
+                return True
+    return False
