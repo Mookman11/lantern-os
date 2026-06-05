@@ -1,6 +1,6 @@
 """
 Lantern OS CSF/CADD Memory Engine
-Mirrors MemOS tiers: Trace, Correction, Anchor, Entity, Relation, Ritual, Skill, Export.
+Mirrors MemOS tiers: Trace, Correction, Anchor, Entity, Relation, Ritual, Skill, Procedural, Export.
 
 Design principles:
 - Local-first: all records stored in JSONL under data/csf_memory/
@@ -16,9 +16,12 @@ Promotion flow:
     entity → relation (linked to other entities)
     anchor → ritual (repeated pattern recognized)
     ritual → skill (crystallized, tested, reusable)
+    trace → procedural (learned workflow)
+    procedural → skill (crystallized, tested)
     skill → export (cleared for external release)
 """
 
+import asyncio
 import hashlib
 import json
 import os
@@ -102,7 +105,7 @@ class MemoryRecord:
         privacy_scope: Optional[PrivacyScope] = None,
         agent: str = "system",
     ) -> "MemoryRecord":
-        """Create a promoted copy with updated tier and lineage."""
+        """Create a promoted copy with updated tier and lineage. Preserves all new fields."""
         chain = list(self.promotion_chain)
         chain.append(f"{self.tier.value}→{to_tier.value}")
         return MemoryRecord(
@@ -119,6 +122,13 @@ class MemoryRecord:
             cube_partition=_next_cube(self.cube_partition, to_tier),
             tags=list(self.tags),
             agents=list(self.agents) + [agent],
+            keywords=list(self.keywords),
+            entities=list(self.entities),
+            metadata=dict(self.metadata),
+            actor_id=self.actor_id,
+            actor_type=self.actor_type,
+            confidence_reasoning=self.confidence_reasoning,
+            staleness_signals=list(self.staleness_signals),
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -165,21 +175,26 @@ class MemoryEngine:
         return path
 
     def write_async(self, record: MemoryRecord):
-        """Fire-and-forget async write. Tracks pending queue depth."""
-        import asyncio
+        """Fire-and-forget async write. Tracks pending queue depth.
+
+        Exceptions are captured in the returned task; callers may await
+        the task to surface errors (disk full, permission denied, etc.).
+        """
         task = asyncio.create_task(self._async_write(record))
         self._pending.append(task)
-        task.add_done_callback(lambda t: self._pending.remove(t) if t in self._pending else None)
+        task.add_done_callback(self._on_async_done)
         return task
 
+    def _on_async_done(self, task: asyncio.Task):
+        """Cleanup callback — safe because asyncio callbacks run sequentially."""
+        try:
+            self._pending.remove(task)
+        except ValueError:
+            pass  # already removed
+
     async def _async_write(self, record: MemoryRecord):
-        record.updated_at = _now()
-        record.checksum = record._compute_checksum()
-        path = self._path(record)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(record.to_dict(), f, indent=2, ensure_ascii=False, default=str)
-        self._append_registry(record)
-        return path
+        """Async body factored out to share logic with synchronous write()."""
+        return self.write(record)
 
     @property
     def pending_queue_depth(self) -> int:
@@ -277,8 +292,12 @@ class MemoryEngine:
         query_keywords: List[str],
         query_entities: List[str],
     ) -> float:
-        """Fused retrieval score: semantic 0.5 + keyword 0.3 + entity 0.2."""
-        semantic = 0.5  # Placeholder: vector similarity would be computed externally
+        """Fused retrieval score: semantic 0.5 + keyword 0.3 + entity 0.2.
+
+        Semantic component falls back to record confidence when no external
+        vector similarity is available.
+        """
+        semantic = rec.confidence if rec.confidence else 0.5
         keyword_score = 0.0
         entity_score = 0.0
 
@@ -511,16 +530,20 @@ def create_procedure(
 def check_staleness(record: MemoryRecord, candidate: MemoryRecord, threshold: float = 0.7) -> bool:
     """Lightweight contradiction check between two same-entity memories.
 
-    Returns True if candidate contradicts record (same entity, conflicting content).
-    When True, caller should halve confidence of the older record.
+    Returns True if candidate contradicts record (same entity type and name,
+    but conflicting content). When True, this function MUTATES record:
+    - appends a staleness signal
+    - halves confidence (bounded by threshold as a floor)
     """
     if record.memory_id == candidate.memory_id:
         return False
-    # Simple heuristic: same entity name in content but different key values
     old_name = record.content.get("name", "")
     new_name = candidate.content.get("name", "")
+    old_type = record.content.get("entity_type", "")
+    new_type = candidate.content.get("entity_type", "")
     if old_name and new_name and old_name == new_name:
-        # Check for conflicting fields (description, employer, location, etc.)
+        if old_type and new_type and old_type != new_type:
+            return False  # same name but different types — not a contradiction
         conflict_fields = ["description", "employer", "location", "status", "value"]
         for field in conflict_fields:
             old_val = record.content.get(field)
@@ -529,6 +552,6 @@ def check_staleness(record: MemoryRecord, candidate: MemoryRecord, threshold: fl
                 record.staleness_signals.append(
                     f"contradiction:{field}:{_ts()}"
                 )
-                record.confidence = max(record.confidence * 0.5, 0.0)
+                record.confidence = max(record.confidence * 0.5, threshold)
                 return True
     return False
