@@ -1,0 +1,101 @@
+{
+  "$schema": "https://modelcontextprotocol.io/schema/mcp-server-config.json",
+  "version": "1.0.0",
+  "description": "Lantern OS MCP Server Configuration",
+  "servers": {
+    "lantern-os-sse": {
+      "name": "Lantern OS MCP (SSE)",
+      "transport": "sse",
+      "url": "http://127.0.0.1:8771/sse",
+      "messagesEndpoint": "http://127.0.0.1:8771/messages",
+      "healthEndpoint": "http://127.0.0.1:8771/health",
+      "enabled": true,
+      "autoStart": false,
+      "timeout": 30000,
+      "capabilities": {
+        "tools": true,
+        "logging": true
+      }
+    },
+    "lantern-os-stdio": {
+      "name": "Lantern OS MCP (stdio bridge)",
+      "transport": "stdio",
+      "command": "python",
+      "args": [
+        "scripts/mcp_stdio_bridge.py"
+      ],
+      "env": {
+        "MCP_SERVER_URL": "http://127.0.0.1:8771",
+        "PYTHONPATH": "src"
+      },
+      "enabled": true,
+      "autoStart": true,
+      "timeout": 30000,
+      "capabilities": {
+        "tools": true,
+        "logging": true
+      }
+    }
+  },
+  "tools": {
+    "queue_status": {
+      "description": "View work queue depth and tasks",
+      "parameters": {
+        "limit": {
+          "type": "integer",
+          "description": "Maximum number of tasks to return",
+          "default": 10
+        }
+      }
+    },
+    "task_intake": {
+      "description": "Submit a task to the queue",
+      "parameters": {
+        "description": {
+          "type": "string",
+          "description": "Task description"
+        },
+        "priority": {
+          "type": "string",
+          "enum": ["high", "medium", "low"],
+          "default": "medium"
+        }
+      }
+    },
+    "dispatch_work": {
+      "description": "Dispatch to an orchestrator agent",
+      "parameters": {
+        "agent": {
+          "type": "string",
+          "description": "Agent identifier"
+        },
+        "task": {
+          "type": "string",
+          "description": "Task to dispatch"
+        }
+      }
+    },
+    "boot_check": {
+      "description": "Check orchestrator boot status with honest fleet counts",
+      "parameters": {}
+    },
+    "list_skills": {
+      "description": "List available skills (dream_journal, lucid_dreaming, archive_curator, voice_curator)",
+      "parameters": {}
+    },
+    "get_status": {
+      "description": "Overall system status with uptime and queue depth",
+      "parameters": {}
+    },
+    "fleet_status": {
+      "description": "Read agent fleet status from data/status/super-jarvis-fleet.json",
+      "parameters": {}
+    }
+  },
+  "startup": {
+    "command": "python src/mcp_server/server.py",
+    "port": 8771,
+    "healthCheck": "http://127.0.0.1:8771/health",
+    "dependencies": ["fastapi", "uvicorn", "python-dotenv"]
+  }
+}

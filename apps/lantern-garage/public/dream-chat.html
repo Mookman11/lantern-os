@@ -333,11 +333,33 @@
     .send-btn:disabled { opacity: 0.35; cursor: not-allowed; }
     .send-btn svg { width: 16px; height: 16px; }
 
-    .input-hint {
+    .input-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-top: 8px;
+      padding: 0 4px;
+    }
+    .kind-label {
+      font-size: 0.72rem;
+      color: var(--muted);
+    }
+    #kind-inline {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 0.72rem;
+      padding: 3px 6px;
+      border-radius: 6px;
+      outline: none;
+      cursor: pointer;
+    }
+    #kind-inline:focus { border-color: var(--accent); }
+    .hint {
       font-size: 0.72rem;
       color: var(--muted);
       text-align: center;
-      margin-top: 8px;
     }
 
     /* ── Voice button ── */
@@ -753,7 +775,22 @@
       </button>
     </div>
     <div class="ctf-popup hidden" id="ctf-popup"></div>
-    <p class="input-hint" id="input-hint">Enter to send · Shift+Enter for newline · 🎙 voice · ✦ CTF</p>
+    <div class="input-meta">
+      <div style="display:flex;align-items:center;gap:6px;">
+        <span class="kind-label">Saving as</span>
+        <select id="kind-inline" title="Entry kind">
+          <option value="dream">Dream</option>
+          <option value="note">Note</option>
+          <option value="symbol">Symbol</option>
+          <option value="mirror">Mirror</option>
+          <option value="event">Event</option>
+          <option value="lore">Lore</option>
+          <option value="character">Character</option>
+          <option value="place">Place</option>
+        </select>
+      </div>
+      <span class="hint">Enter to send · Shift+Enter for newline · 🎙 voice · ✦ CTF</span>
+    </div>
   </div>
 </div>
 
@@ -982,7 +1019,6 @@
     if (Array.isArray(suggestions) && suggestions.length === 3) {
       appendDoorsBanner(row, suggestions);
     }
-
     // ✦ Log dream button — lets user save conversation as a dream entry
     if (text && source !== "failed" && source !== "error") {
       const logBtn = document.createElement("button");
@@ -1307,6 +1343,7 @@
 
   initVoice();
 
+
   // ══════════════════════════════════════════════════════════════════
   //  Three Doors Banner — Canvas-generated widescreen PNG
   //  Called after each AI reply that includes 3 door suggestions.
@@ -1477,6 +1514,7 @@
     row.appendChild(wrap);
     scrollToBottom();
   }
+
 </script>
 </body>
 </html>
