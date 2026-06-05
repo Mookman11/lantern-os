@@ -117,6 +117,13 @@ docker-compose -f docker-compose.dream-journal.yml logs -f
 
 ## Debugging
 
+### Chat Diagnostics
+Inside the Dream Chat interface:
+- Press **D** or click the **📊 button** (bottom-right) to toggle the analytics panel
+- Type **!debug** in the chat input to toggle it without sending a message
+- The panel shows session stats, latency, errors, fallbacks, and provider/agent state
+
+### Service Won't Start
 If the service won't start:
 
 ```powershell
