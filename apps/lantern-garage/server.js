@@ -528,7 +528,7 @@ async function route(req, res) {
         for (const e of entries) {
           rows.push([
             escape(e.id), escape(e.timestamp), escape(e.kind), escape(e.text),
-            escape(e.lucidity), escape((e.emotions || []).join(";"))、
+            escape(e.lucidity), escape((e.emotions || []).join(";",)),
             escape((e.tags || []).join(";")), escape((e.symbols || []).join(";"))
           ].join(","));
         }
