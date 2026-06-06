@@ -8,7 +8,7 @@ use std::io::{Read, Write};
 
 use crate::{CsfError, Result};
 
-pub const MAGIC: &[u8] = b"CSFv1\0\0";
+pub const MAGIC: &[u8] = b"CSFv1\0\0\0";
 pub const HEADER_SIZE: usize = 64;
 pub const FOOTER_SIZE: usize = 16;
 
@@ -103,7 +103,10 @@ impl ArchiveHeader {
         let expected = (&buf[42..50]).read_u64::<BigEndian>().unwrap();
         let computed = xxhash_rust::xxh64::xxh64(&buf[0..42], 0);
         if expected != computed {
-            return Err(CsfError::Checksum { expected, got: computed });
+            return Err(CsfError::Checksum {
+                expected,
+                got: computed,
+            });
         }
 
         let mut cursor = std::io::Cursor::new(&buf[10..]);
