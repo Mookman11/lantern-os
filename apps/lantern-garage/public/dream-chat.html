@@ -62,7 +62,7 @@
           <span class="provider-status missing" id="status-claude">not set</span>
         </div>
         <div class="provider-key-row">
-          <input class="provider-key-input" id="key-claude" type="password" placeholder="sk-ant-…" autocomplete="off" spellcheck="false">
+          <input class="provider-key-input" id="key-claude" type="password" placeholder="Anthropic API key" autocomplete="off" spellcheck="false">
           <button class="provider-save-btn" onclick="saveKey('claude','ANTHROPIC_API_KEY','key-claude')">Save</button>
         </div>
         <div class="provider-actions">
@@ -80,7 +80,7 @@
           <span class="provider-status missing" id="status-gemini">not set</span>
         </div>
         <div class="provider-key-row">
-          <input class="provider-key-input" id="key-gemini" type="password" placeholder="AIza…" autocomplete="off" spellcheck="false">
+          <input class="provider-key-input" id="key-gemini" type="password" placeholder="Gemini API key" autocomplete="off" spellcheck="false">
           <button class="provider-save-btn" onclick="saveKey('gemini','GEMINI_API_KEY','key-gemini')">Save</button>
         </div>
         <div class="provider-actions">
@@ -98,7 +98,7 @@
           <span class="provider-status missing" id="status-openai">not set</span>
         </div>
         <div class="provider-key-row">
-          <input class="provider-key-input" id="key-openai" type="password" placeholder="sk-…" autocomplete="off" spellcheck="false">
+          <input class="provider-key-input" id="key-openai" type="password" placeholder="OpenAI API key" autocomplete="off" spellcheck="false">
           <button class="provider-save-btn" onclick="saveKey('openai','OPENAI_API_KEY','key-openai')">Save</button>
         </div>
         <div class="provider-actions">
@@ -116,7 +116,7 @@
           <span class="provider-status missing" id="status-grok">not set</span>
         </div>
         <div class="provider-key-row">
-          <input class="provider-key-input" id="key-grok" type="password" placeholder="xai-…" autocomplete="off" spellcheck="false">
+          <input class="provider-key-input" id="key-grok" type="password" placeholder="xAI API key" autocomplete="off" spellcheck="false">
           <button class="provider-save-btn" onclick="saveKey('grok','XAI_API_KEY','key-grok')">Save</button>
         </div>
         <div class="provider-actions">
@@ -134,7 +134,7 @@
           <span class="provider-status missing" id="status-discord-token">not set</span>
         </div>
         <div class="provider-key-row">
-          <input class="provider-key-input" id="key-discord-token" type="password" placeholder="Bot token from Discord Developer Portal" autocomplete="off" spellcheck="false">
+          <input class="provider-key-input" id="key-discord-token" type="password" placeholder="Discord bot token" autocomplete="off" spellcheck="false">
           <button class="provider-save-btn" onclick="saveKey('discord-token','DISCORD_BOT_TOKEN','key-discord-token')">Save</button>
         </div>
         <div class="provider-key-row" style="margin-top:8px;">
@@ -170,7 +170,7 @@
         </div>
         <div class="voice-row">
           <label>TTS ID</label>
-          <input class="voice-select" id="voice-tts-id" type="text" placeholder="ElevenLabs voice (e.g. Rachel)" onchange="saveVoiceSettings()" style="font-size:0.78rem;">
+          <input class="voice-select" id="voice-tts-id" type="text" placeholder="ElevenLabs voice ID" onchange="saveVoiceSettings()" style="font-size:0.78rem;">
         </div>
         <p class="drawer-hint" style="font-size:0.7rem;margin:0;">Used for server TTS (ElevenLabs → OpenAI). Leave empty for browser-only fallback.</p>
         <div class="voice-row">
@@ -187,11 +187,11 @@
           <span class="provider-status missing" id="status-elevenlabs">not set</span>
         </div>
         <div class="provider-key-row">
-          <input class="provider-key-input" id="key-elevenlabs" type="password" placeholder="sk_…" autocomplete="off" spellcheck="false">
+          <input class="provider-key-input" id="key-elevenlabs" type="password" placeholder="ElevenLabs API key" autocomplete="off" spellcheck="false">
           <button class="provider-save-btn" onclick="saveKey('elevenlabs','ELEVENLABS_API_KEY','key-elevenlabs')">Save</button>
         </div>
         <div class="provider-key-row" style="margin-top:8px;">
-          <input class="provider-key-input" id="key-elevenlabs-voice" type="text" placeholder="Voice ID (e.g. Rachel)" autocomplete="off" spellcheck="false">
+          <input class="provider-key-input" id="key-elevenlabs-voice" type="text" placeholder="Voice ID" autocomplete="off" spellcheck="false">
           <button class="provider-save-btn" onclick="saveKey('elevenlabs-voice','ELEVENLABS_VOICE_ID','key-elevenlabs-voice')">Save</button>
         </div>
         <div class="provider-actions">
@@ -352,16 +352,55 @@
 </div>
 
 <script src="js/dream-chat.js"></script>
-    wrap.addEventListener("click", () => {
-      const a = document.createElement("a");
-      a.download = `dream-doors-${Date.now()}.png`;
-      a.href = canvas.toDataURL("image/png");
-      a.click();
-    });
-    row.appendChild(wrap);
-    scrollToBottom();
+<script src="js/convergance-sync.js"></script>
+<!-- Parallax dream-door zoom -->
+<script>
+(function() {
+  const messages = document.getElementById('messages');
+  const doorBg = document.getElementById('door-bg');
+  const heroTitle = document.getElementById('hero-title');
+  const heroSub = document.getElementById('hero-sub');
+  const scrollHint = document.getElementById('scroll-hint');
+  const emptyState = document.getElementById('empty-state');
+  if (!messages || !doorBg) return;
+
+  let ticking = false;
+  function updateParallax() {
+    const scrollTop = messages.scrollTop;
+    const maxScroll = messages.scrollHeight - messages.clientHeight;
+    const progress = maxScroll > 0 ? Math.min(scrollTop / maxScroll, 1) : 0;
+
+    // Zoom into the doorway: scale 1 -> 2.8
+    const scale = 1 + progress * 1.8;
+    // Slight upward drift to keep door centered
+    const translateY = progress * -8;
+    doorBg.style.transform = 'scale(' + scale + ') translateY(' + translateY + '%)';
+
+    // Fade out text as user scrolls
+    const fadeStart = 0.15;
+    const opacity = progress < fadeStart ? 1 : 1 - ((progress - fadeStart) / (1 - fadeStart));
+    const clampedOpacity = Math.max(0, opacity);
+    if (heroTitle) heroTitle.style.opacity = clampedOpacity;
+    if (heroSub) heroSub.style.opacity = clampedOpacity;
+    if (scrollHint) scrollHint.style.opacity = Math.max(0, 0.7 - progress * 2);
+
+    // Slight parallax on the glow orb
+    const art = emptyState ? emptyState.querySelector('.dream-door-art') : null;
+    if (art) art.style.transform = 'translateY(' + (progress * -20) + 'px)';
+
+    ticking = false;
   }
 
+  messages.addEventListener('scroll', function() {
+    if (!ticking) {
+      ticking = true;
+      requestAnimationFrame(updateParallax);
+    }
+  }, { passive: true });
+
+  // Initial call
+  updateParallax();
+})();
 </script>
 <!-- Parallax dream-door zoom -->
 <script>
@@ -413,7 +452,7 @@
 })();
 </script>
 <script>if('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(()=>{});</script>
-<p style="text-align:center;opacity:0.5;font-size:0.72rem;margin:12px 0;"><span data-version-badge="Lantern OS v">Lantern OS</span> · private · local</p>
+<p style="text-align:center;opacity:0.5;font-size:0.72rem;margin:12px 0;"><span data-version-badge="Lantern OS ">Lantern OS</span> · private · local</p>
 <!-- Version badge auto-loader -->
 <script>
 (function() {
@@ -422,15 +461,16 @@
     .then(r => r.ok ? r.json() : null)
     .then(v => {
       if (!v || !v.version) return;
+      const version = String(v.version).replace(/^v/i, '');
       document.querySelectorAll('[data-version-badge]').forEach(el => {
         const prefix = el.dataset.versionBadge || '';
-        el.textContent = prefix + 'v' + v.version;
+        el.textContent = prefix + 'v' + version;
         el.style.cursor = 'pointer';
         el.title = 'View changelog';
         el.onclick = function() { window.open('/repo/CHANGELOG.MD', '_blank'); };
       });
       const appVer = document.getElementById('app-version');
-      if (appVer) appVer.textContent = 'Lantern OS v' + v.version + ' · private · local';
+      if (appVer) appVer.textContent = 'Lantern OS v' + version + ' · private · local';
     })
     .catch(() => {});
 })();
