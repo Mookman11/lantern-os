@@ -71,6 +71,21 @@ intent.
 
 ## [Unreleased]
 
+### Planned (ORION / Lantern OS Performance)
+
+- CSF memory optimization plan: add delta-only dream-entry storage, `previous_entry_hash` checks, sparse ternary storage for the `3^12` symbolic matrix, and dictionary compression for recurring symbols such as “King of Nowhere,” “birds & bees,” doors, anchors, and repeated Lantern / ORION motifs.
+- Convergence IO / PCSF routing plan: cache the last 5–10 healthy provider states in memory with a 60-second expiry, default local Dream Journal routing to Ollama `Q4_K_M`, fall back to `Q5_K_M` when quality checks fail, and add a `dreamChatReply()` routing cache for repeated similar requests.
+- Digital Blackbox acceleration plan: add a configurable `internal_multiplier` defaulting to the 5x–8x range, run bounded internal convergence steps per external tick, throttle UI / external I/O through light external dilation, and guard the loop with NAP safety checks for temperature, memory, and runaway execution.
+- Art generation and 3 Door Game plan: gate art generation by tier (`Wanderer` = 15/month, `DeepDreamer` = unlimited), cache recent Gage-style prompts and reusable embeddings where privacy-safe, and pre-warm the Ollama model before art requests.
+- General low-risk performance plan: enable response streaming on all chat endpoints, add a redacted Debug Mode for PCSF state / selected provider / fallback reason / quantization / cache hit-miss / dilation ratio, and implement hot/cold dream memory tiers with active dreams in RAM and archived dreams in CSF.
+- Target action window: 2026-06-06 through 2026-06-12, with CSF compression first, PCSF routing second, Blackbox multiplier third, tier gating and Debug Mode fourth, then local tests, documentation, and release-note decision.
+
+### Verification Boundary (ORION / Lantern OS Performance)
+
+- This is a planning and changelog entry only; no runtime behavior changes are claimed until implementation commits and local verification receipts are added.
+- Percentage gains for memory, latency, and subjective speedup remain targets until benchmarked against the local Dream Journal / ORION runtime.
+- Required before promotion: CSF delta encode/decode round-trip tests, backward-compatibility tests for existing CSF archives, provider-routing cache and fallback tests, redaction checks for Debug Mode, and at least one local benchmark receipt.
+
 ### Planned (Convergence)
 
 - **#142** Watch/Observe phase -- drift detection between convergence runs
@@ -89,11 +104,11 @@ intent.
 - **#165** converged_tesseract.py convergence_io_route_on_slice is a placeholder stub
 - **#166** hff-api load_data_source() returns mock data -- not yet implemented
 - **#167** discord lounge bot memory_layer export_csf_stub is a placeholder
-- **#168** discord lounge bot ot.py is empty and ot_v2.py missing — bot won't start
+- **#168** discord lounge bot bot.py is empty and bot_v2.py missing — bot won't start
 
 ### Fixed
 
-- **#168** Restored Discord bot v2 slash commands from commit 8b5cd9; ot.py and ot_v2.py both populated
+- **#168** Restored Discord bot v2 slash commands from commit b8b5cd9; bot.py and bot_v2.py both populated
 
 - Discord bot launcher now loads .env.local and falls back to User/Machine environment variables
 
