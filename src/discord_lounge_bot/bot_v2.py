@@ -554,6 +554,14 @@ async def cmd_threedoors_choose(interaction: discord.Interaction, door: str):
 @client.event
 async def on_ready():
     print(f"[READY] Logged in as {client.user} at {now_utc()}")
+    sys.stdout.flush()
+    # Explicit presence so Discord shows the bot as online
+    await client.change_presence(
+        status=discord.Status.online,
+        activity=discord.Activity(type=discord.ActivityType.watching, name="dreams | /help")
+    )
+    print("[PRESENCE] Set status to online: watching dreams | /help")
+    sys.stdout.flush()
     if GUILD_ID_INT:
         guild = discord.Object(id=GUILD_ID_INT)
         tree.copy_global_to(guild=guild)
