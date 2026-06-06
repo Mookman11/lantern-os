@@ -98,6 +98,98 @@ module.exports = async function dreamRoutes(req, res, url, deps) {
     return true;
   }
 
+    // ── Three Doors game ────────────────────────────────────────────────
+  if (url.pathname === "/api/dream/doors" && req.method === "POST") {
+    try {
+      const raw = await collectRequestBody(req);
+      const body = JSON.parse(raw || "{}");
+      const userId = String(body.userId || "web-anon");
+      const action = String(body.action || "start");
+      const choice = String(body.choice || "");
+
+      const { spawn } = require("child_process");
+      const enginePath = path.join(repoRoot, "src", "three_doors_engine.py");
+      const py = process.platform === "win32" ? "python" : "python3";
+
+      let script = "";
+      if (action === "start" || action === "reset") {
+        script = `from three_doors_engine import ThreeDoorsEngine; e=ThreeDoorsEngine("${userId}"); print(__import__('json').dumps(e.to_api_response(e.reset() if "${action}"=="reset" else e.start_game())))`;
+      } else if (action === "choose") {
+        script = `from three_doors_engine import ThreeDoorsEngine; e=ThreeDoorsEngine("${userId}"); s=e.choose_door("${choice}"); print(__import__('json').dumps(e.to_api_response(s) if s else {"error":"invalid_choice"}))`;
+      } else {
+        script = `from three_doors_engine import ThreeDoorsEngine; e=ThreeDoorsEngine("${userId}"); print(__import__('json').dumps(e.to_api_response()))`;
+      }
+
+      const result = await new Promise((resolve, reject) => {
+        const proc = spawn(py, ["-c", script], { cwd: repoRoot, env: { ...process.env, PYTHONPATH: path.join(repoRoot, "src") } });
+        let out = "", err = "";
+        proc.stdout.on("data", (c) => (out += c));
+        proc.stderr.on("data", (c) => (err += c));
+        proc.on("close", (code) => {
+          if (code !== 0) reject(new Error(err || `exit ${code}`));
+          else resolve(out.trim());
+        });
+        proc.on("error", reject);
+      });
+
+      const data = JSON.parse(result);
+      sendJson(res, { ...data, generatedAt: new Date().toISOString() });
+    } catch (error) { sendJson(res, { error: error.message }, 500); }
+    return true;
+  }
+
+  if (url.pathname === "/api/dream/doors/image" && req.method === "POST") {
+    try {
+      const raw = await collectRequestBody(req);
+      const body = JSON.parse(raw || "{}");
+      const userId = String(body.userId || "web-anon");
+      const doorIdx = Number(body.doorIndex || 0);
+
+      const sdUrl = process.env.STABLE_DIFFUSION_URL || process.env.SD_WEBUI_URL;
+      if (!sdUrl) {
+        const { spawn } = require("child_process");
+        const py = process.platform === "win32" ? "python" : "python3";
+        const script = `from three_doors_engine import ThreeDoorsEngine; e=ThreeDoorsEngine("${userId}"); print(__import__('json').dumps(e.image_suggestions_for_ai()[${doorIdx}] if ${doorIdx} < 3 else {}))`;
+        const result = await new Promise((resolve, reject) => {
+          const proc = spawn(py, ["-c", script], { cwd: repoRoot, env: { ...process.env, PYTHONPATH: path.join(repoRoot, "src") } });
+          let out = "";
+          proc.stdout.on("data", (c) => (out += c));
+          proc.on("close", (code) => resolve(out.trim()));
+          proc.on("error", reject);
+        });
+        const suggestion = JSON.parse(result);
+        sendJson(res, {
+          available: false,
+          sdUrl: null,
+          suggestion,
+          message: "No local Stable Diffusion detected. Use the prompt with your preferred image generator (DALL-E, Midjourney, etc.)",
+          generatedAt: new Date().toISOString(),
+        });
+        return true;
+      }
+
+      const { spawn } = require("child_process");
+      const py = process.platform === "win32" ? "python" : "python3";
+      const script = `from three_doors_engine import ThreeDoorsEngine; e=ThreeDoorsEngine("${userId}"); print(e.sd_prompt_for_state())`;
+      const promptResult = await new Promise((resolve, reject) => {
+        const proc = spawn(py, ["-c", script], { cwd: repoRoot, env: { ...process.env, PYTHONPATH: path.join(repoRoot, "src") } });
+        let out = "";
+        proc.stdout.on("data", (c) => (out += c));
+        proc.on("close", (code) => resolve(out.trim()));
+        proc.on("error", reject);
+      });
+
+      sendJson(res, {
+        available: true,
+        sdUrl,
+        prompt: promptResult,
+        message: "Stable Diffusion endpoint detected. POST to /sdapi/v1/txt2img with this prompt to generate the door image.",
+        generatedAt: new Date().toISOString(),
+      });
+    } catch (error) { sendJson(res, { error: error.message }, 500); }
+    return true;
+  }
+
   // ── Dream stats / search / export / read ────────────────────────────
   if (url.pathname === "/api/dream/stats" && req.method === "GET") {
     try {

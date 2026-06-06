@@ -1,6 +1,7 @@
 #!/bin/sh
-# Monoworkstream gate: refuse new commits while any PR is open.
+# Monoworkstream gate: refuse new commits on NEW branches while any PR is open.
 # Single-dev rule: one stream at a time. Finish the open PR before starting new work.
+# Commits to a branch that already has an open PR are always allowed (fixing the PR).
 
 # Allow bypass with --no-verify or SKIP_MONOWORKSTREAM=1
 if [ "$SKIP_MONOWORKSTREAM" = "1" ]; then
@@ -12,6 +13,21 @@ if ! command -v gh >/dev/null 2>&1; then
     exit 0
 fi
 
+# Get current branch
+branch=$(git symbolic-ref --short HEAD 2>/dev/null)
+if [ -z "$branch" ]; then
+    # detached HEAD, allow
+    exit 0
+fi
+
+# Check if this branch already has an open PR
+branch_has_pr=$(gh pr list --repo alex-place/lantern-os --state open --json headRefName --jq "map(select(.headRefName == \"$branch\")) | length" 2>/dev/null)
+if [ $? -eq 0 ] && [ "$branch_has_pr" -gt 0 ]; then
+    # This branch already has an open PR — allow commits (you're fixing the PR)
+    exit 0
+fi
+
+# No PR from this branch; check if ANY other PR is open
 open_count=$(gh pr list --repo alex-place/lantern-os --state open --json number --jq 'length' 2>/dev/null)
 if [ $? -ne 0 ]; then
     echo "Warning: could not query GitHub PRs. Skipping monoworkstream gate."
@@ -25,6 +41,7 @@ if [ "$open_count" -gt 0 ]; then
     gh pr list --repo alex-place/lantern-os --state open --json number,title,headRefName --jq '.[] | "  #\(.number) \(.title) [\(.headRefName)]"' 2>/dev/null
     echo ""
     echo "Rule: finish or close the open PR before starting new work."
+    echo "You can still commit to a branch that already has an open PR."
     echo "Bypass: SKIP_MONOWORKSTREAM=1 git commit ..."
     echo ""
     exit 1

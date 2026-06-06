@@ -1,7 +1,7 @@
 # Dream Journal — Complete User Guide
 
-**Version:** 1.0.0  
-**Last Updated:** 2026-06-02  
+**Version:** 1.0.2  
+**Last Updated:** 2026-06-06  
 **Status:** Production Ready  
 **Your dreams. Your space. Always private.**
 
@@ -516,6 +516,50 @@ curl http://127.0.0.1:4177/api/dream/read/dream_20260602_143022
 
 ---
 
+
+## Three Doors Game
+
+After every AI response in Dream Chat, you will see **three door-shaped chips** at the bottom of the message. These are forward-facing canaries — possible paths your dream (and waking life) might take.
+
+### How to Play
+- Click any door chip to **send that path as your next message**. The AI will continue the conversation along that thread.
+- The doors are generated from your **symbol mesh** — recurring tags and symbols across your journal entries.
+- If no door data is present, fallback suggestions appear.
+
+### Door Rules
+- All three doors carry **equal weight** — none is more important.
+- They are phrased in **future tense, first person** (e.g., "I will feel the wind", "I will see a path of light").
+- They are grounded in your **personal dream history** and the current conversation.
+
+---
+
+## Keystone Debug Mode (MCP)
+
+For advanced users and developers, Dream Chat includes a **Keystone debug mode** that bypasses the dream persona and gives you direct access to the repo as a senior engineer.
+
+### How to Enable
+1. Select **Keystone** from the agent dropdown.
+2. Click the **MCP** toggle button (appears next to the agent selector).
+3. The toggle turns green when active.
+
+### What Changes in MCP Mode
+- **No dream persona** — responses are concise, technical, and actionable.
+- **No [DOORS:] canaries** — raw engineering output without metaphor.
+- **Command execution** — Keystone can suggest bash commands that render with a "Run" button in the UI.
+- **Allowed commands:**
+  - `npm test`, `node tests/...`
+  - `git status`, `git diff`, `git log`, `git add`, `git commit`, `git push`
+  - `gh pr create ...`
+  - `python src/convergence_io_engine.py health/loop/inspect`
+  - `cat`, `head`
+
+### Safety
+- Only the exact commands listed above are recognized by the UI.
+- Anything else is blocked — no arbitrary code execution.
+- This mode is for **repo debugging, test running, and convergence checks**.
+
+---
+
 ## Your Dream Journey
 
 Dream Journal is a practice. It works best when you approach it with curiosity rather than judgment.
@@ -533,7 +577,7 @@ Your dreams are worth paying attention to. You're in the right place.
 **Made with intention by Alex Place**  
 *Part of Lantern OS: a personal operating system for memory, reflection, and becoming.*
 
-**Version:** 1.0.0  
-**Last Updated:** 2026-06-02  
+**Version:** 1.0.2  
+**Last Updated:** 2026-06-06  
 **Status:** Production Ready  
 **License:** Proprietary (Lantern OS)

@@ -85,9 +85,9 @@
       "name": "Agent slots (slot_loader)",
       "route": "GET /api/agents/slots",
       "expect_status": 200,
-      "state": "not_wired",
+      "state": "pass",
       "critical": false,
-      "description": "slot_loader.py added by upstream — route not yet exposed in routes/dreamer.js. Pending."
+      "description": "Route exposed in routes/dreamer.js. Reads from .claude/agent-slots.json with fallback to manifests/dream-journal-v1-agent-slots.json."
     },
     {
       "check_id": "dream_stream",

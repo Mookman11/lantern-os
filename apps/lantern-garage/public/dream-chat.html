@@ -1128,7 +1128,7 @@
                 if (evt.cleanText && evt.cleanText !== fullText) {
                   bubble.textContent = evt.cleanText;
                 }
-                finishStream(row, bubble, cursor, displayText, evt.source, evt.error, evt.suggestions);
+                finishStream(row, bubble, cursor, displayText, evt.source, evt.error, evt.suggestions, evt.image_prompt);
               }
             } catch { /* skip malformed */ }
           }
@@ -1161,7 +1161,7 @@
       });
   }
 
-  function finishStream(row, bubble, cursor, text, source, error, suggestions) {
+  function finishStream(row, bubble, cursor, text, source, error, suggestions, imagePrompt) {
     cursor.remove();
     if (!text && !error) {
       bubble.textContent = bubble.textContent || "…";
@@ -1212,6 +1212,15 @@
     // ── Three Doors banner ────────────────────────────────────────────
     if (Array.isArray(suggestions) && suggestions.length === 3) {
       appendDoorsBanner(row, suggestions);
+    }
+    // Show image prompt when AI suggests SD generation for doors
+    if (imagePrompt) {
+      const imgNote = document.createElement("div");
+      imgNote.className = "source-badge";
+      imgNote.style.marginTop = "8px";
+      imgNote.style.fontStyle = "italic";
+      imgNote.textContent = `🎨 ${imagePrompt}`;
+      row.appendChild(imgNote);
     }
     // ✦ Log dream button — lets user save conversation as a dream entry
     if (text && source !== "failed" && source !== "error") {

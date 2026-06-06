@@ -1,14 +1,14 @@
 {
-  "generated_at": "2026-06-05T15:18:46.494858+00:00",
-  "upstream_pr": "https://github.com/alex-place/lantern-os/pull/120",
+  "generated_at": "2026-06-06T07:25:00.000000+00:00",
+  "upstream_pr": "https://github.com/alex-place/lantern-os/pull/181",
   "strategy": "action_pooling \u2014 read-only tasks batch; ref docs/ACTION-POOLING-AND-BATCHING.md",
   "token_budget": "max_tokens=1024 per provider call; context slimmed via symbol mesh (top 8 symbols passed); CSF compression on save",
   "agent_slots": [
     {
       "id": "dream_journal/agents_slots_route",
       "priority": 1,
-      "status": "queued",
-      "description": "Wire /api/agents/slots in routes/dreamer.js \u2014 slot_loader.py exists, HTTP route not registered"
+      "status": "completed",
+      "description": "Wire /api/agents/slots in routes/dreamer.js \u2014 route wired with fallback to manifest JSON"
     },
     {
       "id": "dream_journal/three_doors_test",
@@ -45,6 +45,12 @@
       "priority": 7,
       "status": "queued",
       "description": "Backend Vosk STT fallback for non-Chrome; route POST /api/dream/transcribe"
+    },
+    {
+      "id": "dream_journal/convergence_web_refinement",
+      "priority": 8,
+      "status": "queued",
+      "description": "Research web-based convergence loop refinements: GitOps best practices, monorepo CI convergence patterns, automated evidence collection, and promotion gate strategies. Output: csf/ingest/convergence-web-refinement.md with implementation sketch."
     }
   ],
   "convergence_loop_result": "promotion_ready=True (all 12 phases pass)",

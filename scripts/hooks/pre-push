@@ -9,15 +9,28 @@ while read local_ref local_sha remote_ref remote_sha; do
   fi
 done
 
-# 2. Monoworkstream: refuse pushes while any PR is open
+# 2. Monoworkstream: refuse pushes of NEW branches while any PR is open.
+#    Pushes to a branch that already has an open PR are always allowed.
 if [ "$SKIP_MONOWORKSTREAM" != "1" ]; then
   if command -v gh >/dev/null 2>&1; then
-    open_count=$(gh pr list --repo alex-place/lantern-os --state open --json number --jq 'length' 2>/dev/null)
-    if [ $? -eq 0 ] && [ "$open_count" -gt 0 ]; then
-      printf >&2 "\n%s\n" "MONOWORKSTREAM BLOCK: $open_count PR(s) still open."
-      gh pr list --repo alex-place/lantern-os --state open --json number,title,headRefName --jq '.[] | "  #\(.number) \(.title) [\(.headRefName)]"' 2>/dev/null >&2
-      printf >&2 "\n%s\n\n" "Finish or close the open PR before pushing new branches. Bypass: SKIP_MONOWORKSTREAM=1 git push ..."
-      exit 1
+    # Extract branch name from the first ref being pushed
+    branch=$(echo "$local_ref" | sed 's|refs/heads/||')
+    if [ -n "$branch" ]; then
+      # Check if this branch already has an open PR
+      branch_has_pr=$(gh pr list --repo alex-place/lantern-os --state open --json headRefName --jq "map(select(.headRefName == \"$branch\")) | length" 2>/dev/null)
+      if [ $? -eq 0 ] && [ "$branch_has_pr" -gt 0 ]; then
+        # This branch already has an open PR — allow the push (you're updating the PR)
+        :
+      else
+        # No PR from this branch; check if ANY other PR is open
+        open_count=$(gh pr list --repo alex-place/lantern-os --state open --json number --jq 'length' 2>/dev/null)
+        if [ $? -eq 0 ] && [ "$open_count" -gt 0 ]; then
+          printf >&2 "\n%s\n" "MONOWORKSTREAM BLOCK: $open_count PR(s) still open."
+          gh pr list --repo alex-place/lantern-os --state open --json number,title,headRefName --jq '.[] | "  #\(.number) \(.title) [\(.headRefName)]"' 2>/dev/null >&2
+          printf >&2 "\n%s\n\n" "Finish or close the open PR before pushing a new branch. You can still push to a branch that already has an open PR. Bypass: SKIP_MONOWORKSTREAM=1 git push ..."
+          exit 1
+        fi
+      fi
     fi
   fi
 fi

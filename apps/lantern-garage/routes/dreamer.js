@@ -50,4 +50,41 @@ module.exports = async function dreamerRoutes(req, res, url, deps) {
     });
     return true;
   }
+  if (url.pathname === "/api/agents/slots" && req.method === "GET") {
+    try {
+      const fs = require("fs");
+      const claudePath = path.join(repoRoot, ".claude", "agent-slots.json");
+      const manifestPath = path.join(repoRoot, "manifests", "dream-journal-v1-agent-slots.json");
+      let slotsPath = claudePath;
+      if (!fs.existsSync(claudePath)) {
+        if (!fs.existsSync(manifestPath)) {
+          sendJson(res, { error: "agent-slots.json not found" }, 404);
+          return true;
+        }
+        slotsPath = manifestPath;
+      }
+      if (!fs.existsSync(slotsPath)) {
+        sendJson(res, { error: "agent-slots.json not found" }, 404);
+        return true;
+      }
+      const raw = require("fs").readFileSync(slotsPath, "utf8");
+      const data = JSON.parse(raw);
+      sendJson(res, {
+        slots: data.slots.map((s) => ({
+          id: s.id,
+          agent: s.agent,
+          provider: s.provider,
+          model: s.model,
+          status: s.status,
+          responsibilities: s.responsibilities,
+          fallback: s.quotaTracking?.fallbackAgent || null,
+        })),
+        routing: data.routing?.dailyBootOrder || [],
+        weights: data.routing?.weights || {},
+      });
+    } catch (error) {
+      sendJson(res, { error: error.message }, 500);
+    }
+    return true;
+  }
 };

@@ -152,7 +152,7 @@ Never claim a skill or fleet slot is active unless confirmed by implementation o
 
 This repo enforces a **single workstream**: only one open PR at a time.
 
-- **No new commits while any PR is open.** Finish the current PR (merge or close) before starting new work.
+- **Commits and pushes to a branch that already has an open PR are always allowed.**
 - **No new branches while any PR is open.** The pre-commit and pre-push hooks enforce this via GitHub CLI.
 - **Emergency bypass:** `SKIP_MONOWORKSTREAM=1 git commit ...` or `SKIP_MONOWORKSTREAM=1 git push ...`
 

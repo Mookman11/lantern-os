@@ -1,5 +1,6 @@
 const https = require("https");
 const http = require("http");
+const { handleThreeDoorsServer } = require("./three-doors-chat");
 
 // ------------------------------------------------------------------
 // Multi-Agent Personas — derived from lore/spec, zero hard-coded replies
@@ -98,6 +99,66 @@ const DREAM_DOORS = {
 
 async function dreamChatReply(message, recentDreams, requestedAgent = "", requestedProvider = "") {
   const text = String(message || "").trim();
+
+  // ── Three Doors game intercept ──
+  const threeDoors = handleThreeDoorsServer(text);
+  if (threeDoors) {
+    const { spawn } = require("child_process");
+    const path = require("path");
+    const repoRoot = path.resolve(__dirname, "..", "..");
+    const py = process.platform === "win32" ? "python" : "python3";
+    const userId = threeDoors.userId || "web-anon";
+    const choiceMatch = text.toLowerCase().match(/(?:door|choose|pick)\s+([abc])/) || text.toLowerCase().match(/^[abc]$/);
+    const choice = choiceMatch ? choiceMatch[1] : "";
+    const action = choice ? "choose" : "start";
+
+    let script = "";
+    if (action === "choose") {
+      script = `from three_doors_engine import ThreeDoorsEngine; e=ThreeDoorsEngine("${userId}"); s=e.choose_door("${choice}"); print(__import__('json').dumps(e.to_api_response(s) if s else {"error":"invalid_choice"}))`;
+    } else {
+      script = `from three_doors_engine import ThreeDoorsEngine; e=ThreeDoorsEngine("${userId}"); print(__import__('json').dumps(e.to_api_response(e.start_game())))`;
+    }
+
+    try {
+      const result = await new Promise((resolve, reject) => {
+        const proc = spawn(py, ["-c", script], { cwd: repoRoot, env: { ...process.env, PYTHONPATH: path.join(repoRoot, "src") } });
+        let out = "", err = "";
+        proc.stdout.on("data", (c) => (out += c));
+        proc.stderr.on("data", (c) => (err += c));
+        proc.on("close", (code) => {
+          if (code !== 0) reject(new Error(err || `exit ${code}`));
+          else resolve(out.trim());
+        });
+        proc.on("error", reject);
+      });
+      const data = JSON.parse(result);
+      if (data.error) {
+        return { reply: `Three Doors: ${data.error}`, agent: "Lantern", suggestions: [], online: false, threeDoors: true };
+      }
+      const lines = [data.text, ""];
+      if (data.fox_present) lines.push("🦊 The fox is with you.");
+      lines.push("", "**Choose a door:**");
+      for (const d of data.doors) {
+        lines.push(`**${d.label}.** ${d.name} — ${d.description}`);
+      }
+      if (data.image_prompt) {
+        lines.push("", `🎨 *Image prompt for AI generators:* ${data.image_prompt}`);
+      }
+      return {
+        reply: lines.join("\n"),
+        agent: "Lantern",
+        suggestions: data.doors.map(d => d.name),
+        online: true,
+        threeDoors: true,
+        scene_key: data.scene_key,
+        image_prompt: data.image_prompt,
+        image_available: data.image_available,
+      };
+    } catch (e) {
+      return { reply: `Three Doors engine error: ${e.message}`, agent: "Lantern", suggestions: [], online: false, threeDoors: true };
+    }
+  }
+
   const agent = requestedAgent
     ? (AGENT_PERSONAS.find((a) => a.id === requestedAgent) || selectAgent(message))
     : selectAgent(message);

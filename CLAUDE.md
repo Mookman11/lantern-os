@@ -117,7 +117,8 @@ Copy `.env.example` to `.env` at repo root. Key variables: `ANTHROPIC_API_KEY`, 
 ## Monoworkstream Rule (Critical)
 
 This repo enforces **one open PR at a time**:
-- No new commits or branches while a PR is open
+- No new branches while a PR is open
+- Commits and pushes to a branch that already has an open PR are always allowed
 - Install hooks: `powershell -ExecutionPolicy Bypass -File scripts/Install-MonoworkstreamHooks.ps1`
 - Emergency bypass: `SKIP_MONOWORKSTREAM=1 git commit ...`
 
