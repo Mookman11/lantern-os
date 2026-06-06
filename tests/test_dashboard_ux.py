@@ -95,18 +95,21 @@ def test_dream_chat_has_provider_settings() -> None:
 
 def test_dream_chat_stream_reader_is_guarded() -> None:
     html = read("apps/lantern-garage/public/dream-chat.html")
-    # streamFinished guard prevents double finishStream
-    assert "streamFinished" in html
-    assert "processLines" in html
+    js = read("apps/lantern-garage/public/js/dream-chat.js")
+    # streamFinished guard prevents double finishStream (JS lives in external file)
+    assert "streamFinished" in html or "streamFinished" in js
+    assert "processLines" in html or "processLines" in js
     # No canned offline fallback in client
     assert "The flame holds steady" not in html
+    assert "The flame holds steady" not in js
 
 
 def test_dream_chat_fails_fast_without_provider() -> None:
     html = read("apps/lantern-garage/public/dream-chat.html")
-    # failed source is handled in finishStream
-    assert '"failed"' in html or "failed" in html
-    assert "source-badge" in html
+    js = read("apps/lantern-garage/public/js/dream-chat.js")
+    # failed source is handled in finishStream (JS lives in external file)
+    assert '"failed"' in html or "failed" in html or '"failed"' in js or "failed" in js
+    assert "source-badge" in html or "source-badge" in js
 
 
 def test_pcsf_files_exist() -> None:

@@ -14,7 +14,7 @@
   // Conversation history for multi-turn context — [{role:"user"|"assistant", text:"..."}]
   const conversationHistory = [];
 
-  // ── Analytics / Debug collector ───────────────────────────────────────
+  // ── Analytics / Debug collector ─────────────────────────────────────────────────────
   const analytics = {
     sessionStart: Date.now(),
     messagesSent: 0,
@@ -121,7 +121,7 @@
 
   let agents = [];
 
-  // ── Load agents ───────────────────────────────────────────────────────
+  // ── Load agents ────────────────────────────────────────────────────────
   async function loadAgents() {
     try {
       const r = await fetch(`${serverBase}/api/agents`, { signal: AbortSignal.timeout(3000) });
@@ -150,7 +150,7 @@
     }
   });
 
-  // ── Send ──────────────────────────────────────────────────────────────
+  // ── Send ────────────────────────────────────────────────────────────────
   function sendMessage() {
     const text = inputEl.value.trim();
     if (!text || isStreaming) return;
@@ -228,7 +228,7 @@
     scrollToBottom();
   }
 
-  // ── Stream agent response ─────────────────────────────────────────────
+  // ── Stream agent response ───────────────────────────────────────────────────
   function streamAgentResponse(message) {
     isStreaming = true;
     sendBtn.disabled = true;
@@ -362,7 +362,7 @@
       const badge = document.createElement("div");
       badge.className = `source-badge ${source}`;
       const names = { anthropic: "Claude", openai: "ChatGPT", gemini: "Gemini", grok: "Grok", ollama: "Ollama" };
-      badge.textContent = `✦ ${names[source] || source}`;
+      badge.textContent = `❆ ${names[source] || source}`;
       row.appendChild(badge);
     }
 
@@ -385,7 +385,7 @@
       row.appendChild(chips);
     }
 
-    // ── Three Doors banner ────────────────────────────────────────────
+    // ── Three Doors banner ────────────────────────────────────────────────────────────────
     if (Array.isArray(suggestions) && suggestions.length === 3) {
       appendDoorsBanner(row, suggestions);
     }
@@ -398,12 +398,12 @@
       imgNote.textContent = `🎨 ${imagePrompt}`;
       row.appendChild(imgNote);
     }
-    // ✦ Log dream button — lets user save conversation as a dream entry
+    // ❆ Log dream button — lets user save conversation as a dream entry
     if (text && source !== "failed" && source !== "error") {
       const logBtn = document.createElement("button");
       logBtn.className = "suggestion";
       logBtn.style.cssText = "margin-top:6px;border-color:var(--accent-dim);color:var(--accent);";
-      logBtn.textContent = "✦ Log this as a dream";
+      logBtn.textContent = "❆ Log this as a dream";
       logBtn.onclick = async () => {
         logBtn.disabled = true;
         logBtn.textContent = "Saving…";
@@ -493,7 +493,7 @@
     return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
 
-  // ── Settings drawer ───────────────────────────────────────────────────
+  // ── Settings drawer ─────────────────────────────────────────────────────
   const PROVIDERS = [
     { id: "claude",  envKey: "ANTHROPIC_API_KEY" },
     { id: "gemini",  envKey: "GEMINI_API_KEY" },
@@ -593,9 +593,9 @@
   // Load status badge on open if a provider was missing last time
   loadProviderStatus();
 
-  // ══════════════════════════════════════════════════════════════════
+  // ════════════════════════════════════════════════════════════════
   //  Log Dream — structured capture drawer
-  // ══════════════════════════════════════════════════════════════════
+  // ════════════════════════════════════════════════════════════════
   const logDreamTags = { emotions: [], tags: [], symbols: [] };
 
   function openLogDream() {
@@ -690,9 +690,9 @@
     }
   }
 
-  // ══════════════════════════════════════════════════════════════════
+  // ════════════════════════════════════════════════════════════════
   //  CTF — Convergence Text Format symbol dictionary
-  // ══════════════════════════════════════════════════════════════════
+  // ════════════════════════════════════════════════════════════════
   const CTF = {
     "see":"👁","sight":"👁","vision":"🔭","hear":"👂","sound":"🎵","music":"🎵",
     "taste":"👅","smell":"🌸","touch":"🤲","feel":"💫","sense":"🌐",
@@ -700,18 +700,18 @@
     "door":"🚪","gate":"⛩","path":"🛤","bridge":"🌉","tunnel":"🕳",
     "light":"✨","glow":"🌟","fire":"🔥","flame":"🔥","water":"🌊","fog":"🌫",
     "earth":"🌍","air":"💨","void":"◻","dark":"🌑","shadow":"🌒",
-    "lantern":"🏮","key":"🗝","mirror":"🪞","clock":"⏰","star":"⭐","moon":"🌙",
+    "lantern":"🏮","key":"🗝","mirror":"🪤","clock":"⏰","star":"⭐","moon":"🌙",
     "sun":"☀","eye":"👁","hand":"🤲","heart":"💜","anchor":"⚓","compass":"🧭",
     "tree":"🌲","forest":"🌿","flower":"🌸","crystal":"💎","stone":"🪨","seed":"🌱",
     "dream":"🌙","memory":"💭","thought":"💭","idea":"💡","pattern":"🌀","mesh":"⬡",
     "convergence":"◈","signal":"📡","noise":"〰","loop":"🔄","flow":"〜","layer":"⧖",
-    "symbol":"✦","glyph":"⌖","code":"⌥","cipher":"⊛","rune":"ᚱ","sigil":"⛤",
+    "symbol":"❆","glyph":"⌖","code":"⌥","cipher":"⊛","rune":"ᚱ","sigil":"⛤",
     "peace":"🕊","wonder":"✨","fear":"⚡","joy":"☀","love":"💜","loss":"🌑","hope":"🌅",
     "curious":"🔭","aware":"👁","alive":"🌱","free":"🕊","safe":"⚓","home":"🏮",
-    "past":"◀","future":"▶","now":"◉","moment":"⊙","night":"🌙","dawn":"🌅","cycle":"🔄",
-    "city":"🏙","ocean":"🌊","sky":"🌌","cave":"🕳","mountain":"⛰","desert":"🏜",
-    "color":"🎨","red":"🔴","blue":"🔵","green":"🟢","purple":"🟣","gold":"✦","white":"◯","black":"●",
-    "voice":"🎙","speak":"🗣","listen":"👂","silence":"◻","word":"📝","story":"📖",
+    "past":"◀","future":"▶","now":"◎","moment":"⊙","night":"🌙","dawn":"🌅","cycle":"🔄",
+    "city":"🏙","ocean":"🌊","sky":"🌌","cave":"🕳","mountain":"⛰","desert":"🏕",
+    "color":"🎨","red":"🔴","blue":"🔵","green":"🟢","purple":"🟣","gold":"❆","white":"◯","black":"●",
+    "voice":"🎤","speak":"🗣","listen":"👂","silence":"◻","word":"📝","story":"📖",
     "open":"◉","close":"●","enter":"→","exit":"←","return":"↩","begin":"▶","end":"■",
   };
 
@@ -799,9 +799,9 @@
     }
   });
 
-  // ══════════════════════════════════════════════════════════════════
+  // ════════════════════════════════════════════════════════════════
   //  Voice — STT (Web Speech API) + TTS
-  // ══════════════════════════════════════════════════════════════════
+  // ════════════════════════════════════════════════════════════════
   const voiceBtn = document.getElementById("voice-btn");
   let recognition = null;
   let isListening = false;
@@ -825,7 +825,7 @@
         inputEl.value = accumulated;
         inputEl.dispatchEvent(new Event("input"));
       } else if (interim) {
-        inputEl.placeholder = "🎙 " + interim;
+        inputEl.placeholder = "🎤 " + interim;
       }
     };
     recognition.onend = () => {
@@ -850,7 +850,7 @@
     } else {
       isListening = true;
       voiceBtn.classList.add("listening");
-      inputEl.placeholder = "🎙 Listening…";
+      inputEl.placeholder = "🎤 Listening…";
       try { recognition.start(); } catch(e) { isListening = false; voiceBtn.classList.remove("listening"); inputEl.placeholder = "Tell me a dream…"; }
     }
   }
@@ -864,7 +864,7 @@
 
   async function speakText(text) {
     stopSpeaking();
-    const clean = text.replace(/\[DOORS:[^\]]+\]/gi, "").replace(/[✦◈⬡⛤⌖⊛ᚱ]/g, "").replace(/[^\x00-\x7F]/g, (c) => {
+    const clean = text.replace(/\[DOORS:[^\]]+\]/gi, "").replace(/[❆◈⬡⛤⌖⊛ᚱ]/g, "").replace(/[^\x00-\x7F]/g, (c) => {
       return c.codePointAt(0) > 0x2FFF ? " " : c;
     }).trim();
     if (!clean) return;
@@ -976,16 +976,16 @@
   loadVoiceSettings();
 
 
-  // ══════════════════════════════════════════════════════════════════
+  // ════════════════════════════════════════════════════════════════
   //  Three Doors Banner — Canvas-generated widescreen PNG
   //  Called after each AI reply that includes 3 door suggestions.
-  // ══════════════════════════════════════════════════════════════════
+  // ════════════════════════════════════════════════════════════════
 
   // Symbol glyphs drawn in each door panel (cycled from the door text keywords)
   const DOOR_GLYPHS = {
     fog:"🌫", mist:"🌫", cloud:"☁", light:"✨", glow:"🌟", door:"🚪", gate:"⛩",
     step:"🚶", walk:"🚶", ground:"🌍", earth:"🌍", solid:"⚓", breath:"💨",
-    hear:"👂", sound:"🎵", voice:"🎙", feel:"💫", touch:"🤲", taste:"👅",
+    hear:"👂", sound:"🎵", voice:"🎤", feel:"💫", touch:"🤲", taste:"👅",
     name:"📝", word:"📝", see:"👁", sight:"👁", open:"◉", find:"🔭",
     return:"↩", home:"🏮", path:"🛤", bridge:"🌉", water:"🌊", fire:"🔥",
     dream:"🌙", wonder:"✨", memory:"💭", salt:"🌊", threshold:"🚪",
@@ -1136,3 +1136,12 @@
     const saveHint = document.createElement("div");
     saveHint.className = "doors-banner-save";
     saveHint.textContent = "click to save";
+    wrap.addEventListener("click", () => {
+      const a = document.createElement("a");
+      a.download = `dream-doors-${Date.now()}.png`;
+      a.href = canvas.toDataURL("image/png");
+      a.click();
+    });
+    row.appendChild(wrap);
+    scrollToBottom();
+  }
