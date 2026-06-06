@@ -16,7 +16,7 @@ use std::thread;
 
 use clap::{Parser, Subcommand};
 
-use csf::{Archive, Compressor, Decompressor, SecurityPolicy};
+use csf::{Compressor, Decompressor, SecurityPolicy};
 
 #[derive(Parser)]
 #[command(name = "csf")]

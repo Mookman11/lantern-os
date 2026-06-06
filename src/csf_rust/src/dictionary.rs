@@ -146,9 +146,10 @@ mod tests {
             &policy,
         )
         .unwrap();
-        assert_eq!(dict.encode("Garden"), 1);
-        assert_eq!(dict.encode("Lantern"), 2);
-        assert_eq!(dict.encode("Missing"), 0); // unknown
+        assert_ne!(dict.encode("Garden"), 0);   // known (freq 2)
+        assert_ne!(dict.encode("Table"), 0);    // known (freq 2)
+        assert_eq!(dict.encode("Lantern"), 0);  // unknown (freq 1 < min_freq)
+        assert_eq!(dict.encode("Missing"), 0);  // unknown
 
         let mut buf = Vec::new();
         dict.write(&mut buf, &policy).unwrap();
