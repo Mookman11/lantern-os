@@ -786,7 +786,7 @@
     <div class="logo">🔮</div>
     <div class="title-block">
       <h1>Dream Journal</h1>
-      <p>Lantern OS · private · local</p>
+      <p id="app-version">Lantern OS · private · local</p>
     </div>
     <div class="selector-row">
       <select id="agent-select" title="Agent"></select>
@@ -1220,6 +1220,17 @@
   // Point at the expected local address and surface a clear banner if unreachable.
   const isStaticHost = window.location.hostname !== "127.0.0.1" && window.location.hostname !== "localhost";
   let serverBase = isStaticHost ? "http://127.0.0.1:4177" : window.location.origin;
+
+  // Load version badge from version.json (bump minor in each PR)
+  fetch(`${serverBase}/version.json`, { cache: "no-store" })
+    .then(r => r.ok ? r.json() : null)
+    .then(v => {
+      if (v?.version) {
+        const el = document.getElementById("app-version");
+        if (el) el.textContent = `Lantern OS v${v.version} · private · local`;
+      }
+    })
+    .catch(() => {});
 
   if (isStaticHost) {
     const banner = document.createElement("div");

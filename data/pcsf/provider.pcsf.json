@@ -3,9 +3,15 @@
   "pcsf_version": "2.0.0",
   "component": "provider",
   "description": "AI provider capacity registry. Defines the fallback chain, env key bindings, circuit breaker thresholds, and current capacity states.",
-  "generated_at": "2026-06-05T00:00:00Z",
+  "generated_at": "2026-06-06T17:10:38.628Z",
   "state": "available",
-  "fallback_chain": ["google", "anthropic", "openai", "xai", "ollama"],
+  "fallback_chain": [
+    "google",
+    "anthropic",
+    "openai",
+    "xai",
+    "ollama"
+  ],
   "note": "Gemini is now priority 0 in stream-chat.js — checked first in Auto mode since GEMINI_API_KEY is the confirmed live key.",
   "providers": [
     {
@@ -13,38 +19,44 @@
       "name": "Claude",
       "priority": 1,
       "env_key": "ANTHROPIC_API_KEY",
-      "state": "no_key",
+      "state": "available",
       "endpoint": "api.anthropic.com",
       "path": "/v1/messages",
       "stream_supported": true,
       "default_model_env": "ANTHROPIC_MODEL",
-      "latency_ema_ms": 0.0,
-      "latency_p99_ms": 0.0,
+      "latency_ema_ms": 0,
+      "latency_p99_ms": 0,
       "error_count": 0,
       "success_count": 0,
       "quota_remaining": null,
-      "is_routable": false,
-      "circuit_breaker": { "failure_threshold": 3, "recovery_secs": 30 },
-      "last_checked": null
+      "is_routable": true,
+      "circuit_breaker": {
+        "failure_threshold": 3,
+        "recovery_secs": 30
+      },
+      "last_checked": "2026-06-06T17:10:38.628Z"
     },
     {
       "provider_id": "openai",
       "name": "ChatGPT",
       "priority": 2,
       "env_key": "OPENAI_API_KEY",
-      "state": "no_key",
+      "state": "available",
       "endpoint": "api.openai.com",
       "path": "/v1/chat/completions",
       "stream_supported": true,
       "default_model_env": "OPENAI_MODEL",
-      "latency_ema_ms": 0.0,
-      "latency_p99_ms": 0.0,
+      "latency_ema_ms": 0,
+      "latency_p99_ms": 0,
       "error_count": 0,
       "success_count": 0,
       "quota_remaining": null,
-      "is_routable": false,
-      "circuit_breaker": { "failure_threshold": 3, "recovery_secs": 30 },
-      "last_checked": null
+      "is_routable": true,
+      "circuit_breaker": {
+        "failure_threshold": 3,
+        "recovery_secs": 30
+      },
+      "last_checked": "2026-06-06T17:10:38.628Z"
     },
     {
       "provider_id": "google",
@@ -56,14 +68,17 @@
       "path": "/v1beta/models/{model}:streamGenerateContent",
       "stream_supported": true,
       "default_model_env": "GEMINI_MODEL",
-      "latency_ema_ms": 0.0,
-      "latency_p99_ms": 0.0,
+      "latency_ema_ms": 0,
+      "latency_p99_ms": 0,
       "error_count": 0,
       "success_count": 0,
       "quota_remaining": null,
       "is_routable": true,
-      "circuit_breaker": { "failure_threshold": 3, "recovery_secs": 30 },
-      "last_checked": null
+      "circuit_breaker": {
+        "failure_threshold": 3,
+        "recovery_secs": 30
+      },
+      "last_checked": "2026-06-06T17:10:38.628Z"
     },
     {
       "provider_id": "xai",
@@ -71,19 +86,22 @@
       "priority": 3,
       "note": "Added this session. OpenAI-compatible endpoint.",
       "env_key": "XAI_API_KEY",
-      "state": "no_key",
+      "state": "available",
       "endpoint": "api.x.ai",
       "path": "/v1/chat/completions",
       "stream_supported": true,
       "default_model_env": "XAI_MODEL",
-      "latency_ema_ms": 0.0,
-      "latency_p99_ms": 0.0,
+      "latency_ema_ms": 0,
+      "latency_p99_ms": 0,
       "error_count": 0,
       "success_count": 0,
       "quota_remaining": null,
-      "is_routable": false,
-      "circuit_breaker": { "failure_threshold": 3, "recovery_secs": 30 },
-      "last_checked": null
+      "is_routable": true,
+      "circuit_breaker": {
+        "failure_threshold": 3,
+        "recovery_secs": 30
+      },
+      "last_checked": "2026-06-06T17:10:38.628Z"
     },
     {
       "provider_id": "ollama",
@@ -96,25 +114,47 @@
       "path": "/api/chat",
       "stream_supported": true,
       "default_model_env": "OLLAMA_MODEL",
-      "latency_ema_ms": 0.0,
-      "latency_p99_ms": 0.0,
+      "latency_ema_ms": 0,
+      "latency_p99_ms": 0,
       "error_count": 0,
       "success_count": 0,
       "quota_remaining": null,
       "is_routable": false,
-      "circuit_breaker": { "failure_threshold": 1, "recovery_secs": 10 },
+      "circuit_breaker": {
+        "failure_threshold": 1,
+        "recovery_secs": 10
+      },
       "last_checked": null,
       "note": "No key required — local only. Only routable when Ollama process is running."
     }
   ],
   "tier_priority_boosts": {
     "wanderer": {},
-    "deep_dreamer": { "anthropic": -1, "openai": -1 },
-    "synthesasia_guild": { "anthropic": -2, "openai": -2, "google": -1 }
+    "deep_dreamer": {
+      "anthropic": -1,
+      "openai": -1
+    },
+    "synthesasia_guild": {
+      "anthropic": -2,
+      "openai": -2,
+      "google": -1
+    }
   },
   "tier_quota_limits": {
-    "wanderer": { "art_generation": 15, "chat": 100, "3door_plays": 5 },
-    "deep_dreamer": { "art_generation": null, "chat": null, "3door_plays": null },
-    "synthesasia_guild": { "art_generation": null, "chat": null, "3door_plays": null }
+    "wanderer": {
+      "art_generation": 15,
+      "chat": 100,
+      "3door_plays": 5
+    },
+    "deep_dreamer": {
+      "art_generation": null,
+      "chat": null,
+      "3door_plays": null
+    },
+    "synthesasia_guild": {
+      "art_generation": null,
+      "chat": null,
+      "3door_plays": null
+    }
   }
 }

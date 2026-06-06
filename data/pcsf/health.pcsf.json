@@ -3,7 +3,7 @@
   "pcsf_version": "1.0.0",
   "component": "health_check",
   "description": "Health monitoring layer. Declares all checkable endpoints, their expected responses, and current pass/fail state. Used by CI, agents, and canary monitors.",
-  "generated_at": "2026-06-05T00:00:00Z",
+  "generated_at": "2026-06-06T17:10:38.648Z",
   "state": "available",
   "server": {
     "host": "127.0.0.1",
@@ -16,7 +16,10 @@
       "name": "Server alive",
       "route": "GET /api/health",
       "expect_status": 200,
-      "expect_body": { "ok": true, "service": "lantern-garage" },
+      "expect_body": {
+        "ok": true,
+        "service": "lantern-garage"
+      },
       "state": "pass",
       "critical": true,
       "description": "Basic liveness check. If this fails, no other checks matter."
@@ -26,7 +29,11 @@
       "name": "Dream stats API",
       "route": "GET /api/dream/stats",
       "expect_status": 200,
-      "expect_fields": ["total_entries", "entries_by_kind", "avg_lucidity"],
+      "expect_fields": [
+        "total_entries",
+        "entries_by_kind",
+        "avg_lucidity"
+      ],
       "state": "pass",
       "critical": true,
       "description": "Core journal analytics endpoint. Reads JSONL from data/dream_journal/."
@@ -36,7 +43,10 @@
       "name": "Dream search API",
       "route": "GET /api/dream/search",
       "expect_status": 200,
-      "expect_fields": ["results", "count"],
+      "expect_fields": [
+        "results",
+        "count"
+      ],
       "state": "pass",
       "critical": true,
       "description": "Full-text and tag search over journal entries."
@@ -46,7 +56,11 @@
       "name": "Dream create API",
       "route": "POST /api/dream/create",
       "expect_status": 200,
-      "expect_fields": ["id", "saved", "entry"],
+      "expect_fields": [
+        "id",
+        "saved",
+        "entry"
+      ],
       "state": "pass",
       "critical": true,
       "description": "Entry creation. Validated in test_dream_journal_api.js."
@@ -56,7 +70,10 @@
       "name": "Agents list",
       "route": "GET /api/agents",
       "expect_status": 200,
-      "expect_fields": ["agents", "default"],
+      "expect_fields": [
+        "agents",
+        "default"
+      ],
       "state": "pass",
       "critical": true,
       "description": "Returns narrator persona list. Required for dream-chat.html to populate agent selector."
@@ -66,14 +83,18 @@
       "name": "Settings — provider states",
       "route": "GET /api/settings/providers",
       "expect_status": 200,
-      "expect_fields": ["ANTHROPIC_API_KEY", "GEMINI_API_KEY", "_any"],
+      "expect_fields": [
+        "ANTHROPIC_API_KEY",
+        "GEMINI_API_KEY",
+        "_any"
+      ],
       "state": "pass",
       "current_snapshot": {
-        "ANTHROPIC_API_KEY": false,
-        "OPENAI_API_KEY": false,
+        "ANTHROPIC_API_KEY": true,
+        "OPENAI_API_KEY": true,
         "GEMINI_API_KEY": true,
         "GOOGLE_API_KEY": false,
-        "XAI_API_KEY": false,
+        "XAI_API_KEY": true,
         "OLLAMA_BASE_URL": false,
         "_any": true
       },
@@ -105,7 +126,11 @@
       "name": "Landing page",
       "route": "GET /",
       "expect_status": 200,
-      "expect_body_contains": ["Dream Journal", "dream-chat.html", "patreon.com"],
+      "expect_body_contains": [
+        "Dream Journal",
+        "dream-chat.html",
+        "patreon.com"
+      ],
       "state": "pass",
       "critical": false,
       "description": "Static landing page. Links to dream chat and Patreon."
@@ -115,17 +140,43 @@
       "name": "Dream chat page",
       "route": "GET /dream-chat.html",
       "expect_status": 200,
-      "expect_body_contains": ["dream-chat", "sendMessage", "api/dream/stream"],
+      "expect_body_contains": [
+        "dream-chat",
+        "sendMessage",
+        "api/dream/stream"
+      ],
       "state": "pass",
       "critical": false,
       "description": "Dream chat SPA. Contains stream client and settings drawer."
     }
   ],
   "ci_gate": {
-    "required_passing": ["server_health", "dream_stats", "dream_search", "dream_create", "agents_list", "settings_providers"],
-    "advisory_only": ["dream_stream", "landing_page", "dream_chat_page"],
+    "required_passing": [
+      "server_health",
+      "dream_stats",
+      "dream_search",
+      "dream_create",
+      "agents_list",
+      "settings_providers"
+    ],
+    "advisory_only": [
+      "dream_stream",
+      "landing_page",
+      "dream_chat_page"
+    ],
     "test_file": "tests/test_dream_journal_api.js",
     "ci_workflow": ".github/workflows/ci.yml",
     "ci_job": "test-node"
+  },
+  "journal": {
+    "total_entries": 103,
+    "entries_by_kind": {
+      "dream": 67,
+      "note": 20,
+      "reflection": 16
+    },
+    "entries_with_ctf": 0,
+    "avg_lucidity": 0.2,
+    "generated_at": "2026-06-06T17:10:38.648Z"
   }
 }
