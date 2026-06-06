@@ -38,7 +38,7 @@
           const d = await r.json();
           if (d.ok && d.restart_scheduled) {
             banner.querySelector(".lantern-update-text").innerHTML =
-              `<span style="color:#4caf82">Updated to <code>${d.version.tag}</code>. Restarting server...</span>`;
+              `<span style="color:var(--green)">Updated to <code>${d.version.tag}</code>. Restarting server...</span>`;
             btn.style.display = "none";
             document.getElementById("lantern-update-dismiss").style.display = "none";
             // Server will restart; wait 4s then reload
@@ -46,13 +46,13 @@
           } else {
             const failed = d.steps.filter(s => !s.ok).map(s => s.step).join(", ");
             banner.querySelector(".lantern-update-text").innerHTML =
-              `<span style="color:#ff6b6b">Update failed: ${failed}</span>`;
+              `<span style="color:var(--danger)">Update failed: ${failed}</span>`;
             btn.textContent = "Retry";
             btn.disabled = false;
           }
         } catch (e) {
           banner.querySelector(".lantern-update-text").innerHTML =
-            `<span style="color:#ff6b6b">Network error: ${e.message}</span>`;
+            `<span style="color:var(--danger)">Network error: ${e.message}</span>`;
           btn.textContent = "Retry";
           btn.disabled = false;
         }
@@ -95,6 +95,17 @@
     }
   }
 
+  async function fetchCompare(localCommit) {
+    try {
+      const r = await fetch(`https://api.github.com/repos/alex-place/lantern-os/compare/${localCommit}...master`, { signal: AbortSignal.timeout(8000) });
+      if (!r.ok) return null;
+      const d = await r.json();
+      return { behind: d.behind_by || 0, ahead: d.ahead_by || 0, status: d.status };
+    } catch {
+      return null;
+    }
+  }
+
   async function check() {
     [localCommit, remoteCommit] = await Promise.all([
       fetchLocalVersion(),
@@ -107,6 +118,25 @@
     }
 
     if (localCommit === remoteCommit) {
+      removeBanner();
+      return;
+    }
+
+    const compare = await fetchCompare(localCommit);
+    if (!compare) {
+      // Can't determine relationship — hide banner to avoid false positive
+      removeBanner();
+      return;
+    }
+
+    if (compare.ahead > 0) {
+      // Local is ahead of remote (unpushed commits) — no update needed
+      removeBanner();
+      return;
+    }
+
+    if (compare.behind === 0) {
+      // Up to date (diverged but not behind)
       removeBanner();
       return;
     }
@@ -132,12 +162,12 @@
         justify-content: center;
         gap: 12px;
         padding: 10px 16px;
-        background: linear-gradient(90deg, #1a1d2a, #2e2860 60%, #1a1d2a);
-        border-bottom: 1px solid #7c6af7;
-        color: #e8eaf6;
+        background: linear-gradient(90deg, var(--surface2), var(--accent-dim) 60%, var(--surface2));
+        border-bottom: 1px solid var(--accent);
+        color: var(--text);
         font-family: "Segoe UI", system-ui, sans-serif;
         font-size: 0.9rem;
-        box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+        box-shadow: var(--shadow-hover);
         animation: lanternBannerSlide 0.35s ease-out;
       }
       @keyframes lanternBannerSlide {
@@ -145,14 +175,14 @@
         to   { transform: translateY(0); }
       }
       #lantern-update-banner .lantern-update-text code {
-        background: rgba(124,106,247,0.18);
+        background: rgba(255,66,77,0.12);
         padding: 2px 6px;
         border-radius: 4px;
         font-family: monospace;
-        color: #f4c76b;
+        color: var(--gold);
       }
       #lantern-update-banner .lantern-update-btn {
-        background: #7c6af7;
+        background: var(--accent);
         color: #fff;
         border: none;
         border-radius: 6px;
@@ -163,11 +193,11 @@
         transition: background 0.2s;
       }
       #lantern-update-banner .lantern-update-btn:hover {
-        background: #9b8df9;
+        background: var(--accent-hover);
       }
       #lantern-update-banner .lantern-update-dismiss {
         background: transparent;
-        color: #7880a4;
+        color: var(--muted);
         border: none;
         font-size: 1.3rem;
         line-height: 1;
@@ -176,7 +206,7 @@
         padding: 0 4px;
       }
       #lantern-update-banner .lantern-update-dismiss:hover {
-        color: #e8eaf6;
+        color: var(--text);
       }
       /* Push page content down when banner is present */
       body:has(#lantern-update-banner) {

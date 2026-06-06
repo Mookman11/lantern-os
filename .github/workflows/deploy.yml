@@ -112,7 +112,7 @@ jobs:
           urls = [
               "https://alex-place.github.io/lantern-os/",
               "https://alex-place.github.io/lantern-os/dream/",
-              "https://alex-place.github.io/lantern-os/dream/dream-chat-orion.html",
+              "https://alex-place.github.io/lantern-os/dream/dream-chat.html",
           ]
           ok = 0
           for url in urls:
@@ -141,6 +141,6 @@ jobs:
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "✓ GitHub Pages: https://alex-place.github.io/lantern-os/"
           echo "✓ Dream Journal UI: https://alex-place.github.io/lantern-os/dream/"
-          echo "✓ Orion Chat: https://alex-place.github.io/lantern-os/dream/dream-chat-orion.html"
+          echo "✓ Dream Chat: https://alex-place.github.io/lantern-os/dream/dream-chat.html"
           echo "✓ Railway: connect at https://railway.app (auto-deploy from master)"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

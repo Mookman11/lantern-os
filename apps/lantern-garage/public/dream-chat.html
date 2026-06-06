@@ -460,7 +460,7 @@
 <script>
 (function() {
   const base = window.location.origin;
-  fetch(base + '/version.json', { cache: 'no-store' })
+  fetch(base + '/version.json?t=' + Date.now(), { cache: 'no-store' })
     .then(r => r.ok ? r.json() : null)
     .then(v => {
       if (!v || !v.version) return;

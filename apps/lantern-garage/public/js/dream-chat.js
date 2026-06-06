@@ -102,7 +102,7 @@
   let serverBase = isStaticHost ? "http://127.0.0.1:4177" : window.location.origin;
 
   // Load version badge from version.json (bump minor in each PR)
-  fetch(`${serverBase}/version.json`, { cache: "no-store" })
+  fetch(`${serverBase}/version.json?t=${Date.now()}`, { cache: "no-store" })
     .then(r => r.ok ? r.json() : null)
     .then(v => {
       if (v?.version) {
@@ -161,7 +161,7 @@
       toggleDebug();
       return;
     }
-    // !convergence runs the Lantern convergence loop
+    // !convergence runs the Lantern convergence loop + version check
     if (text === "!convergence") {
       inputEl.value = "";
       inputEl.style.height = "auto";
@@ -170,12 +170,33 @@
       sysRow.innerHTML = `<div class="msg-label">System</div><div class="bubble">Running convergence loop…</div>`;
       messagesEl.appendChild(sysRow);
       scrollToBottom();
-      fetch(`${serverBase}/api/actions/run-loop`, { method: "POST" })
-        .then(async (r) => {
-          const d = await r.json();
-          const out = d.stdout ? d.stdout.slice(0, 800) : "";
-          const err = d.stderr ? d.stderr.slice(0, 400) : "";
-          sysRow.querySelector(".bubble").innerHTML = `<b>Convergence loop</b> ${r.ok ? "✓" : "✗"}<pre style="margin-top:6px;white-space:pre-wrap;font-size:12px;opacity:0.85;">${escapeHtml(out)}${err ? "\n---stderr---\n" + escapeHtml(err) : ""}</pre>`;
+
+      const runLoop = fetch(`${serverBase}/api/actions/run-loop`, { method: "POST" });
+      const fetchVersion = fetch(`${serverBase}/api/version`).then(r => r.ok ? r.json() : null).catch(() => null);
+
+      Promise.all([runLoop, fetchVersion])
+        .then(async ([loopR, versionD]) => {
+          const d = await loopR.json();
+          const rawOut = d.stdout || "";
+          const rawErr = d.stderr || "";
+          const tag = versionD?.version?.tag || "unknown";
+          const commit = versionD?.version?.commit ? versionD.version.commit.slice(0, 7) : "?";
+
+          // Extract JSON from stdout (convergence loop prints it at the end)
+          let promo = "";
+          try {
+            const jsonMatch = rawOut.match(/\{[\s\S]*"promotion_ready"[\s\S]*\}/);
+            if (jsonMatch) {
+              const loopJson = JSON.parse(jsonMatch[0]);
+              promo = loopJson.promotion_ready ? "✓ promotion_ready" : "✗ not ready";
+            }
+          } catch {}
+
+          const out = rawOut.slice(0, 700);
+          const err = rawErr.slice(0, 300);
+
+          sysRow.querySelector(".bubble").innerHTML =
+            `<b>Convergence loop</b> ${loopR.ok ? "✓" : "✗"} <code>${tag}</code> <code>${commit}</code> ${promo}<pre style="margin-top:6px;white-space:pre-wrap;font-size:12px;opacity:0.85;">${escapeHtml(out)}${err ? "\n---stderr---\n" + escapeHtml(err) : ""}</pre>`;
           scrollToBottom();
         })
         .catch((e) => {

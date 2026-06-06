@@ -111,16 +111,38 @@ module.exports = async function operatorRoutes(req, res, url, deps) {
       const allOk = steps.every(s => s.ok);
 
       // Step 4: schedule restart if everything passed
+      // Priority: PM2 > watchdog.js > raw spawn (most stable to least)
       if (allOk) {
         setTimeout(() => {
-          // Spawn detached restart — parent exits, child takes over
-          const restartScript = process.platform === "win32"
-            ? `Start-Sleep -Seconds 2; Start-Process node -ArgumentList "apps/lantern-garage/server.js" -WindowStyle Hidden`
-            : `sleep 2 && node apps/lantern-garage/server.js`;
-          const shell = process.platform === "win32" ? "powershell.exe" : "sh";
-          const args = process.platform === "win32" ? ["-Command", restartScript] : ["-c", restartScript];
-          spawn(shell, args, { detached: true, stdio: "ignore", cwd: repoRoot });
-          process.exit(0);
+          try {
+            const { execSync } = require("child_process");
+            // Try PM2 first (if globally installed and ecosystem.config.js exists)
+            const pm2Config = require("path").join(repoRoot, "apps/lantern-garage/ecosystem.config.js");
+            try {
+              execSync("pm2 restart lantern-garage", { cwd: repoRoot, encoding: "utf8", timeout: 15000, stdio: "pipe" });
+              process.exit(0);
+            } catch {
+              // PM2 not available, try watchdog
+            }
+            // Fallback: watchdog.js (pure Node.js supervisor)
+            try {
+              execSync("node apps/lantern-garage/watchdog.js", { cwd: repoRoot, encoding: "utf8", timeout: 5000, stdio: "pipe" });
+              process.exit(0);
+            } catch {
+              // Watchdog failed, final fallback
+            }
+            // Final fallback: detached spawn (old behavior)
+            const restartScript = process.platform === "win32"
+              ? `Start-Sleep -Seconds 2; Start-Process node -ArgumentList "apps/lantern-garage/server.js" -WindowStyle Hidden`
+              : `sleep 2 && node apps/lantern-garage/server.js`;
+            const shell = process.platform === "win32" ? "powershell.exe" : "sh";
+            const args = process.platform === "win32" ? ["-Command", restartScript] : ["-c", restartScript];
+            spawn(shell, args, { detached: true, stdio: "ignore", cwd: repoRoot });
+            process.exit(0);
+          } catch (restartErr) {
+            console.error("Restart failed:", restartErr.message);
+            process.exit(1);
+          }
         }, 1000);
       }
 
