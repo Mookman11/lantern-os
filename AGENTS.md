@@ -150,11 +150,14 @@ Never claim a skill or fleet slot is active unless confirmed by implementation o
 
 ## Monoworkstream Rule (Single-Dev Workflow)
 
-This repo enforces a **single workstream**: only one open PR at a time.
+This repo enforces a **single workstream**: only one open feature PR at a time.
 
 - **Commits and pushes to a branch that already has an open PR are always allowed.**
 - **No new branches while any PR is open.** The pre-commit and pre-push hooks enforce this via GitHub CLI.
+- **Exempt branches:** `gh-pages` (static site deploy) and `master` are long-lived branches and never count as a workstream.
 - **Emergency bypass:** `SKIP_MONOWORKSTREAM=1 git commit ...` or `SKIP_MONOWORKSTREAM=1 git push ...`
+
+**Note:** Multiple agents running concurrently via `.claude/agent-slots.json` is a core design feature, not a monoworkstream violation. The rule applies to Git branches / PRs, not to active agent slots.
 
 ---
 
