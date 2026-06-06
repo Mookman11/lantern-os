@@ -132,7 +132,7 @@ impl Decompressor {
         let dictionary = SymbolicDictionary::read(&mut &dict_buf[..], policy)?;
 
         let meta = CsrMetadata::read(&mut cursor)?;
-        let sparse_len = (body.len() - cursor.position() as usize);
+        let sparse_len = body.len() - cursor.position() as usize;
         let mut sparse_buf = vec![0u8; sparse_len];
         cursor.read_exact(&mut sparse_buf)?;
 

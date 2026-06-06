@@ -8,7 +8,7 @@ use std::io::{Read, Write};
 
 use crate::{CsfError, Result};
 
-pub const MAGIC: &[u8] = b"CSFv1\0\0";
+pub const MAGIC: &[u8] = b"CSFv1\0\0\0";
 pub const HEADER_SIZE: usize = 64;
 pub const FOOTER_SIZE: usize = 16;
 
