@@ -72,8 +72,8 @@ And from `manifests/CONVERGED-TESSERACT.md`:
 ### P0: Build Verified
 _"If it doesn't compile, it doesn't exist."_ — AGENTS.md rule #3
 
-- [ ] Install Rust via rustup on Windows dev machine
-- [ ] `cargo build --release` succeeds on Windows
+- [x] Install Rust via rustup on Windows dev machine — *Auto-installed by `npm run setup` → `scripts/ensure-rust.js` which delegates to `Install-Rust.ps1` (Windows) or `install-rust.sh` (Unix).*
+- [ ] `cargo build --release` succeeds on Windows — *Triggered automatically by `scripts/build-csf-rust.js` after Rust is ensured.*
 - [ ] `cargo test` passes (header roundtrip, dictionary train, compress roundtrip)
 - [ ] Add CI job `.github/workflows/csf-rust.yml` that builds + tests the crate on push/PR
 - [ ] Add CI job to `csf-cache-validate` step: verify Rust crate compiles (even if not testing it deeply)
