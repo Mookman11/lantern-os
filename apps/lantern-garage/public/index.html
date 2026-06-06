@@ -247,8 +247,8 @@
   <div class="hero">
     <span class="hero-icon">🌙</span>
     <h1>Dream <span>Journal</span></h1>
-    <p class="tagline">A private, local-first dream journal for capture, reflection, and optional AI insight.</p>
-    <p class="sub">Orion Edition · <span data-version-badge="Orion Edition · ">v1.0.2</span> · Lantern OS · Your dreams stay on your machine.</p>
+    <p class="tagline" id="hero-tagline">A private, local-first dream journal. No telemetry. No cloud lock-in.</p>
+    <p class="sub"><span id="hero-edition">Lantern OS</span> · <span data-version-badge="">checking version…</span> · <span id="hero-git">checking git…</span></p>
   </div>
 
   <div class="panels">
@@ -256,7 +256,7 @@
       <span class="panel-icon">💬</span>
       <span class="panel-label">Open App</span>
       <h2>Dream Chat</h2>
-      <p>Log dreams and talk to Lantern OS agents about what you remember. Works offline, streams live when a provider is connected.</p>
+      <p id="panel-chat-desc">Checking provider status…</p>
       <span class="panel-arrow">Open dream chat →</span>
     </a>
 
@@ -264,7 +264,7 @@
       <span class="panel-icon">📓</span>
       <span class="panel-label">Journal</span>
       <h2>Full Journal</h2>
-      <p>Capture dreams, notes, symbols, and lore. Track lucidity, emotions, and recurring signs. Export any time.</p>
+      <p id="panel-journal-desc">Checking notebook entries…</p>
       <span class="panel-arrow">Open journal →</span>
     </a>
 
@@ -272,7 +272,7 @@
       <span class="panel-icon">✦</span>
       <span class="panel-label">Support</span>
       <h2>Patreon</h2>
-      <p>Help keep Lantern OS local-first and independent. Early access, behind-the-scenes builds, and direct line to the founder.</p>
+      <p id="panel-patreon-desc">Help keep Lantern OS independent. Early access + direct line to the founder.</p>
       <span class="panel-arrow">Support on Patreon →</span>
     </a>
 
@@ -280,34 +280,34 @@
       <span class="panel-icon">⚙️</span>
       <span class="panel-label">Source</span>
       <h2>GitHub</h2>
-      <p>Open source. Self-host in one command. No account required, no telemetry, no cloud lock-in.</p>
+      <p id="panel-github-desc">Open source. Self-host in one command. No account required.</p>
       <span class="panel-arrow">View on GitHub →</span>
     </a>
   </div>
 
-  <div class="features">
-    <div class="feature"><div class="icon">📓</div><h3>Capture</h3><p>Dream, note, symbol, lore, mirror, and place entries.</p></div>
-    <div class="feature"><div class="icon">🔮</div><h3>Lucid tools</h3><p>Lucidity scale, technique log, recurring dream flags.</p></div>
-    <div class="feature"><div class="icon">📊</div><h3>Analytics</h3><p>Top emotions, tags, symbols, and avg lucidity over time.</p></div>
+  <div class="features" id="live-features">
+    <div class="feature"><div class="icon">📓</div><h3>Capture</h3><p id="stat-capture">Dream, note, symbol, lore, mirror, and place entries.</p></div>
+    <div class="feature"><div class="icon">🔮</div><h3 id="stat-agents-label">Agents</h3><p id="stat-agents">Checking available agents…</p></div>
+    <div class="feature"><div class="icon">📊</div><h3>Readiness</h3><p id="stat-readiness">Checking system readiness…</p></div>
     <div class="feature"><div class="icon">💾</div><h3>Export</h3><p>JSONL or CSV download. Your data, always portable.</p></div>
-    <div class="feature"><div class="icon">🔒</div><h3>Private</h3><p>Local-first. AI is optional and clearly labeled.</p></div>
-    <div class="feature"><div class="icon">⚡</div><h3>Fast</h3><p>No framework, no build step, no dependencies. Just Node.</p></div>
+    <div class="feature"><div class="icon">�</div><h3>Providers</h3><p id="stat-providers">Checking AI providers…</p></div>
+    <div class="feature"><div class="icon">⚡</div><h3>Server</h3><p id="stat-server">Checking server status…</p></div>
   </div>
 
   <div class="benchmark">
     <div class="benchmark-header">
-      <h2>V1.0.0 feature status</h2>
-      <p>What ships, what's held, what's optional.</p>
+      <h2>System state</h2>
+      <p id="benchmark-subtitle">Real-time feature status from this instance.</p>
     </div>
     <table>
       <thead><tr><th>Feature</th><th>Status</th><th>Notes</th></tr></thead>
-      <tbody>
+      <tbody id="benchmark-body">
         <tr><td>Quick capture</td><td><span class="pill live">Live</span></td><td>Dream, note, place, character, event, lore, symbol, mirror.</td></tr>
         <tr><td>Lucid dreaming tools</td><td><span class="pill live">Live</span></td><td>Lucidity scale, technique logging, dream-sign flags.</td></tr>
         <tr><td>Symbol analytics</td><td><span class="pill live">Live</span></td><td>Top tags, emotions, and symbols from saved entries.</td></tr>
-        <tr><td>Export (JSONL / CSV)</td><td><span class="pill live">Live</span></td><td>Full backup download any time.</td></tr>
-        <tr><td>AI reflection chat</td><td><span class="pill optional">Optional</span></td><td>Streams when a provider key is configured. Fails fast otherwise.</td></tr>
-        <tr><td>Voice transcription</td><td><span class="pill held">Held</span></td><td>Not claimed for V1.</td></tr>
+        <tr><td>Export</td><td><span class="pill live">Live</span></td><td>JSONL/CSV backup download.</td></tr>
+        <tr><td>AI reflection chat</td><td><span class="pill optional" id="pill-ai-chat">Optional</span></td><td id="note-ai-chat">Streams when a provider key is configured.</td></tr>
+        <tr><td>Voice transcription</td><td><span class="pill held">Held</span></td><td>Web Speech API in browser. Not claimed for V1.</td></tr>
         <tr><td>Dream art generation</td><td><span class="pill held">Held</span></td><td>Not claimed for V1.</td></tr>
       </tbody>
     </table>
@@ -315,8 +315,8 @@
 
   <div class="status-bar">
     <div class="dot online" id="status-dot"></div>
-    <span id="status-label">local server running</span>
-    <span style="margin-left:auto;opacity:0.5">Lantern OS · private · local · <span data-version-badge="Lantern OS · private · local · ">v1.0.0</span></span>
+    <span id="status-label">connecting…</span>
+    <span style="margin-left:auto;opacity:0.5" id="status-right">Lantern OS · checking…</span>
   </div>
 
 </div>
@@ -328,7 +328,7 @@
     const isDark = stored ? stored === 'dark' : prefersDark;
     document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
     const btn = document.getElementById('theme-toggle');
-    if (btn) btn.textContent = isDark ? '☀️' : '🌙';
+    if (btn) btn.textContent = isDark ? '🌙' : '☀️';
   })();
   function toggleTheme() {
     const html = document.documentElement;
@@ -337,38 +337,121 @@
     html.setAttribute('data-theme', next);
     localStorage.setItem('lantern-theme', next);
     const btn = document.getElementById('theme-toggle');
-    if (btn) btn.textContent = next === 'dark' ? '☀️' : '🌙';
+    if (btn) btn.textContent = next === 'dark' ? '🌙' : '☀️';
   }
 </script>
 <script>
-  fetch('/api/health').then(r => r.ok
-    ? (document.getElementById('status-label').textContent = 'server online')
-    : (document.getElementById('status-dot').className = 'dot', document.getElementById('status-label').textContent = 'server unreachable')
-  ).catch(() => {
-    document.getElementById('status-dot').className = 'dot';
-    document.getElementById('status-label').textContent = 'server unreachable';
-  });
+/* ── Real-time honest state loader ── */
+(function() {
+  const $ = id => document.getElementById(id);
+  const fmtDate = iso => { try { return new Date(iso).toLocaleDateString(undefined, {month:'short', day:'numeric', year:'numeric'}); } catch { return iso; } };
+  const fmtN = n => typeof n === 'number' ? n.toLocaleString() : '—';
+
+  async function fetchJson(path) {
+    try { const r = await fetch(path, { cache: 'no-store', signal: AbortSignal.timeout(5000) }); return r.ok ? await r.json() : null; }
+    catch { return null; }
+  }
+
+  async function loadState() {
+    const [health, version, git, status, routing, agents, dreamer] = await Promise.all([
+      fetchJson('/api/health'),
+      fetchJson('/version.json'),
+      fetchJson('/api/version'),
+      fetchJson('/api/status'),
+      fetchJson('/api/pcsf/routing'),
+      fetchJson('/api/agents'),
+      fetchJson('/api/dreamer?user=dreamer'),
+    ]);
+
+    // Server + version
+    const serverOnline = !!(health && health.ok);
+    $('status-dot').className = serverOnline ? 'dot online' : 'dot';
+    $('status-label').textContent = serverOnline ? 'server online' : 'server unreachable';
+
+    const v = version?.version || 'unknown';
+    const g = git?.version;
+    const branch = g?.branch || 'unknown';
+    const shortCommit = g?.commit ? g.commit.slice(0, 7) : '—';
+    const commitDate = g?.date ? fmtDate(g.date) : '';
+
+    $('hero-edition').textContent = 'Lantern OS · ' + branch;
+    $('hero-git').textContent = shortCommit + (commitDate ? ' · ' + commitDate : '');
+    $('status-right').textContent = 'Lantern OS · ' + branch + ' · v' + v;
+
+    // Version badges
+    document.querySelectorAll('[data-version-badge]').forEach(el => {
+      const prefix = el.dataset.versionBadge || '';
+      el.textContent = prefix + 'v' + v;
+      el.style.cursor = 'pointer';
+      el.title = 'View changelog';
+      el.onclick = () => window.open('/repo/CHANGELOG.MD', '_blank');
+    });
+
+    // Providers
+    const provMap = routing?.providers || [];
+    const provWithKey = provMap.filter(p => p.hasKey);
+    const provNames = provWithKey.map(p => p.id).join(', ');
+    if (provWithKey.length === 0) {
+      $('panel-chat-desc').textContent = 'No AI provider keys configured. Chat works offline. Add a key in Settings to stream responses.';
+      $('pill-ai-chat').className = 'pill held';
+      $('pill-ai-chat').textContent = 'Offline';
+      $('note-ai-chat').textContent = 'No provider keys found. Chat works locally. Add GEMINI_API_KEY, OPENAI_API_KEY, etc. in Settings.';
+    } else {
+      $('panel-chat-desc').textContent = 'Streaming via ' + provNames + '. Fails fast if a provider is down.';
+      $('pill-ai-chat').className = 'pill live';
+      $('pill-ai-chat').textContent = 'Live';
+      $('note-ai-chat').textContent = 'Configured: ' + provNames + '. Streams when a provider key is set.';
+    }
+    $('stat-providers').textContent = provWithKey.length + ' of ' + provMap.length + ' providers configured';
+
+    // Agents
+    const agentList = agents?.agents || [];
+    const agentNames = agentList.map(a => a.name).join(', ') || 'none';
+    $('stat-agents').textContent = agentList.length + ' agent' + (agentList.length === 1 ? '' : 's') + ' available: ' + agentNames;
+
+    // Dreamer / notebook
+    const entries = dreamer?.entries || [];
+    const entryCount = entries.length;
+    if (entryCount > 0) {
+      const latest = entries[entries.length - 1];
+      const latestDate = latest?.recordedAt ? fmtDate(latest.recordedAt) : '';
+      $('panel-journal-desc').textContent = entryCount + ' entr' + (entryCount === 1 ? 'y' : 'ies') + ' recorded' + (latestDate ? '. Latest: ' + latestDate : '') + '.';
+      $('stat-capture').textContent = entryCount + ' entr' + (entryCount === 1 ? 'y' : 'ies') + ' saved. JSONL export available.';
+    } else {
+      $('panel-journal-desc').textContent = 'No entries yet. Start capturing dreams, notes, and symbols.';
+      $('stat-capture').textContent = 'No entries yet. Dream, note, symbol, lore, mirror, and place entries supported.';
+    }
+
+    // Readiness / arc reactor
+    const readiness = status?.readiness || {};
+    const arc = status?.arc || {};
+    const readinessScore = readiness.pass ?? '—';
+    const readinessWarn = readiness.warn ?? 0;
+    const readinessFail = readiness.fail ?? 0;
+    let readinessText = 'Ready: ' + readinessScore;
+    if (readinessFail > 0) readinessText += ' · ' + readinessFail + ' failed';
+    if (readinessWarn > 0) readinessText += ' · ' + readinessWarn + ' warnings';
+    $('stat-readiness').textContent = readinessText;
+
+    // Wallet (honest — show if data exists)
+    const wallet = status?.wallet || {};
+    const cleared = wallet.clearedCashUsd ?? 0;
+    const pending = wallet.pendingInvoiceUsd ?? 0;
+    if (cleared > 0 || pending > 0) {
+      $('benchmark-subtitle').textContent = 'Cleared $' + cleared + ' · Pending $' + pending + ' · ' + (arc.humanTrialDemoReadiness ? arc.humanTrialDemoReadiness + '% demo ready' : 'demo readiness not measured');
+    } else {
+      $('benchmark-subtitle').textContent = 'Real-time feature status from this instance. No financial claims.';
+    }
+
+    // Server stat
+    $('stat-server').textContent = serverOnline ? 'Node.js running on port ' + (health?.port || '4177') : 'Server not responding';
+  }
+
+  loadState();
+  setInterval(loadState, 30_000);
+})();
 </script>
 <script src="/js/update-checker.js" defer></script>
 <script>if('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(()=>{});</script>
-<!-- Version badge auto-loader -->
-<script>
-(function() {
-  const base = window.location.origin;
-  fetch(base + '/version.json', { cache: 'no-store' })
-    .then(r => r.ok ? r.json() : null)
-    .then(v => {
-      if (!v || !v.version) return;
-      document.querySelectorAll('[data-version-badge]').forEach(el => {
-        const prefix = el.dataset.versionBadge || '';
-        el.textContent = prefix + 'v' + v.version;
-        el.style.cursor = 'pointer';
-        el.title = 'View changelog';
-        el.onclick = function() { window.open('/repo/CHANGELOG.MD', '_blank'); };
-      });
-    })
-    .catch(() => {});
-})();
-</script>
 </body>
 </html>
