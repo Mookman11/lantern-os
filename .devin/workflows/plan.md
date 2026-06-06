@@ -72,8 +72,8 @@ And from `manifests/CONVERGED-TESSERACT.md`:
 ### P0: Build Verified
 _"If it doesn't compile, it doesn't exist."_ — AGENTS.md rule #3
 
-- [ ] Install Rust via rustup on Windows dev machine
-- [ ] `cargo build --release` succeeds on Windows
+- [x] Install Rust via rustup on Windows dev machine — *Auto-installed by `npm run setup` → `scripts/ensure-rust.js` which delegates to `Install-Rust.ps1` (Windows) or `install-rust.sh` (Unix).*
+- [ ] `cargo build --release` succeeds on Windows — *Triggered automatically by `scripts/build-csf-rust.js` after Rust is ensured.*
 - [ ] `cargo test` passes (header roundtrip, dictionary train, compress roundtrip)
 - [ ] Add CI job `.github/workflows/csf-rust.yml` that builds + tests the crate on push/PR
 - [ ] Add CI job to `csf-cache-validate` step: verify Rust crate compiles (even if not testing it deeply)
@@ -81,10 +81,10 @@ _"If it doesn't compile, it doesn't exist."_ — AGENTS.md rule #3
 ### P1: Wavefront Materialization
 _The observer only experiences a slice. The archive must serve slices, not wholes._
 
-- [ ] **Segment table in archive footer**: offset + compressed_len per segment (enables random access without full scan)
-- [ ] **Selective segment decode**: `search.rs` query_candidates must actually decode only candidate segments, not the whole archive
-- [ ] **Bounded wavefront load**: `StreamingCompressor` window must evict oldest segments when cap exceeded (LRU or checkin-time based)
-- [ ] **Active wavefront API**: new `Wavefront` struct that holds N segments + working dictionary, drops the rest
+- [x] **Segment table in archive footer**: offset + compressed_len per segment (enables random access without full scan) — *Implemented in `streaming.rs` as 24-byte entries (offset:8 + compressed_len:8 + uncompressed_len:8); `SegmentReader` parses table at fixed HEADER_SIZE offset.*
+- [x] **Selective segment decode**: `search.rs` query_candidates must actually decode only candidate segments, not the whole archive — *Fixed `query_candidates` to use real term IDs from dictionary; `Wavefront::search` loads only candidate segments.*
+- [x] **Bounded wavefront load**: `StreamingCompressor` window must evict oldest segments when cap exceeded (LRU or checkin-time based) — *Implemented `Wavefront` with LRU eviction by segment count and byte cap; `clear()` API for observer collapse.*
+- [x] **Active wavefront API**: new `Wavefront` struct that holds N segments + working dictionary, drops the rest — *Added `src/wavefront.rs` with `Wavefront::load_segment`, `Wavefront::search`, `Wavefront::resident_bytes`.*
 
 ### P2: Dollhouse Checkin-Aware Convergence
 _The convergence layer has 6 segments with 30-minute checkin slots. Merging must respect this._
@@ -240,10 +240,11 @@ _The foundation. Everything else depends on this._
 ### PR 2: `feat/csf-wavefront-api`
 _Slice loading. The core Tesseract feature._
 
-- Add segment table to archive footer
-- Implement `Wavefront` struct with LRU eviction
-- Wire selective decode into `search.rs`
-- Add `csf wavefront` CLI command
+- [x] Add segment table to archive footer — *24-byte entries written by `StreamingCompressor::finalize`; parsed by `SegmentReader::open`.*
+- [x] Implement `Wavefront` struct with LRU eviction — *In `src/wavefront.rs`; count-capped + byte-capped with `clear()` API.*
+- [x] Wire selective decode into `search.rs` — *`query_candidates` now uses real dictionary IDs; `Wavefront::search` only loads candidate segments.*
+- [ ] Add `csf wavefront` CLI command — *Stub in `cli.rs`; needs HTTP or CLI wiring.*
+- [ ] mmap-backed `SegmentReader` for true zero-copy — *Current impl uses `File::seek` + `read_exact`; upgrade to `memmap2` pending.*
 
 **Acceptance:** `csf wavefront archive.csf --radius 3` loads ≤ 3 segments; RSS stays bounded.
 

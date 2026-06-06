@@ -71,7 +71,11 @@ impl SearchIndex {
 
     /// Fast path: check if query *cannot* match any segment (negative result).
     /// Returns true if no segment can possibly contain all query terms.
-    pub fn bloom_negative(&self, query: &SearchQuery, dictionary: &crate::dictionary::SymbolicDictionary) -> bool {
+    pub fn bloom_negative(
+        &self,
+        query: &SearchQuery,
+        dictionary: &crate::dictionary::SymbolicDictionary,
+    ) -> bool {
         if self.bloom.is_empty() {
             return true;
         }
@@ -91,11 +95,23 @@ impl SearchIndex {
 
     /// Returns candidate segment indices that MAY contain `query`.
     /// In production: intersect inverted lists, then selective-decode candidates.
-    pub fn query_candidates(&self, query: &SearchQuery) -> HashSet<u32> {
+    pub fn query_candidates(
+        &self,
+        query: &SearchQuery,
+        dictionary: &crate::dictionary::SymbolicDictionary,
+    ) -> HashSet<u32> {
         let mut candidates: Option<HashSet<u32>> = None;
         for term in &query.terms {
+            let id = dictionary.encode(term);
+            if id == 0 {
+                // Unknown term — if require_all, no segment can satisfy.
+                if query.require_all {
+                    return HashSet::new();
+                }
+                continue;
+            }
             let empty = HashSet::new();
-            let set = self.inverted.get(&0).unwrap_or(&empty); // placeholder
+            let set = self.inverted.get(&id).unwrap_or(&empty);
             match &mut candidates {
                 None => candidates = Some(set.clone()),
                 Some(c) => {
@@ -111,7 +127,7 @@ impl SearchIndex {
     }
 
     /// Rank segments by relevance (simple token frequency heuristic).
-    pub fn rank_candidates(&self, candidates: &mut Vec<u32>) {
+    pub fn rank_candidates(&self, candidates: &mut [u32]) {
         candidates.sort_by(|a, b| {
             let ca = self.token_counts.get(*a as usize).copied().unwrap_or(0);
             let cb = self.token_counts.get(*b as usize).copied().unwrap_or(0);

@@ -58,7 +58,7 @@ if (-not (Test-RustInstalled)) {
 Write-Output "Rust installation complete."
 
 # Optional: quick build test
-$csfRustDir = Join-Path $PSScriptRoot ".." "src" "csf_rust" | Resolve-Path
+$csfRustDir = Join-Path (Join-Path (Join-Path $PSScriptRoot "..") "src") "csf_rust" | Resolve-Path
 Write-Output "Quick sanity build in $csfRustDir ..."
 Push-Location $csfRustDir
     cargo build --release
