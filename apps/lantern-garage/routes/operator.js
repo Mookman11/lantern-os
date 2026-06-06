@@ -1,3 +1,5 @@
+const { spawn } = require("child_process");
+
 // Operator notes, conversation log, action triggers
 module.exports = async function operatorRoutes(req, res, url, deps) {
   const { sendJson, collectRequestBody, appendJsonlQueued, operatorNotesPath,
@@ -40,8 +42,26 @@ module.exports = async function operatorRoutes(req, res, url, deps) {
     return true;
   }
   if (url.pathname === "/api/actions/run-loop" && req.method === "POST") {
-    const result = await runPowerShell("scripts/Invoke-LanternConvergenceLoop.ps1");
-    sendJson(res, result, result.code === 0 ? 200 : 500);
+    try {
+      const py = process.platform === "win32" ? "python" : "python3";
+      const proc = spawn(py, [path.join(repoRoot, "src", "convergence_io_engine.py"), "loop"], {
+        cwd: repoRoot,
+        timeout: 60000,
+      });
+      let stdout = "";
+      let stderr = "";
+      proc.stdout.on("data", (data) => { stdout += data; });
+      proc.stderr.on("data", (data) => { stderr += data; });
+      const result = await new Promise((resolve, reject) => {
+        proc.on("close", (code) => {
+          resolve({ ok: code === 0, code, stdout: stdout.slice(0, 2000), stderr: stderr.slice(0, 1000) });
+        });
+        proc.on("error", (err) => reject(err));
+      });
+      sendJson(res, result, result.ok ? 200 : 500);
+    } catch (err) {
+      sendJson(res, { ok: false, error: err.message }, 500);
+    }
     return true;
   }
   if (url.pathname === "/api/actions/local-controls" && req.method === "POST") {
