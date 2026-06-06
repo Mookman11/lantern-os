@@ -38,7 +38,7 @@ async function get(path) {
   });
 }
 
-// ── Unit tests on the module directly ────────────────────────────────────────────
+// ── Unit tests on the module directly ────────────────────────────────────────
 
 console.log("\nProvider Cache — unit tests");
 
@@ -106,8 +106,10 @@ ok("getRoutingSnapshot returns schema + cacheTtlSeconds + providers array", () =
 ok("getRoutingSnapshot does NOT expose key values", () => {
   const snap = cache.getRoutingSnapshot();
   const raw = JSON.stringify(snap);
+  // Must not contain any actual key value (just boolean hasKey)
   assert.ok(!raw.includes("sk-"), "found sk- prefix in snapshot");
   assert.ok(!raw.includes("AIza"), "found AIza prefix in snapshot");
+  // hasKey must be boolean
   for (const p of snap.providers) {
     assert.strictEqual(typeof p.hasKey, "boolean", `${p.id}.hasKey not boolean in snapshot`);
   }
@@ -124,7 +126,9 @@ ok("recentHistory in snapshot is capped to last 5 entries", () => {
 
 ok("refreshProviderCache re-reads env keys", () => {
   const before = cache.getProviderState();
+  // Keys won't be set in test env, so hasKey should be false
   assert.strictEqual(before.gemini.hasKey, false);
+  // Simulate a key being set
   process.env._CACHE_TEST_KEY = "test-value";
   delete require.cache[require.resolve("../apps/lantern-garage/lib/provider-cache")];
   const fresh = require("../apps/lantern-garage/lib/provider-cache");
@@ -133,7 +137,7 @@ ok("refreshProviderCache re-reads env keys", () => {
   delete process.env._CACHE_TEST_KEY;
 });
 
-// ── HTTP endpoint tests ─────────────────────────────────────────────────────
+// ── HTTP endpoint tests ───────────────────────────────────────────────────────
 
 console.log("\nGET /api/pcsf/routing");
 
