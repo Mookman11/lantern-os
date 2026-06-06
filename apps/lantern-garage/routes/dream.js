@@ -63,6 +63,7 @@ module.exports = async function dreamRoutes(req, res, url, deps) {
         reflection_on: body.reflection_on || [], source: "api",
         dcf_class: body.dcf_class || null,
         rps_flags: body.rps_flags || [],
+        ctf_glyphs: normalizeList(body.ctf_glyphs, 20),
       };
       const dreamDir = path.join(repoRoot, "data", "dream_journal");
       if (!fs.existsSync(dreamDir)) fs.mkdirSync(dreamDir, { recursive: true });
@@ -194,12 +195,15 @@ module.exports = async function dreamRoutes(req, res, url, deps) {
   if (url.pathname === "/api/dream/stats" && req.method === "GET") {
     try {
       const entries = loadDreamEntries(fs, path, repoRoot);
-      const stats = { total_entries: entries.length, entries_by_kind: {}, top_emotions: {}, top_tags: {}, top_symbols: {}, total_lucidity: 0, avg_lucidity: 0 };
+      const stats = { total_entries: entries.length, entries_by_kind: {}, top_emotions: {}, top_tags: {}, top_symbols: {}, top_ctf: {}, entries_with_ctf: 0, total_lucidity: 0, avg_lucidity: 0 };
       for (const entry of entries) {
         stats.entries_by_kind[entry.kind || "dream"] = (stats.entries_by_kind[entry.kind || "dream"] || 0) + 1;
         for (const e of (entry.emotions || [])) stats.top_emotions[e] = (stats.top_emotions[e] || 0) + 1;
         for (const t of (entry.tags || [])) stats.top_tags[t] = (stats.top_tags[t] || 0) + 1;
         for (const s of (entry.symbols || [])) stats.top_symbols[s] = (stats.top_symbols[s] || 0) + 1;
+        const ctf = entry.ctf_glyphs || [];
+        if (ctf.length) stats.entries_with_ctf++;
+        for (const g of ctf) stats.top_ctf[g] = (stats.top_ctf[g] || 0) + 1;
         stats.total_lucidity += entry.lucidity || 0;
       }
       if (entries.length > 0) stats.avg_lucidity = (stats.total_lucidity / entries.length).toFixed(2);
@@ -212,11 +216,13 @@ module.exports = async function dreamRoutes(req, res, url, deps) {
     try {
       const query = url.searchParams.get("text") || "";
       const tags = (url.searchParams.get("tags") || "").split(",").filter(t => t);
+      const ctf = (url.searchParams.get("ctf") || "").split(",").filter(t => t);
       const results = loadDreamEntries(fs, path, repoRoot).filter(e =>
         (query === "" || (e.text || "").toLowerCase().includes(query.toLowerCase())) &&
-        (tags.length === 0 || tags.some(t => (e.tags || []).includes(t)))
+        (tags.length === 0 || tags.some(t => (e.tags || []).includes(t) &&
+        (ctf.length === 0 || ctf.some(t => (e.ctf_glyphs || []).includes(t)))
       );
-      sendJson(res, { query, tags, count: results.length, results: results.slice(0, 50) });
+      sendJson(res, { query, tags, ctf, count: results.length, results: results.slice(0, 50) });
     } catch (error) { sendJson(res, { error: error.message }, 400); }
     return true;
   }
