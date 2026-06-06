@@ -7,6 +7,21 @@ release date. This project is currently private and local-first, so release
 notes should be honest about what was verified locally and what remains design
 intent.
 
+## [1.0.2] — 2026-06-06 — TTS Provider Chain + Version Badge
+
+### Dream Chat
+- TTS provider chain: ElevenLabs → OpenAI → browser fallback via `POST /api/dream/tts`
+- TTS voice selector in settings drawer (rate, pitch, voice dropdown, test button)
+- Version badge linked to CHANGELOG — fetches `version.json` on load
+
+### Server
+- PCSF live refresh on startup — auto-updates provider/state/settings from live env
+- `npm run dev` script with `node --watch` for hot reload
+
+### Fixes
+- Distinguish `all_providers_failed` from `no_provider_configured` in stream error messages
+- TTS proxy timeout (15s) + status code validation
+
 ## [1.0.0] — 2026-06-05 — Dream Journal Orion Edition
 
 ### Core
