@@ -116,10 +116,13 @@ Copy `.env.example` to `.env` at repo root. Key variables: `ANTHROPIC_API_KEY`, 
 
 ## Monoworkstream Rule (Critical)
 
-This repo enforces **one open PR at a time**:
+This repo enforces **one open feature PR at a time**:
 - No new branches while a PR is open
 - Commits and pushes to a branch that already has an open PR are always allowed
+- `gh-pages` (static site deploy) is exempt — it never counts as a workstream
 - Install hooks: `powershell -ExecutionPolicy Bypass -File scripts/Install-MonoworkstreamHooks.ps1`
 - Emergency bypass: `SKIP_MONOWORKSTREAM=1 git commit ...`
 
 Always check for open PRs before creating branches or commits.
+
+**Note:** Multiple agents running concurrently via `.claude/agent-slots.json` is a core design feature, not a monoworkstream violation. The rule applies to Git branches / PRs, not to active agent slots.
