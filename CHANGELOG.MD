@@ -7,6 +7,18 @@ release date. This project is currently private and local-first, so release
 notes should be honest about what was verified locally and what remains design
 intent.
 
+## [1.1.0-rc.1] — 2026-06-06 — Parallax Dream Door + Deploy Fix
+
+### Dream Chat
+- Parallax zoom into dream door on scroll — background scales 1×→2.8×, hero text fades, glow orb drifts
+- Scroll hint with bounce animation on empty state
+- `.door-bg` element extracted from pseudo-element for GPU-transform parity
+
+### Deploy
+- Fixed GitHub Actions workflow (`actions/checkout@v4`, `actions/setup-python@v5`)
+- Added `netlify.toml` + `.gitignore` for cloud deploy hygiene
+- Version now auto-bumped and tagged as RC on every deploy
+
 ## [1.0.3] — 2026-06-06 — PCSF Provider Health Cache
 
 ### Server
