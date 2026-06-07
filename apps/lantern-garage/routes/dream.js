@@ -86,7 +86,23 @@ module.exports = async function dreamRoutes(req, res, url, deps) {
           // Compression complete; .csf file written alongside .jsonl
         });
       } catch { /* compression is non-critical */ }
-      sendJson(res, { id: dreamId, saved: true, entry, csf: csfStats });
+
+      // MemOS save-time ingest (non-blocking)
+      let memosResult = { ingested: false };
+      try {
+        const { spawn } = require("child_process");
+        const py = process.platform === "win32" ? "python" : "python3";
+        const entryJson = JSON.stringify(entry).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+        const script = `from convergence_io.memos_bridge import get_cube; c=get_cube(); r=c.ingest_entry(__import__('json').loads('${entryJson}')); print(__import__('json').dumps({'ingested': r}))`;
+        const proc = spawn(py, ["-c", script], { cwd: repoRoot, env: { ...process.env, PYTHONPATH: path.join(repoRoot, "src") } });
+        let out = "";
+        proc.stdout.on("data", (d) => { out += d.toString(); });
+        proc.on("close", () => {
+          try { memosResult = JSON.parse(out.trim()); } catch { /* non-critical */ }
+        });
+      } catch { /* MemOS ingest is non-critical */ }
+
+      sendJson(res, { id: dreamId, saved: true, entry, csf: csfStats, memos: memosResult });
     } catch (error) { sendJson(res, { error: error.message }, 400); }
     return true;
   }
@@ -127,6 +143,31 @@ module.exports = async function dreamRoutes(req, res, url, deps) {
   if ((url.pathname === "/api/dream/stream" && req.method === "GET") ||
       (url.pathname === "/api/dream/chat/stream" && req.method === "POST")) {
     await handleStreamChat(req, url, res);
+    return true;
+  }
+
+  // ── MemOS memory health ───────────────────────────────────────────────
+  if (url.pathname === "/api/dream/memory/health" && req.method === "GET") {
+    try {
+      const { spawn } = require("child_process");
+      const py = process.platform === "win32" ? "python" : "python3";
+      const script = `from convergence_io.memos_bridge import memos_available, get_cube; c=get_cube(); print(__import__('json').dumps({'available': memos_available(), 'installed': memos_available(), 'entry_count': len(c._entries), 'fallback': not memos_available(), 'last_ingest': c._entries[0].get('timestamp','') if c._entries else ''}))`;
+      const result = await new Promise((resolve, reject) => {
+        let out = "", err = "";
+        const proc = spawn(py, ["-c", script], { cwd: repoRoot, env: { ...process.env, PYTHONPATH: path.join(repoRoot, "src") } });
+        proc.stdout.on("data", (d) => { out += d.toString(); });
+        proc.stderr.on("data", (d) => { err += d.toString(); });
+        proc.on("close", (code) => {
+          if (code !== 0) reject(new Error(err || `exit ${code}`));
+          else resolve(out.trim());
+        });
+        proc.on("error", reject);
+      });
+      const data = JSON.parse(result);
+      sendJson(res, { ...data, generatedAt: new Date().toISOString() });
+    } catch (error) {
+      sendJson(res, { available: false, installed: false, entry_count: 0, fallback: true, error: error.message, generatedAt: new Date().toISOString() });
+    }
     return true;
   }
 

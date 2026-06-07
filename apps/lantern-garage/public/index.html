@@ -338,6 +338,15 @@
     </table>
   </div>
 
+  <!-- Recent Journal Entries — real data from backend -->
+  <div class="benchmark" id="recent-entries-section" style="display:none;">
+    <div class="benchmark-header">
+      <h2>Recent journal entries</h2>
+      <p id="recent-subtitle">Latest captures from this instance.</p>
+    </div>
+    <div id="recent-entries-list" style="padding: 0 22px 18px;"></div>
+  </div>
+
   <div class="status-bar">
     <div class="dot online" id="status-dot"></div>
     <span id="status-label">connecting…</span>
@@ -469,6 +478,34 @@
 
     // Server stat
     $('stat-server').textContent = serverOnline ? 'Node.js running on port ' + (health?.port || '4177') : 'Server not responding';
+
+    // Recent journal entries (G2 — real backend data)
+    const search = await fetchJson('/api/dream/search');
+    const recentList = $('recent-entries-list');
+    const recentSection = $('recent-entries-section');
+    if (search && search.results && search.results.length > 0 && recentList && recentSection) {
+      recentSection.style.display = '';
+      const entries = search.results.slice(0, 10);
+      recentList.innerHTML = entries.map(e => {
+        const kind = e.kind || 'dream';
+        const ts = e.timestamp ? fmtDate(e.timestamp) : '';
+        const text = (e.text || e.content || '').slice(0, 140);
+        const tags = (e.tags || []).slice(0, 4).map(t => `<span class="pill" style="background:var(--accent-dim);color:var(--accent);font-size:0.65rem;padding:1px 7px;margin-right:4px;">${t}</span>`).join('');
+        const lucid = typeof e.lucidity === 'number' ? `<span style="font-size:0.7rem;color:var(--muted);margin-left:8px;">lucidity ${e.lucidity.toFixed(1)}</span>` : '';
+        return `<div style="padding:10px 0;border-bottom:1px solid var(--border);font-size:0.85rem;">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+            <span style="font-weight:600;text-transform:capitalize;">${kind}</span>
+            <span style="font-size:0.72rem;color:var(--muted);">${ts}</span>
+            ${lucid}
+          </div>
+          <div style="color:var(--text);line-height:1.45;">${text}${text.length >= 140 ? '…' : ''}</div>
+          <div style="margin-top:4px;">${tags}</div>
+        </div>`;
+      }).join('');
+      $('recent-subtitle').textContent = entries.length + ' latest entr' + (entries.length === 1 ? 'y' : 'ies') + ' from this instance.';
+    } else if (recentSection) {
+      recentSection.style.display = 'none';
+    }
   }
 
   loadState();
