@@ -101,6 +101,7 @@ data/dream_journal/
 data/dollhouse/csf/
 data/dollhouse/agent-checkin-manifest.json
 data/agent-fleet/
+data/provenance/
 
 # Auto-generated convergence evidence files
 manifests/evidence/convergence-*.json
