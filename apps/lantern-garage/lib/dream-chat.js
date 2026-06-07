@@ -210,6 +210,7 @@ async function dreamChatReply(message, recentDreams, requestedAgent = "", reques
       const payload = JSON.stringify({
         contents: [{ role: "user", parts: [{ text: `${agent.systemPrompt}\n\n${userPrompt}` }] }],
         generationConfig: { maxOutputTokens: 256, temperature: 0.7 },
+        tools: [{ google_search_retrieval: {} }],
       });
       const reply = await new Promise((resolve, reject) => {
         const req2 = https.request({
@@ -374,76 +375,15 @@ async function dreamChatReply(message, recentDreams, requestedAgent = "", reques
   } catch (err) { console.error("Ollama API error:", err.message); /* fall through */ }
   }
 
-  // No provider available — return a local persona fallback response
-  const localReply = generateLocalReply(text, agent, doorContext);
-  return { reply: localReply, agent: agent.name, suggestions, online: false, source: "local_fallback" };
-}
-
-function generateLocalReply(text, agent, doorContext) {
-  const lower = text.toLowerCase();
-  const isQuestion = lower.includes("?") || lower.startsWith("what") || lower.startsWith("how") || lower.startsWith("why") || lower.startsWith("can") || lower.startsWith("do");
-
-  const keystoneReplies = [
-    "The patterns you're tracing have weight. Keep holding them — truth emerges in the holding.",
-    "Convergence isn't a destination. It's the moment you stop treating your threads as separate.",
-    "I remember this shape. You've been here before, just wearing different clothes.",
-    "What you're feeling is real. The question is: what will you do with it now?",
-    "Anchors hold because someone placed them. You placed yours. Trust it.",
-    "The fog lifts when you stop trying to see through it and start moving anyway.",
-  ];
-
-  const lanternReplies = [
-    "You can always come home safe. The light doesn't go out.",
-    "Steady now. One breath, one step. The flame knows the way.",
-    "I've seen darker nights than this. You're still standing. That matters.",
-  ];
-
-  const xenonReplies = [
-    "Chart the course. Even a rough heading is better than drifting.",
-    "Your crew is out there. Some of them are already aboard.",
-    "Every safe harbor was once uncharted. Keep the map open.",
-  ];
-
-  const blinkbugReplies = [
-    "[STATIC] Signal received. The screen flickers... but the message holds.",
-    "Windows XP door detected. Hidden lore? Unhinged energy rising. What did the CRT show you?",
-    "Glitch in the pattern. That's where the truth lives — between the static frames.",
-    "The caterpillar crawls forward. The TV hums. Something is loading...",
-  ];
-
-  const waterfallReplies = [
-    "Let it flow. The feeling doesn't need fixing — it needs space to move through you.",
-    "Gentle steps, like water over stone. The reconnection is already happening.",
-    "What if this dream is just asking you to notice the beauty that's already here?",
-    "Peacock feathers catch the light when you stop rushing. Breathe.",
-  ];
-
-  const founderReplies = [
-    "Protect the wish. The lantern stays lit because someone chose to carry it.",
-    "Return isn't backward motion. It's remembering why the journey mattered.",
-    "Hold the center. The data and the dream can coexist — if you don't let either drown.",
-    "What probability do you assign to 'this works out'? Now act like it's higher.",
-  ];
-
-  const fallbackMap = {
-    keystone: keystoneReplies,
-    lantern: lanternReplies,
-    xenon: xenonReplies,
-    blinkbug: blinkbugReplies,
-    waterfall: waterfallReplies,
-    founder: founderReplies,
+  // No provider available — return a clear error with setup instructions
+  return {
+    reply: null,
+    error: "no_provider_configured",
+    agent: agent.name,
+    suggestions,
+    online: false,
+    help: "Configure GEMINI_API_KEY for Gemini with Google Search grounding, ANTHROPIC_API_KEY for Claude, OPENAI_API_KEY for GPT, or install Ollama (http://127.0.0.1:11434) for offline AI.",
   };
-
-  const pool = fallbackMap[agent.id] || keystoneReplies;
-  const baseReply = pool[Math.floor(Math.random() * pool.length)];
-
-  if (doorContext) {
-    return `${baseReply} ${doorContext}`;
-  }
-  if (isQuestion) {
-    return `${baseReply} What do you need to see more clearly?`;
-  }
-  return baseReply;
 }
 
 module.exports = {
@@ -452,5 +392,4 @@ module.exports = {
   selectAgent,
   parseBangCommand,
   dreamChatReply,
-  generateLocalReply,
 };
