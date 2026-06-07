@@ -404,15 +404,42 @@ function generateLocalReply(text, agent, doorContext) {
     "Every safe harbor was once uncharted. Keep the map open.",
   ];
 
+  const blinkbugReplies = [
+    "[STATIC] Signal received. The screen flickers... but the message holds.",
+    "Windows XP door detected. Hidden lore? Unhinged energy rising. What did the CRT show you?",
+    "Glitch in the pattern. That's where the truth lives — between the static frames.",
+    "The caterpillar crawls forward. The TV hums. Something is loading...",
+  ];
+
+  const waterfallReplies = [
+    "Let it flow. The feeling doesn't need fixing — it needs space to move through you.",
+    "Gentle steps, like water over stone. The reconnection is already happening.",
+    "What if this dream is just asking you to notice the beauty that's already here?",
+    "Peacock feathers catch the light when you stop rushing. Breathe.",
+  ];
+
+  const founderReplies = [
+    "Protect the wish. The lantern stays lit because someone chose to carry it.",
+    "Return isn't backward motion. It's remembering why the journey mattered.",
+    "Hold the center. The data and the dream can coexist — if you don't let either drown.",
+    "What probability do you assign to 'this works out'? Now act like it's higher.",
+  ];
+
   const fallbackMap = {
     keystone: keystoneReplies,
     lantern: lanternReplies,
     xenon: xenonReplies,
+    blinkbug: blinkbugReplies,
+    waterfall: waterfallReplies,
+    founder: founderReplies,
   };
 
   const pool = fallbackMap[agent.id] || keystoneReplies;
   const baseReply = pool[Math.floor(Math.random() * pool.length)];
 
+  if (doorContext) {
+    return `${baseReply} ${doorContext}`;
+  }
   if (isQuestion) {
     return `${baseReply} What do you need to see more clearly?`;
   }
