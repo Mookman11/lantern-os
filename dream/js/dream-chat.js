@@ -10,6 +10,13 @@
   let keystoneMcpEnabled = false;
   let originalAgents = [];
 
+  // Telemetry shim (logs to console; replace with real telemetry if needed)
+  const TELEMETRY = {
+    log(scope, msg) { console.log(`[${scope}]`, msg); },
+    warn(scope, msg) { console.warn(`[${scope}]`, msg); },
+    error(scope, msg, extra) { console.error(`[${scope}]`, msg, extra || ""); }
+  };
+
   let isStreaming = false;
   // Conversation history for multi-turn context — [{role:"user"|"assistant", text:"..."}]
   const conversationHistory = [];
