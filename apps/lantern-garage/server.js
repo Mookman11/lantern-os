@@ -78,6 +78,7 @@ const routes = [
   require("./routes/keystone"),
   require("./routes/image"),
   require("./routes/surfaces"),
+  require("./routes/flourishing"),
 ];
 
 async function route(req, res) {
