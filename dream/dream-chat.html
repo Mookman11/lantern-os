@@ -307,7 +307,7 @@
 
   <div class="messages" id="messages">
     <div class="empty-state" id="empty-state">
-      <div class="moon-door" aria-hidden="true">🌙</div>
+      <div class="moon-door moon-heartbeat" aria-hidden="true">🌙</div>
       <h2>What's on your mind?</h2>
       <p>Share a dream, a game session, something you're building, or just how you're doing.</p>
     </div>
@@ -397,6 +397,33 @@
     localStorage.setItem('lantern-theme', next);
     if (btn) btn.textContent = next === 'dark' ? '🌙' : '☀️';
   }
+</script>
+<script>
+/* Moon heartbeat — pings /api/health and adjusts animation speed by latency */
+(function() {
+  var LAG = 600, CRITICAL = 1500, INTERVAL = 4000;
+  function beat() {
+    var moons = document.querySelectorAll('.moon-heartbeat');
+    if (!moons.length) return;
+    var t = Date.now();
+    fetch('/api/health', { cache: 'no-store', signal: AbortSignal.timeout(3000) })
+      .then(function(r) {
+        var ms = Date.now() - t;
+        moons.forEach(function(m) {
+          m.classList.remove('lag', 'critical');
+          if (ms > CRITICAL) m.classList.add('critical');
+          else if (ms > LAG)  m.classList.add('lag');
+        });
+      })
+      .catch(function() {
+        document.querySelectorAll('.moon-heartbeat').forEach(function(m) {
+          m.classList.remove('lag'); m.classList.add('critical');
+        });
+      });
+  }
+  setInterval(beat, INTERVAL);
+  beat();
+})();
 </script>
 </body>
 </html>
