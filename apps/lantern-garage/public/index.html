@@ -378,7 +378,7 @@
   }
 
   async function loadState() {
-    const [health, version, git, status, routing, agents, dreamer] = await Promise.all([
+    const [health, version, git, status, routing, agents, dreamer, search] = await Promise.all([
       fetchJson('/api/health'),
       fetchJson('/version.json'),
       fetchJson('/api/version'),
@@ -386,6 +386,7 @@
       fetchJson('/api/pcsf/routing'),
       fetchJson('/api/agents'),
       fetchJson('/api/dreamer?user=dreamer'),
+      fetchJson('/api/dream/search'),
     ]);
 
     // Server + version
@@ -472,7 +473,6 @@
     $('stat-server').textContent = serverOnline ? 'Node.js running on port ' + (health?.port || '4177') : 'Server not responding';
 
     // Recent journal entries (G2 — real backend data)
-    const search = await fetchJson('/api/dream/search');
     const recentList = $('recent-entries-list');
     const recentSection = $('recent-entries-section');
     if (search && search.results && search.results.length > 0 && recentList && recentSection) {

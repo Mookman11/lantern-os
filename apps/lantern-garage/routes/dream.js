@@ -75,16 +75,24 @@ module.exports = async function dreamRoutes(req, res, url, deps) {
       await appendJsonlQueued(monthFile, entry);
       // MemOS ingest runs via: python -c "from src.convergence_io.memos_bridge import get_cube; get_cube().ingest_all()"
       // or automatically on each TesseractEngine._convergence_rag() call (lazy load).
-      // Background CSF compression (non-blocking)
+      // Background CSF compression (non-blocking, debounced by file mtime)
       let csfStats = { compressed: false };
       try {
-        const { spawn } = require("child_process");
-        const py = process.platform === "win32" ? "python" : "python3";
-        const script = `from csf.dream_compressor import compress_dream_file; compress_dream_file(r'${monthFile}')`;
-        const proc = spawn(py, ["-c", script], { cwd: repoRoot, env: { ...process.env, PYTHONPATH: path.join(repoRoot, "src") } });
-        proc.on("close", (code) => {
-          // Compression complete; .csf file written alongside .jsonl
-        });
+        const csfFile = monthFile.replace(/\.jsonl$/, ".csf");
+        const jsonlStat = fs.existsSync(monthFile) ? fs.statSync(monthFile) : null;
+        const csfStat = fs.existsSync(csfFile) ? fs.statSync(csfFile) : null;
+        const needsCompress = !csfStat || !jsonlStat || (csfStat.mtime < jsonlStat.mtime);
+        if (needsCompress) {
+          const { spawn } = require("child_process");
+          const py = process.platform === "win32" ? "python" : "python3";
+          const script = `from csf.dream_compressor import compress_dream_file; compress_dream_file(r'${monthFile}')`;
+          const proc = spawn(py, ["-c", script], { cwd: repoRoot, env: { ...process.env, PYTHONPATH: path.join(repoRoot, "src") } });
+          proc.on("close", (code) => {
+            csfStats = { compressed: code === 0 };
+          });
+        } else {
+          csfStats = { compressed: true, cached: true };
+        }
       } catch { /* compression is non-critical */ }
 
       // MemOS save-time ingest (non-blocking)
@@ -146,8 +154,13 @@ module.exports = async function dreamRoutes(req, res, url, deps) {
     return true;
   }
 
-  // ── MemOS memory health ───────────────────────────────────────────────
+  // ── MemOS memory health (cached 5s to avoid Python spawn per poll) ──
   if (url.pathname === "/api/dream/memory/health" && req.method === "GET") {
+    const now = Date.now();
+    if (module._memosHealthCache && (now - module._memosHealthCache.ts) < 5000) {
+      sendJson(res, { ...module._memosHealthCache.data, cached: true, generatedAt: new Date().toISOString() });
+      return true;
+    }
     try {
       const { spawn } = require("child_process");
       const py = process.platform === "win32" ? "python" : "python3";
@@ -164,6 +177,7 @@ module.exports = async function dreamRoutes(req, res, url, deps) {
         proc.on("error", reject);
       });
       const data = JSON.parse(result);
+      module._memosHealthCache = { data, ts: now };
       sendJson(res, { ...data, generatedAt: new Date().toISOString() });
     } catch (error) {
       sendJson(res, { available: false, installed: false, entry_count: 0, fallback: true, error: error.message, generatedAt: new Date().toISOString() });
@@ -496,7 +510,14 @@ function recordChatProvenance({ actionId, agentId, providerId, inputSummary, out
 }
 
 // Shared helper — read all dream entries from monthly JSONL files
+let _dreamEntriesCache = { entries: [], ts: 0 };
+const DREAM_ENTRIES_TTL_MS = 3000;
+
 function loadDreamEntries(fs, path, repoRoot, sorted = false) {
+  const now = Date.now();
+  if ((now - _dreamEntriesCache.ts) < DREAM_ENTRIES_TTL_MS) {
+    return _dreamEntriesCache.entries;
+  }
   const dreamDir = path.join(repoRoot, "data", "dream_journal");
   if (!fs.existsSync(dreamDir)) return [];
   const files = fs.readdirSync(dreamDir).filter(f => f.endsWith(".jsonl"));
@@ -510,5 +531,6 @@ function loadDreamEntries(fs, path, repoRoot, sorted = false) {
       }
     }
   }
+  _dreamEntriesCache = { entries, ts: now };
   return entries;
 }
