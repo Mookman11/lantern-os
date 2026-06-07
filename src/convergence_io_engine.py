@@ -475,6 +475,21 @@ class ValidationRing:
                 "check": lambda: self._check_orphaned_slots(slots_path),
                 "severity": "medium",
             })
+        # 6. Verify Human Flourishing Frameworks integration exists
+        hff_app = self.repo_root / "integrations" / "human-flourishing-frameworks" / "app.py"
+        hff_route = self.repo_root / "apps" / "lantern-garage" / "routes" / "flourishing.js"
+        jobs.append({
+            "id": "hff-integration-exists",
+            "claim": "Human Flourishing Frameworks app.py exists",
+            "check": lambda: hff_app.exists(),
+            "severity": "low",
+        })
+        jobs.append({
+            "id": "hff-route-exists",
+            "claim": "Lantern HFF proxy route exists",
+            "check": lambda: hff_route.exists(),
+            "severity": "low",
+        })
         return jobs[:self.max_jobs]
 
     @staticmethod

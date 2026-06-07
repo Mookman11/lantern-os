@@ -306,26 +306,22 @@
   </div>
 
   <div class="messages" id="messages">
-    <div class="empty-state dream-door-hero" id="empty-state">
-      <div class="door-bg" id="door-bg"></div>
-      <div class="hero-above" id="hero-above">Lantern OS</div>
-      <div class="dream-door-art" aria-hidden="true"></div>
-      <div class="hero-below" id="hero-below">ORION</div>
-      <h2 id="hero-title">The <span>dream</span> door is open.</h2>
-      <p id="hero-sub">Step through with a dream, a memory, a thought, or a question.</p>
-      <div class="scroll-hint" id="scroll-hint">Scroll to enter ↓</div>
+    <div class="empty-state" id="empty-state">
+      <div class="moon-door" aria-hidden="true">🌙</div>
+      <h2>The <span>dream</span> door is open.</h2>
+      <p>Step through with a dream, a memory, a thought, or a question.</p>
     </div>
   </div>
 
   <div class="input-area">
     <div class="input-row">
-      <textarea
+      <input
+        type="text"
         id="input"
         placeholder="Tell me a dream…"
-        rows="1"
         autocomplete="off"
         spellcheck="true"
-      ></textarea>
+      />
       <button class="voice-btn" id="voice-btn" title="Hold to speak (or click to toggle)" onclick="toggleVoice()">🎙</button>
       <button class="voice-btn" id="ctf-btn" title="CTF symbol palette" onclick="toggleCtfPalette()" style="font-size:14px;">✦</button>
       <button class="send-btn" id="send-btn" onclick="sendMessage()" title="Send">
@@ -336,7 +332,7 @@
       </button>
     </div>
     <div class="ctf-popup hidden" id="ctf-popup"></div>
-    <p class="input-hint" id="input-hint">Enter to send · Shift+Enter for newline · ⌘ voice · ⌘ K</p>
+    <p class="input-hint" id="input-hint">Enter to send · ⌘ voice · ⌘ K</p>
   </div>
 </div>
 
@@ -358,67 +354,6 @@
 <script src="js/dream-chat.js"></script>
 <script src="js/convergance-sync.js"></script>
 <script src="js/update-checker.js"></script>
-<!-- Parallax dream-door zoom -->
-<script>
-(function() {
-  const messages = document.getElementById('messages');
-  const doorBg = document.getElementById('door-bg');
-  const heroTitle = document.getElementById('hero-title');
-  const heroSub = document.getElementById('hero-sub');
-  const heroAbove = document.getElementById('hero-above');
-  const heroBelow = document.getElementById('hero-below');
-  const scrollHint = document.getElementById('scroll-hint');
-  const emptyState = document.getElementById('empty-state');
-  if (!messages || !doorBg) return;
-
-  const prefersReducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  let ticking = false;
-  function easeOutCubic(x) { return 1 - Math.pow(1 - x, 3); }
-
-  function updateParallax() {
-    if (prefersReducedMotion) { ticking = false; return; }
-    const scrollTop = messages.scrollTop;
-    const maxScroll = messages.scrollHeight - messages.clientHeight;
-    const rawProgress = maxScroll > 0 ? Math.min(scrollTop / maxScroll, 1) : 0;
-    const progress = easeOutCubic(rawProgress);
-
-    // Zoom into the doorway light: scale 1 -> 3.0
-    // transform-origin: center center handles centering; no translateX needed
-    const scale = 1 + progress * 2.0;
-    const translateY = progress * -8;
-    doorBg.style.transform = 'scale(' + scale + ') translateY(' + translateY + '%)';
-
-    // Fade out hero content — starts fading early so it feels responsive
-    const fadeStart = 0.08;
-    const opacity = rawProgress < fadeStart ? 1 : 1 - ((rawProgress - fadeStart) / (1 - fadeStart));
-    const clampedOpacity = Math.max(0, opacity);
-    const yOff = progress * -14;
-    if (heroTitle) { heroTitle.style.opacity = clampedOpacity; heroTitle.style.transform = 'translateY(' + yOff + 'px)'; }
-    if (heroSub) { heroSub.style.opacity = clampedOpacity; heroSub.style.transform = 'translateY(' + (yOff * 0.6) + 'px)'; }
-    if (heroAbove) { heroAbove.style.opacity = clampedOpacity; heroAbove.style.transform = 'translateY(' + (yOff * 0.8) + 'px)'; }
-    if (heroBelow) { heroBelow.style.opacity = clampedOpacity; heroBelow.style.transform = 'translateY(' + (yOff * 1.2) + 'px)'; }
-    if (scrollHint) scrollHint.style.opacity = Math.max(0, 0.7 - rawProgress * 4);
-
-    // Glow orb drifts up and fades
-    const art = emptyState ? emptyState.querySelector('.dream-door-art') : null;
-    if (art) {
-      art.style.transform = 'translateY(' + (progress * -24) + 'px) scale(' + (1 - progress * 0.25) + ')';
-      art.style.opacity = 0.9 - progress * 0.55;
-    }
-
-    ticking = false;
-  }
-
-  messages.addEventListener('scroll', function() {
-    if (!ticking) {
-      ticking = true;
-      requestAnimationFrame(updateParallax);
-    }
-  }, { passive: true });
-
-  updateParallax();
-})();
-</script>
 <script>if('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(()=>{});</script>
 <p style="text-align:center;opacity:0.5;font-size:0.72rem;margin:12px 0;"><span data-version-badge="Lantern OS ">Lantern OS</span> · private · local</p>
 <!-- Version badge auto-loader -->
