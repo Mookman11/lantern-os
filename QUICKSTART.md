@@ -22,12 +22,20 @@ python -m pip install -r requirements.txt
 
 ## 1. Start the Core Web Server (Required)
 
-**Development (recommended — auto-restarts on file changes):**
+
+**Synced to master (recommended — pulls latest master then auto-restarts on file changes):**
+
+```bash
+npm run start:master --prefix apps/lantern-garage
+```
+
+This always deploys from `master`. Never runs a feature branch.
+
+**Development (auto-restarts on file changes, no git pull):**
 
 ```bash
 npm run dev --prefix apps/lantern-garage
 ```
-
 **Production / one-shot:**
 
 ```bash

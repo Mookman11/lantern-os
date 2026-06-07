@@ -15,7 +15,7 @@ const repoRoot = path.resolve(__dirname, "../../../");
 const maxConversationTextLength = 4000;
 
 // Fallback doors when AI omits the marker or provider fails
-const FALLBACK_DOORS = ["Open the door I just described", "Take me through a different door", "Help me understand what I saw"];
+const FALLBACK_DOORS = ["Tell me more about that", "What happened next?", "How are you feeling about it?"];
 
 // Parse [DOORS: A | B | C] out of the full reply and return cleaned text + doors array
 function extractDoors(text) {
@@ -249,7 +249,7 @@ async function handleStreamChat(req, url, res) {
       return `Ollama returned an error (${msg.replace("ollama_status_", "")}). Is your local model running?`;
     }
     if (msg.includes("ollama_connect_timeout") || msg.includes("ECONNREFUSED")) {
-      return "Ollama is not running locally. Start it with: ollama run llama3";
+      return "Ollama is not running locally. Start it with: ollama serve && ollama pull qwen2.5-coder";
     }
     if (msg.includes("timeout")) {
       return "The provider timed out. Your network or the service may be slow.";
@@ -613,7 +613,7 @@ async function handleStreamChat(req, url, res) {
 
   // Provider 5: Ollama (streaming)
   const ollamaBase = process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434";
-  const ollamaModel = process.env.OLLAMA_MODEL || "llama3";
+  const ollamaModel = process.env.OLLAMA_MODEL || "qwen2.5-coder";
   if (message && (!requestedProvider || requestedProvider === "ollama" || requestedProvider === "local")) {
     // Attempt 1: Unified Agent Connector (health-checked, provider-ranked, Python-side SSE)
     if (!requestedProvider || requestedProvider === "ollama" || requestedProvider === "local") {

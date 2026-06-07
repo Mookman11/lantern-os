@@ -27,6 +27,7 @@ src/csf_rust/target/
 
 # ─── Runtime state ────────────────────────────────────────────────────────────
 data/pcsf/*.json
+apps/data/conversations/garage-conversations.jsonl
 
 # ─── Node ─────────────────────────────────────────────────────────────────────
 node_modules/
