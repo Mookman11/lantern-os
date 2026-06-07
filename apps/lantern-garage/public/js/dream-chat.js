@@ -124,7 +124,9 @@
   // ── Load agents ────────────────────────────────────────────────────────
   async function loadAgents() {
     try {
+      TELEMETRY.log("agents", "Fetching /api/agents");
       const r = await fetch(`${serverBase}/api/agents`, { signal: AbortSignal.timeout(3000) });
+      TELEMETRY.log("agents", `/api/agents response`, { ok: r.ok, status: r.status });
       if (r.ok) {
         const data = await r.json();
         agents = data.agents || [];
@@ -134,9 +136,13 @@
         if (keystoneMcpEnabled) lockAgentToKeystone();
         statusDot.className = "dot online";
         statusLabel.textContent = "online";
+        TELEMETRY.log("agents", `Loaded ${agents.length} agents`);
         return;
       }
-    } catch {}
+      TELEMETRY.warn("agents", `Non-OK response loading agents: ${r.status}`);
+    } catch (err) {
+      TELEMETRY.error("agents", `Failed to load agents: ${err.message}`, { serverBase });
+    }
     statusDot.className = "dot";
     statusLabel.textContent = "offline";
   }
