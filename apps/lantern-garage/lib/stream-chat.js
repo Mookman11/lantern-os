@@ -32,7 +32,8 @@ function extractDoors(text) {
 function doorsOrFallback(text, isKeystoneDebug = false) {
   if (isKeystoneDebug) return { cleanText: text.trim(), suggestions: [] };
   const { cleanText, doors } = extractDoors(text);
-  const finalDoors = doors.length === 3 ? doors : [...doors, ...FALLBACK_DOORS].slice(0, 3);
+  // Preserve extracted doors. Only use fallback if model generated zero doors.
+  const finalDoors = doors.length > 0 ? doors : FALLBACK_DOORS;
   if (doors.length > 0) {
     try { saveDoorChoice(null, finalDoors); } catch {}
   }
