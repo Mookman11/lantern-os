@@ -20,21 +20,21 @@
       <a href="/repo/CHANGELOG.MD" target="_blank" id="app-version" style="font-size:0.78rem;color:var(--muted);text-decoration:none;cursor:pointer;">Lantern OS · private · local</a>
     </div>
     <div class="selector-row">
-      <select id="agent-select" title="Agent" aria-label="Select agent">
-        <option value="lantern" selected>Lantern</option>
+      <select id="agent-select" title="Personality mode" aria-label="Select personality">
+        <option value="lantern" selected>Lantern (Default)</option>
       </select>
-      <select id="provider-select" title="Provider" aria-label="Select AI provider">
-        <option value="">Auto</option>
+      <select id="provider-select" title="Which AI to use" aria-label="Select AI service">
+        <option value="">Auto (pick best)</option>
         <option value="claude">Claude</option>
-        <option value="openai">OpenAI</option>
+        <option value="openai">ChatGPT</option>
         <option value="gemini">Gemini</option>
         <option value="grok">Grok</option>
-        <option value="ollama">Ollama</option>
+        <option value="ollama">Local (Ollama)</option>
       </select>
-      <button class="mcp-toggle" id="mcp-toggle" title="Toggle Keystone MCP mode" onclick="toggleKeystoneMcp()">🔧 MCP</button>
+      <button class="mcp-toggle" id="mcp-toggle" title="Advanced mode" onclick="toggleKeystoneMcp()">🔧 Advanced</button>
     </div>
-    <button class="settings-btn" id="logdream-btn" title="Log a dream" onclick="openLogDream()" style="margin-left:4px;">✦</button>
-    <button class="settings-btn" id="settings-btn" title="Provider settings" onclick="openSettings()">
+    <button class="settings-btn" id="logdream-btn" title="Record a new dream" onclick="openLogDream()" style="margin-left:4px;">✦</button>
+    <button class="settings-btn" id="settings-btn" title="Settings & AI keys" onclick="openSettings()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
       </svg>
@@ -50,11 +50,11 @@
   <div class="settings-overlay" id="settings-overlay" onclick="closeSettings()"></div>
   <div class="settings-drawer" id="settings-drawer">
     <div class="drawer-header">
-      <h2>AI Providers &amp; Discord</h2>
+      <h2>Connect AI & Chat Platforms</h2>
       <button class="drawer-close" onclick="closeSettings()">×</button>
     </div>
     <div class="drawer-body">
-      <p class="drawer-hint">Add an API key to enable live AI responses. Keys are saved locally to your <code>.env</code> file and never leave your machine.</p>
+      <p class="drawer-hint">Add your AI keys to get AI responses in the chat. Keys are saved on your computer only—never sent to the cloud.</p>
 
       <!-- Claude -->
       <div class="provider-card" id="card-claude">
@@ -153,15 +153,15 @@
 
       <!-- Voice & Speech -->
       <div class="voice-card" id="card-voice">
-        <h3>🎙 Voice &amp; Speech</h3>
+        <h3>🎙 Listen to Responses</h3>
         <div class="voice-row">
-          <label>Voice</label>
+          <label>Voice to Use</label>
           <select class="voice-select" id="voice-select" onchange="saveVoiceSettings()" aria-label="Voice selection">
-            <option value="">Default system voice</option>
+            <option value="">Your system's default voice</option>
           </select>
         </div>
         <div class="voice-row">
-          <label>Rate</label>
+          <label>Speed</label>
           <input class="voice-slider" id="voice-rate" type="range" min="0.5" max="2.0" step="0.05" value="0.88" aria-label="Speech rate" oninput="document.getElementById('voice-rate-val').textContent = this.value; saveVoiceSettings();">
           <span class="voice-value" id="voice-rate-val">0.88</span>
         </div>
@@ -171,12 +171,12 @@
           <span class="voice-value" id="voice-pitch-val">1.05</span>
         </div>
         <div class="voice-row">
-          <label>TTS ID</label>
-          <input class="voice-select" id="voice-tts-id" type="text" placeholder="ElevenLabs voice ID" onchange="saveVoiceSettings()" style="font-size:0.78rem;">
+          <label>Advanced (optional)</label>
+          <input class="voice-select" id="voice-tts-id" type="text" placeholder="ElevenLabs voice ID (leave blank)" onchange="saveVoiceSettings()" style="font-size:0.78rem;">
         </div>
-        <p class="drawer-hint" style="font-size:0.7rem;margin:0;">Used for server TTS (ElevenLabs → OpenAI). Leave empty for browser-only fallback.</p>
+        <p class="drawer-hint" style="font-size:0.7rem;margin:0;">Leave blank to use your browser's built-in voice. Add an ElevenLabs ID for higher quality.</p>
         <div class="voice-row">
-          <button class="voice-test-btn" onclick="testVoice()">Test voice</button>
+          <button class="voice-test-btn" onclick="testVoice()">Test voice 🔊</button>
           <span class="save-feedback" id="fb-voice"></span>
         </div>
       </div>
@@ -211,89 +211,91 @@
   <div class="logdream-overlay" id="logdream-overlay" onclick="closeLogDream()"></div>
   <div class="logdream-drawer" id="logdream-drawer">
     <div class="drawer-header">
-      <h2>Log Dream</h2>
+      <h2>Record a Dream</h2>
       <button class="drawer-close" onclick="closeLogDream()">×</button>
     </div>
     <div class="logdream-body" id="logdream-body">
-      <p class="drawer-hint">Capture a structured dream entry. All fields are optional except the story.</p>
+      <p class="drawer-hint">Write down your dream in detail. Everything else is optional.</p>
 
       <div class="form-group">
-        <label for="ld-title">Title</label>
+        <label for="ld-title">Dream Title (optional)</label>
         <input type="text" id="ld-title" placeholder="e.g. The flying library">
       </div>
 
       <div class="form-group">
-        <label for="ld-text">Dream / Story <span style="color:var(--danger)">*</span></label>
-        <textarea id="ld-text" placeholder="What happened…" rows="4"></textarea>
+        <label for="ld-text">Tell the Dream <span style="color:var(--danger)">*</span></label>
+        <textarea id="ld-text" placeholder="Write what happened, what you felt, what you saw…" rows="4"></textarea>
       </div>
 
       <div class="form-row">
         <div class="form-group">
-          <label for="ld-kind">Kind</label>
+          <label for="ld-kind">Type of Entry</label>
           <select id="ld-kind">
             <option value="dream">Dream</option>
-            <option value="note">Note</option>
-            <option value="place">Place</option>
-            <option value="character">Character</option>
-            <option value="event">Event</option>
-            <option value="lore">Lore</option>
-            <option value="symbol">Symbol</option>
-            <option value="mirror">Mirror</option>
+            <option value="note">Note or Idea</option>
+            <option value="place">A Place</option>
+            <option value="character">A Character</option>
+            <option value="event">An Event</option>
+            <option value="lore">Lore or Story</option>
+            <option value="symbol">Symbol or Theme</option>
+            <option value="mirror">Mirror (Self-reflection)</option>
           </select>
         </div>
         <div class="form-group">
-          <label for="ld-mood">Mood</label>
-          <input type="text" id="ld-mood" placeholder="e.g. curious, anxious">
+          <label for="ld-mood">How You Felt</label>
+          <input type="text" id="ld-mood" placeholder="e.g. peaceful, scared, confused">
         </div>
       </div>
 
       <div class="form-row">
         <div class="form-group">
-          <label for="ld-lucidity">Lucidity <span class="range-val" id="ld-lucidity-val">0%</span></label>
+          <label for="ld-lucidity">How Lucid? <span class="range-val" id="ld-lucidity-val">0%</span></label>
           <input type="range" id="ld-lucidity" min="0" max="100" value="0" style="width:100%;accent-color:var(--accent);" oninput="document.getElementById('ld-lucidity-val').textContent=this.value+'%'">
+          <p style="font-size: 0.7rem; color: var(--muted); margin-top: 4px;">0% = sleeping, 100% = fully aware it's a dream</p>
         </div>
         <div class="form-group">
-          <label for="ld-clarity">Clarity <span class="range-val" id="ld-clarity-val">50%</span></label>
+          <label for="ld-clarity">Memory Clarity <span class="range-val" id="ld-clarity-val">50%</span></label>
           <input type="range" id="ld-clarity" min="0" max="100" value="50" style="width:100%;accent-color:var(--accent);" oninput="document.getElementById('ld-clarity-val').textContent=this.value+'%'">
+          <p style="font-size: 0.7rem; color: var(--muted); margin-top: 4px;">How clear is your memory of it?</p>
         </div>
       </div>
 
       <div class="form-row">
         <div class="form-group">
-          <label for="ld-technique">Technique</label>
-          <input type="text" id="ld-technique" placeholder="e.g. MILD, WILD, WBTB">
+          <label for="ld-technique">Lucid Technique (optional)</label>
+          <input type="text" id="ld-technique" placeholder="e.g. MILD, WILD, reality check">
         </div>
         <div class="form-group">
-          <label>Sleep Window</label>
-          <input type="text" id="ld-window" placeholder="e.g. 23:00–06:30">
+          <label>Sleep Time (optional)</label>
+          <input type="text" id="ld-window" placeholder="e.g. 11 PM – 7 AM">
         </div>
       </div>
 
       <div class="checkbox-row">
         <input type="checkbox" id="ld-dreamsign">
-        <label for="ld-dreamsign" style="margin:0;font-size:0.85rem;color:var(--text);">Mark as dreamsign (recurring pattern)</label>
+        <label for="ld-dreamsign" style="margin:0;font-size:0.85rem;color:var(--text);">☑ This is a repeating pattern in my dreams</label>
       </div>
 
       <div class="checkbox-row">
         <input type="checkbox" id="ld-recurring">
-        <label for="ld-recurring" style="margin:0;font-size:0.85rem;color:var(--text);">Recurring dream</label>
+        <label for="ld-recurring" style="margin:0;font-size:0.85rem;color:var(--text);">☑ I've had this dream before</label>
       </div>
 
       <div class="form-group">
-        <label>Emotions</label>
-        <input type="text" id="ld-emotions" placeholder="Type and press Enter…" onkeydown="if(event.key==='Enter'){event.preventDefault();addTagChip('emotions',this.value);this.value='';}">
+        <label>Feelings & Emotions</label>
+        <input type="text" id="ld-emotions" placeholder="Type and press Enter (e.g. excited, anxious)…" onkeydown="if(event.key==='Enter'){event.preventDefault();addTagChip('emotions',this.value);this.value='';}">
         <div class="tag-chips" id="chips-emotions"></div>
       </div>
 
       <div class="form-group">
-        <label>Tags</label>
-        <input type="text" id="ld-tags" placeholder="Type and press Enter…" onkeydown="if(event.key==='Enter'){event.preventDefault();addTagChip('tags',this.value);this.value='';}">
+        <label>Topics & Themes</label>
+        <input type="text" id="ld-tags" placeholder="Type and press Enter (e.g. adventure, family)…" onkeydown="if(event.key==='Enter'){event.preventDefault();addTagChip('tags',this.value);this.value='';}">
         <div class="tag-chips" id="chips-tags"></div>
       </div>
 
       <div class="form-group">
-        <label>Symbols / CTF Glyphs</label>
-        <input type="text" id="ld-symbols" placeholder="Type and press Enter…" onkeydown="if(event.key==='Enter'){event.preventDefault();addTagChip('symbols',this.value);this.value='';}">
+        <label>Symbols You Saw</label>
+        <input type="text" id="ld-symbols" placeholder="Type and press Enter (e.g. flying, water, key)…" onkeydown="if(event.key==='Enter'){event.preventDefault();addTagChip('symbols',this.value);this.value='';}">
         <div class="tag-chips" id="chips-symbols"></div>
       </div>
 
@@ -308,8 +310,8 @@
   <div class="messages" id="messages">
     <div class="empty-state" id="empty-state">
       <div class="moon-door moon-heartbeat" aria-hidden="true">🌙</div>
-      <h2>What's on your mind?</h2>
-      <p>Share a dream, a game session, something you're building, or just how you're doing.</p>
+      <h2>Start Your Dream Journal</h2>
+      <p>Write about a dream, reflect on your thoughts, or ask the AI to help you explore what it means. Everything stays private on your computer.</p>
     </div>
   </div>
 
@@ -322,8 +324,8 @@
         autocomplete="off"
         spellcheck="true"
       />
-      <button class="voice-btn" id="voice-btn" title="Hold to speak (or click to toggle)" onclick="toggleVoice()">🎙</button>
-      <button class="voice-btn" id="ctf-btn" title="CTF symbol palette" onclick="toggleCtfPalette()" style="font-size:14px;">✦</button>
+      <button class="voice-btn" id="voice-btn" title="Click to speak (or hold)" onclick="toggleVoice()">🎙 Speak</button>
+      <button class="voice-btn" id="ctf-btn" title="Symbols & glyphs" onclick="toggleCtfPalette()" style="font-size:14px;">✦</button>
       <button class="send-btn" id="send-btn" onclick="sendMessage()" title="Send">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <line x1="22" y1="2" x2="11" y2="13"/>
@@ -332,14 +334,14 @@
       </button>
     </div>
     <div class="ctf-popup hidden" id="ctf-popup"></div>
-    <p class="input-hint" id="input-hint">Enter to send · ⌘ voice · ⌘ K</p>
+    <p class="input-hint" id="input-hint">Press Enter to send · Click 🎙 to speak · Click ✦ for symbols</p>
   </div>
 </div>
 
 <!-- Debug / Analytics Panel -->
-<button class="debug-toggle" id="debug-toggle" title="Toggle analytics (D)" onclick="toggleDebug()">📊</button>
+<button class="debug-toggle" id="debug-toggle" title="Session stats (developer mode)" onclick="toggleDebug()">📊</button>
 <div class="debug-panel" id="debug-panel">
-  <h3>Analytics</h3>
+  <h3>Session Stats</h3>
   <div class="debug-row"><span class="debug-label">Session</span><span class="debug-val" id="dbg-session">—</span></div>
   <div class="debug-row"><span class="debug-label">Messages</span><span class="debug-val" id="dbg-messages">0</span></div>
   <div class="debug-row"><span class="debug-label">Tokens</span><span class="debug-val" id="dbg-tokens">0</span></div>
