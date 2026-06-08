@@ -26,7 +26,7 @@ class ThreeDoorsVisionTrainer:
         """Load dataset manifest"""
         manifest_path = self.dataset_dir / "manifest.json"
         if not manifest_path.exists():
-            print(f"❌ Manifest not found: {manifest_path}")
+            print(f"[ERROR] Manifest not found: {manifest_path}")
             print("   Run: python scripts/prepare-three-doors-dataset.py")
             return {}
 
@@ -35,7 +35,7 @@ class ThreeDoorsVisionTrainer:
 
     def train_image_classifier(self, manifest: Dict) -> bool:
         """Train ResNet50 for door type classification"""
-        print("\n🎯 Training Image Classifier")
+        print("\n[CLASSIFIER] Training Image Classifier")
         print("  Model: ResNet50 (pretrained)")
         print("  Task: Classify door type (elephant, castle, garden, etc.)")
 
@@ -46,7 +46,7 @@ class ThreeDoorsVisionTrainer:
         categories = manifest.get('categories', {})
         print(f"  Categories: {len(categories)}")
         for cat_name, cat_info in categories.items():
-            print(f"    • {cat_name}: {cat_info['count']} images")
+            print(f"    * {cat_name}: {cat_info['count']} images")
 
         print("\n  Training steps:")
         print("    1. Load ResNet50 pretrained on ImageNet")
@@ -62,7 +62,7 @@ class ThreeDoorsVisionTrainer:
 
     def train_caption_generator(self, manifest: Dict) -> bool:
         """Train BLIP image-to-text model"""
-        print("\n📝 Training Caption Generator")
+        print("\n[CAPTION] Training Caption Generator")
         print("  Model: BLIP (image-to-text)")
         print("  Task: Generate symbolic captions for door scenes")
 
@@ -90,7 +90,7 @@ class ThreeDoorsVisionTrainer:
 
     def train_stable_diffusion_lora(self, manifest: Dict) -> bool:
         """Fine-tune Stable Diffusion on Three Doors imagery"""
-        print("\n🎨 Training Stable Diffusion LoRA")
+        print("\n[DIFFUSION] Training Stable Diffusion LoRA")
         print("  Base: Stable Diffusion XL")
         print("  Task: Generate new door scenes matching training style")
 
@@ -101,10 +101,10 @@ class ThreeDoorsVisionTrainer:
         print(f"  Dataset: {total_images} real Three Doors screenshots")
 
         print("\n  LoRA Configuration:")
-        print("    • Rank: 32 (higher for complex visual patterns)")
-        print("    • Target modules: cross-attention layers")
-        print("    • Learning rate: 1e-4")
-        print("    • Epochs: 3 (avoid overfitting)")
+        print("    * Rank: 32 (higher for complex visual patterns)")
+        print("    * Target modules: cross-attention layers")
+        print("    * Learning rate: 1e-4")
+        print("    * Epochs: 3 (avoid overfitting)")
 
         print("\n  Training steps:")
         print("    1. Load SDXL base model (7GB)")
@@ -113,8 +113,8 @@ class ThreeDoorsVisionTrainer:
         print("    4. Validate on 20% holdout")
 
         print("\n  Expected output:")
-        print("    • lantern-three-doors.safetensors (~200MB)")
-        print("    • Can generate new door scenes in the trained style")
+        print("    * lantern-three-doors.safetensors (~200MB)")
+        print("    * Can generate new door scenes in the trained style")
 
         print("\n  To train:")
         print("    pip install diffusers accelerate peft")
@@ -126,7 +126,7 @@ class ThreeDoorsVisionTrainer:
 
     def create_ollama_models(self) -> bool:
         """Create Ollama model definitions"""
-        print("\n🦙 Creating Ollama Model Definitions")
+        print("\n[OLLAMA] Creating Ollama Model Definitions")
 
         models = {
             'lantern-three-doors-classifier': {
@@ -149,7 +149,7 @@ class ThreeDoorsVisionTrainer:
 
         print("\n  Models to deploy:")
         for model_name, config in models.items():
-            print(f"\n  • {model_name}")
+            print(f"\n  * {model_name}")
             print(f"    Base: {config['base']}")
             print(f"    Task: {config['task']}")
 
@@ -162,14 +162,14 @@ class ThreeDoorsVisionTrainer:
 
     def create_dream_journal_integration(self) -> bool:
         """Plan Dream Journal integration with trained models"""
-        print("\n🚪 Dream Journal Integration Plan")
+        print("\n[INTEGRATION] Dream Journal Integration Plan")
 
         integrations = {
             'Image Recognition': {
                 'Model': 'lantern-three-doors-classifier',
                 'Input': 'Dream image from user',
                 'Output': 'Identified door type',
-                'UI': 'Label on dream with [🚪 Castle Door] detected'
+                'UI': 'Label on dream with [Door] detected'
             },
             'Image Captioning': {
                 'Model': 'lantern-three-doors-caption',
@@ -193,7 +193,7 @@ class ThreeDoorsVisionTrainer:
 
         print("\n  Integration Points:")
         for name, config in integrations.items():
-            print(f"\n  • {name}")
+            print(f"\n  * {name}")
             print(f"    Model: {config['Model']}")
             print(f"    Input: {config['Input']}")
             print(f"    UI: {config['UI']}")
@@ -203,17 +203,17 @@ class ThreeDoorsVisionTrainer:
     def train(self) -> bool:
         """Execute full training pipeline"""
         print("\n" + "=" * 60)
-        print("🎮 THREE DOORS VISION MODEL TRAINING")
+        print("[GAME] THREE DOORS VISION MODEL TRAINING")
         print("=" * 60)
 
         # Load manifest
         manifest = self.load_manifest()
         if not manifest:
-            print("\n❌ Dataset not prepared")
+            print("\n[ERROR] Dataset not prepared")
             print("   Run: python scripts/prepare-three-doors-dataset.py")
             return False
 
-        print(f"\n📊 Dataset: {manifest['total_images']} images")
+        print(f"\n[DATA] Dataset: {manifest['total_images']} images")
         print(f"   Categories: {len(manifest['categories'])}")
 
         # Train each model
@@ -228,26 +228,26 @@ class ThreeDoorsVisionTrainer:
         self.create_dream_journal_integration()
 
         print("\n" + "=" * 60)
-        print("✓ Training pipeline complete!")
+        print("[SUCCESS] Training pipeline complete!")
         print("=" * 60)
 
-        print("\n📋 Summary:")
-        print("  ✅ Image classifier (door type recognition)")
-        print("  ✅ Caption generator (understand scenes)")
-        print("  ✅ Stable Diffusion LoRA (generate new doors)")
-        print("  ✅ Ollama model definitions")
-        print("  ✅ Dream Journal integration plan")
+        print("\n[SUMMARY]:")
+        print("  [OK] Image classifier (door type recognition)")
+        print("  [OK] Caption generator (understand scenes)")
+        print("  [OK] Stable Diffusion LoRA (generate new doors)")
+        print("  [OK] Ollama model definitions")
+        print("  [OK] Dream Journal integration plan")
 
-        print("\n🚀 Next Steps:")
+        print("\n[LAUNCH] Next Steps:")
         print("  1. GPU Training (4-8 hours):")
-        print("     • Image classifier: 2h")
-        print("     • Caption generator: 1.5h")
-        print("     • Stable Diffusion LoRA: 4-5h")
+        print("     * Image classifier: 2h")
+        print("     * Caption generator: 1.5h")
+        print("     * Stable Diffusion LoRA: 4-5h")
         print("\n  2. Deploy to Ollama")
         print("\n  3. Integrate into Dream Journal UI")
-        print("     • Image recognition")
-        print("     • Auto-captioning")
-        print("     • Three Doors scene generation")
+        print("     * Image recognition")
+        print("     * Auto-captioning")
+        print("     * Three Doors scene generation")
 
         return True
 

@@ -30,19 +30,19 @@ class ThreeDoorsDatassetPreparer:
         images = []
 
         if not self.source_dir.exists():
-            print(f"⚠️  Source directory not found: {self.source_dir}")
+            print(f"[WARNING] Source directory not found: {self.source_dir}")
             print("   Creating example structure...")
             self.source_dir.mkdir(parents=True, exist_ok=True)
             return images
 
-        print(f"🔍 Scanning for images in {self.source_dir}")
+        print(f"[SCAN] Scanning for images in {self.source_dir}")
 
         for ext in self.image_extensions:
             found = list(self.source_dir.glob(f"**/*{ext}"))
             found += list(self.source_dir.glob(f"**/*{ext.upper()}"))
             images.extend(found)
 
-        print(f"✓ Found {len(images)} images")
+        print(f"[OK] Found {len(images)} images")
         return images
 
     def categorize_images(self, images):
@@ -79,7 +79,7 @@ class ThreeDoorsDatassetPreparer:
         """Create manifest for model training"""
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        print("📋 Creating training manifest...")
+        print("[MANIFEST] Creating training manifest...")
 
         manifest = {
             'dataset_name': 'three-doors-visual-dataset',
@@ -135,12 +135,12 @@ class ThreeDoorsDatassetPreparer:
         with open(manifest_path, 'w') as f:
             json.dump(manifest, f, indent=2)
 
-        print(f"✓ Manifest saved: {manifest_path}")
+        print(f"[OK] Manifest saved: {manifest_path}")
         return manifest
 
     def create_training_splits(self, manifest):
         """Create train/val/test split directories"""
-        print("📂 Creating training splits...")
+        print("[SPLIT] Creating training splits...")
 
         splits = defaultdict(list)
         for img_entry in manifest['images']:
@@ -262,19 +262,20 @@ class ThreeDoorsDatassetPreparer:
 
     def prepare(self):
         """Execute full dataset preparation"""
-        print("\n🎨 Three Doors Visual Dataset Preparation")
+        print("\n" + "=" * 50)
+        print("[PREPARE] Three Doors Visual Dataset Preparation")
         print("=" * 50)
 
         # Discover images
         images = self.discover_images()
         if not images:
-            print("⚠️  No images found. Please add images to:")
+            print("[WARNING] No images found. Please add images to:")
             print(f"   {self.source_dir}")
             return False
 
         # Categorize
         categories = self.categorize_images(images)
-        print("\n📊 Image Categories:")
+        print("\n[DATA] Image Categories:")
         for door_type, door_images in categories.items():
             print(f"  {door_type}: {len(door_images)} images")
 
@@ -284,22 +285,22 @@ class ThreeDoorsDatassetPreparer:
 
         # Create templates
         templates = self.create_caption_templates()
-        print(f"✓ Created caption templates for {len(templates)} door types")
+        print(f"[OK] Created caption templates for {len(templates)} door types")
 
         # Create training config
         config = self.create_training_config(manifest, split_info)
-        print(f"✓ Created training configuration")
+        print(f"[OK] Created training configuration")
 
         print("\n" + "=" * 50)
-        print("✓ Dataset preparation complete!")
-        print(f"\n📁 Output directory: {self.output_dir}")
-        print("\n📄 Generated files:")
-        print("  • manifest.json — Full image inventory")
-        print("  • splits.json — Train/val/test split")
-        print("  • caption-templates.json — Symbolic captions")
-        print("  • training-config.json — Model training config")
+        print("[SUCCESS] Dataset preparation complete!")
+        print(f"\n[OUTPUT] Output directory: {self.output_dir}")
+        print("\n[FILES] Generated files:")
+        print("  * manifest.json - Full image inventory")
+        print("  * splits.json - Train/val/test split")
+        print("  * caption-templates.json - Symbolic captions")
+        print("  * training-config.json - Model training config")
 
-        print("\n🚀 Next steps:")
+        print("\n[NEXT] Next steps:")
         print("  1. Review manifest to verify image categorization")
         print("  2. Update captions if needed (caption-templates.json)")
         print("  3. Run: python scripts/train-three-doors-models.py")
