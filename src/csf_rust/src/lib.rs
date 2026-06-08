@@ -104,6 +104,17 @@ impl Archive {
 mod tests {
     use super::*;
 
+    fn write_archive_to_tmp(archive: &Archive) -> tempfile::NamedTempFile {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let mut file = std::fs::OpenOptions::new()
+            .read(true).write(true).open(tmp.path()).unwrap();
+        archive.write(&mut file, &SecurityPolicy::default()).unwrap();
+        drop(file);
+        tmp
+    }
+
+    // ── existing tests ──────────────────────────────────────────────────────
+
     #[test]
     fn roundtrip_one_segment() {
         let mut archive = Archive::new();
@@ -121,11 +132,7 @@ mod tests {
         archive.add_segment(b"Segment one");
         archive.add_segment(b"Segment two");
 
-        let tmp = tempfile::NamedTempFile::new().unwrap();
-        let mut file = std::fs::File::create(tmp.path()).unwrap();
-        let policy = SecurityPolicy::default();
-        archive.write(&mut file, &policy).unwrap();
-        drop(file);
+        let tmp = write_archive_to_tmp(&archive);
 
         let mut reader = SegmentReader::open(tmp.path()).unwrap();
         assert_eq!(reader.header().segment_count, 3);
@@ -135,5 +142,118 @@ mod tests {
 
         let seg2 = reader.decompress_segment(2).unwrap();
         assert_eq!(&seg2[..], b"Segment two");
+    }
+
+    // ── golden fixture: empty archive ────────────────────────────────────────
+
+    #[test]
+    fn roundtrip_empty_archive() {
+        let archive = Archive::new();
+        let tmp = write_archive_to_tmp(&archive);
+
+        // validate must pass
+        SegmentReader::validate(tmp.path()).unwrap();
+
+        // ArchiveReader returns zero bytes
+        let out = ArchiveReader::decompress_to_vec(tmp.path()).unwrap();
+        assert!(out.is_empty());
+    }
+
+    // ── golden fixture: binary payload (bit-perfect) ─────────────────────────
+
+    #[test]
+    fn roundtrip_binary_payload_bit_perfect() {
+        // Contains nulls, high bytes, every value 0x00..=0xff
+        let payload: Vec<u8> = (0u8..=255u8)
+            .chain([b'\n', 0x00, 0xff, b'\t', 0x80].iter().copied())
+            .collect();
+
+        let mut archive = Archive::new();
+        archive.add_segment(&payload);
+        let tmp = write_archive_to_tmp(&archive);
+
+        SegmentReader::validate(tmp.path()).unwrap();
+
+        let restored = ArchiveReader::decompress_to_vec(tmp.path()).unwrap();
+        assert_eq!(restored, payload, "binary payload must be bit-perfect");
+    }
+
+    // ── golden fixture: multi-segment concatenation via ArchiveReader ─────────
+
+    #[test]
+    fn roundtrip_multi_segment_archive_reader() {
+        let seg_a = b"Alpha: Garden Door".as_ref();
+        let seg_b = b"Beta: Lantern \0 null \xff high".as_ref();
+        let seg_c = b"Gamma: convergence complete".as_ref();
+        let expected: Vec<u8> = [seg_a, seg_b, seg_c].concat();
+
+        let mut archive = Archive::new();
+        archive.add_segment(seg_a);
+        archive.add_segment(seg_b);
+        archive.add_segment(seg_c);
+        let tmp = write_archive_to_tmp(&archive);
+
+        SegmentReader::validate(tmp.path()).unwrap();
+
+        let restored = ArchiveReader::decompress_to_vec(tmp.path()).unwrap();
+        assert_eq!(restored, expected, "multi-segment must concatenate in order");
+    }
+
+    // ── footer: validate passes on well-formed archive ───────────────────────
+
+    #[test]
+    fn footer_validate_passes_on_good_archive() {
+        let mut archive = Archive::new();
+        archive.add_segment(b"validate me");
+        let tmp = write_archive_to_tmp(&archive);
+        SegmentReader::validate(tmp.path()).unwrap();
+    }
+
+    // ── footer: validate rejects a byte-flipped body ─────────────────────────
+
+    #[test]
+    fn footer_validate_rejects_corrupt_archive() {
+        let mut archive = Archive::new();
+        archive.add_segment(b"tamper target");
+        let tmp = write_archive_to_tmp(&archive);
+
+        // Flip a byte in the middle of the file (inside the compressed segment)
+        let mut bytes = std::fs::read(tmp.path()).unwrap();
+        let mid = bytes.len() / 2;
+        bytes[mid] ^= 0xff;
+        std::fs::write(tmp.path(), &bytes).unwrap();
+
+        let result = SegmentReader::validate(tmp.path());
+        assert!(result.is_err(), "corrupt archive must fail validation");
+    }
+
+    // ── footer: validate rejects truncated file ───────────────────────────────
+
+    #[test]
+    fn footer_validate_rejects_truncated_archive() {
+        let mut archive = Archive::new();
+        archive.add_segment(b"truncate me");
+        let tmp = write_archive_to_tmp(&archive);
+
+        // Truncate to 8 bytes — too short for any valid archive
+        let bytes = std::fs::read(tmp.path()).unwrap();
+        std::fs::write(tmp.path(), &bytes[..8]).unwrap();
+
+        let result = SegmentReader::validate(tmp.path());
+        assert!(result.is_err(), "truncated archive must fail validation");
+    }
+
+    // ── segment_flags: RAW flag is set on all segments written by Archive ─────
+
+    #[test]
+    fn segments_have_raw_flag() {
+        let mut archive = Archive::new();
+        archive.add_segment(b"flag check");
+        let tmp = write_archive_to_tmp(&archive);
+
+        let mut reader = SegmentReader::open(tmp.path()).unwrap();
+        // decompress_segment must succeed (RAW path works)
+        let out = reader.decompress_segment(0).unwrap();
+        assert_eq!(&out[..], b"flag check");
     }
 }
