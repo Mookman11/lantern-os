@@ -66,8 +66,8 @@ async function listMcpResources() {
 /** Read a single MCP resource by URI. Returns the parsed JSON/text object or null on failure. */
 async function readMcpResource(uri) {
   try {
-    const encoded = uri.replace(/:/g, "%3A").replace(/\//g, "%2F");
-    const result = await _httpGet(`/resource/${encoded}`);
+    const encoded = encodeURIComponent(uri);
+    const result = await _httpGet(`/resource/read?uri=${encoded}`);
     if (result && result.text) {
       // JSON resources auto-parse
       if (result.mimeType === "application/json") {
