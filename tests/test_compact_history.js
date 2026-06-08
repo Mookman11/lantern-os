@@ -47,16 +47,16 @@ let failed = 0;
 function test(name, fn) {
   try {
     fn();
-    console.log(`  ✓ ${name}`);
+    process.stdout.write(`  ✓ ${name}\n`);
     passed++;
   } catch (err) {
-    console.error(`  ✗ ${name}`);
-    console.error(`    ${err.message}`);
+    process.stderr.write(`  ✗ ${name}\n`);
+    process.stderr.write(`    ${err.message}\n`);
     failed++;
   }
 }
 
-console.log("\ncompactHistory() unit tests\n");
+process.stdout.write("\ncompactHistory() unit tests\n\n");
 
 // ── empty / null / non-array ─────────────────────────────────────────────────
 test("null input returns empty array", () => {
@@ -192,7 +192,7 @@ test("input history is not mutated", () => {
 });
 
 // ── buildProviderMessages ────────────────────────────────────────────────────
-console.log("\nbuildProviderMessages() unit tests\n");
+process.stdout.write("\nbuildProviderMessages() unit tests\n\n");
 
 test("returns system + history + user message", () => {
   const compacted = [{ role: "user", text: "hi" }, { role: "assistant", text: "hello" }];
@@ -216,8 +216,8 @@ test("empty compacted history produces system + user only", () => {
 
 // ── Summary ──────────────────────────────────────────────────────────────────
 const total = passed + failed;
-console.log(`\n${passed}/${total} passed`);
+process.stdout.write(`\n${passed}/${total} passed\n`);
 if (failed > 0) {
-  console.error(`${failed} failed`);
+  process.stderr.write(`${failed} failed\n`);
   process.exit(1);
 }
