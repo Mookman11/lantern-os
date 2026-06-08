@@ -173,9 +173,24 @@ async function dreamChatReply(message, recentDreams, requestedAgent = "", reques
     }
   }
 
-  const agent = requestedAgent
-    ? (AGENT_PERSONAS.find((a) => a.id === requestedAgent) || selectAgent(message))
-    : selectAgent(message);
+  let agent;
+  if (requestedAgent) {
+    // If agent explicitly requested, validate it exists — don't silently fallback
+    agent = AGENT_PERSONAS.find((a) => a.id === requestedAgent);
+    if (!agent) {
+      // Invalid agent ID — return error instead of fallback
+      return {
+        reply: null,
+        error: `Agent "${requestedAgent}" not found. Available: ${AGENT_PERSONAS.map(a => a.id).join(", ")}`,
+        agent: "unknown",
+        online: false,
+        suggestions: [],
+      };
+    }
+  } else {
+    // No agent specified — use keyword-based selection
+    agent = selectAgent(message);
+  }
 
   const suggestions = Object.values(DREAM_DOORS)
     .slice(0, 4)
