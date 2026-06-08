@@ -20,6 +20,8 @@ git pull origin master
 
 All local dev and autostart boots run from the `master` branch. Feature branches are for PRs only — never run the server from a feature branch. Always merge upstream before starting.
 
+**Versioning:** Version auto-bumps on each commit (patch), with timestamp on build. Check `apps/lantern-garage/version.json` for build ID and timestamp.
+
 Install dependencies:
 
 ```bash

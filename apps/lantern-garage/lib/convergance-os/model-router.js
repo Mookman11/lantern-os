@@ -29,6 +29,11 @@ const INTENT_PATTERNS = {
     "provider", "capacity", "fallback", "status", "which model",
     "pcsf", "local model", "ollama", "metered",
   ],
+  technical_debug: [
+    "working or not", "error", "broken", "bug", "not responding", "crash",
+    "why", "what happened", "debug", "fix", "issue", "problem",
+    "chat bubble", "ui", "interface", "click", "not sending",
+  ],
 };
 
 function classifyIntent(message) {
@@ -60,6 +65,7 @@ const INTENT_TO_PROFILE = {
   dream_chat: "lantern-csf-dream",
   convergance_action: "lantern-convergance",
   capacity_query: "lantern-pcsf",
+  technical_debug: "keystone", // Route to Keystone MCP for real-time debugging
 };
 
 /**
