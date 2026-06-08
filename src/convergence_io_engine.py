@@ -183,14 +183,15 @@ class CircuitBreaker:
 
 
 class SlotManager:
-    """In-memory cached slot manager with lazy disk persistence."""
+    """In-memory cached slot manager with lazy disk persistence and periodic cleanup."""
 
-    def __init__(self, path: Optional[Path] = None):
+    def __init__(self, path: Optional[Path] = None, max_slots: int = 1000):
         self.path = path or (REPO_ROOT / "data" / "agent-fleet" / "slots.json")
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
         self._cache: Optional[Dict[str, Any]] = None
         self._dirty = False
+        self.max_slots = max_slots
 
     def _read(self) -> Dict[str, Any]:
         if self._cache is not None:
@@ -216,6 +217,28 @@ class SlotManager:
         with self._lock:
             data = self._read()
             slot_id = f"{slot_type}-{request_id}"
+            
+            # Check if slot already exists and is active
+            existing = data.get("slots", {}).get(slot_id)
+            if existing and existing.get("status") == "active":
+                # Reuse existing active slot
+                return slot_id
+            
+            # Enforce max_slots limit by cleaning old released slots
+            slots = data.get("slots", {})
+            if len(slots) >= self.max_slots:
+                # Remove oldest released slots first
+                released_slots = [
+                    (sid, info) for sid, info in slots.items()
+                    if info.get("status") == "released"
+                ]
+                if released_slots:
+                    # Sort by released_at, remove oldest 10%
+                    released_slots.sort(key=lambda x: x[1].get("released_at", ""))
+                    to_remove = max(1, len(released_slots) // 10)
+                    for sid, _ in released_slots[:to_remove]:
+                        del slots[sid]
+            
             record: Dict[str, Any] = {"claimed_at": _now(), "status": "active"}
             if context:
                 record["context"] = context
@@ -230,6 +253,8 @@ class SlotManager:
                 data["slots"][slot_id]["status"] = "released"
                 data["slots"][slot_id]["released_at"] = _now()
                 self._write(data)
+                # Trigger flush on release to persist state
+                self.flush()
 
     def active_count(self, slot_type: str) -> int:
         data = self._read()
@@ -262,7 +287,7 @@ class HealthProbe:
 class MetricsCollector:
     """Thread-safe rolling metrics with O(1) writes and O(k) percentile reads."""
 
-    def __init__(self, window: int = 1000):
+    def __init__(self, window: int = 500):  # Reduced from 1000 to 500 for memory
         self.window = window
         self._latencies: Dict[str, deque[float]] = defaultdict(lambda: deque(maxlen=window))
         self._errors: Dict[str, int] = defaultdict(int)
@@ -876,7 +901,11 @@ class ConvergenceLoop:
                         objective = line.strip()
                         source = "readme"
                         break
-        return PhaseResult(4, "state_objective", "pass", evidence={"objective": objective, "source": source})
+        
+        # Wire drift detection into Phase 4 evidence
+        drift = self._detect_drift()
+        evidence = {"objective": objective, "source": source, "drift": drift}
+        return PhaseResult(4, "state_objective", "pass", evidence=evidence)
 
     def _phase_retire_old(self) -> PhaseResult:
         retired = []
@@ -959,7 +988,6 @@ class ConvergenceLoop:
         ready = all(r.status == "pass" for r in self.results)
         return PhaseResult(13, "promote_or_hold", "pass" if ready else "hold", evidence={"ready": ready})
 
-<<<<<<< HEAD
     def _detect_drift(self) -> Dict[str, Any]:
         """Compare current results with previous receipt."""
         if not self._previous_receipt_path.exists():
@@ -994,14 +1022,14 @@ class TesseractEngine:
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
         self._cells: Dict[str, TesseractCell] = {}
         self._init_cells()
-        self.slots = SlotManager(self.data_dir / "agent-fleet" / "slots.json")
-        self.metrics = MetricsCollector()
+        self.slots = SlotManager(self.data_dir / "agent-fleet" / "slots.json", max_slots=500)  # Reduced from 1000
+        self.metrics = MetricsCollector(window=500)  # Reduced from 1000
         self.health = HealthProbe()
         self._circuit_cache: Dict[str, CircuitBreaker] = {}
-        self._executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="tesseract")
+        self._executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="tesseract")  # Reduced from 4
         self._cache_manager: Any = None
         self._persona_cache: Dict[str, str] = {}
-        self._persona_cache_max = 1000
+        self._persona_cache_max = 500  # Reduced from 1000
         if _CSF_CACHE_AVAILABLE:
             try:
                 self._cache_manager = CsfCacheManager()
