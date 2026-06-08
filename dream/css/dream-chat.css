@@ -848,9 +848,18 @@
   vertical-align: -0.125em;
   font-size: inherit;
   color: inherit;
+  filter: drop-shadow(0 0 2px currentColor);
 }
+/* Health colors */
+.mandala-icon.healthy { color: var(--green); }
+.mandala-icon.warning { color: var(--gold); }
+.mandala-icon.critical { color: var(--accent); }
+/* Speed indicates lag: slow=lag, fast=healthy */
 .mandala-icon.spin-slow {
-  animation: mandala-spin 4s linear infinite;
+  animation: mandala-spin 5s linear infinite;
+}
+.mandala-icon.spin-normal {
+  animation: mandala-spin 2.5s linear infinite;
 }
 .mandala-icon.spin-fast {
   animation: mandala-spin 1s linear infinite;
@@ -865,4 +874,8 @@
 @keyframes mandala-wobble {
   0%, 100% { transform: scale(1); }
   50% { transform: scale(1.05); }
+}
+/* Dark mode: higher contrast */
+[data-theme="dark"] .mandala-icon {
+  filter: drop-shadow(0 0 4px currentColor) brightness(1.3);
 }
