@@ -49,6 +49,8 @@ capture context
 
 The project is intentionally local-first. Runtime data, dream journal entries, local receipts, and private operational state are designed to stay on the operator machine unless explicitly exported.
 
+**Versioning:** Lantern OS uses auto-versioning. Each commit bumps the patch version, and deployments add ISO timestamps to build identifiers. Version info is in `apps/lantern-garage/version.json` (auto-generated on update) and `CHANGELOG.MD` (auto-updated with commit messages).
+
 The README is intended as the public-facing entry point. Detailed runtime, convergence, and archive policies live in the linked docs and manifests.
 
 ---

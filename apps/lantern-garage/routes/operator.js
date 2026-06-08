@@ -104,15 +104,27 @@ module.exports = async function operatorRoutes(req, res, url, deps) {
         steps.push({ step: "npm_install", ok: false, output: e.stdout?.trim() || e.message });
       }
 
-      // Step 3: get new version
-      let newVersion = { commit: "unknown", tag: "unknown", semver: "unknown" };
+      // Step 3: auto-version and get new version info
       try {
-        const commit = execSync("git rev-parse HEAD", { cwd: repoRoot, encoding: "utf8" }).trim();
+        const autoVersionScript = path.join(repoRoot, "scripts/auto-version.js");
+        if (require("fs").existsSync(autoVersionScript)) {
+          require("child_process").execSync(`node ${autoVersionScript}`, { cwd: repoRoot, encoding: "utf8" });
+        }
+      } catch (e) {
+        console.error("[Auto-version] Error:", e.message);
+      }
+
+      let newVersion = { commit: "unknown", tag: "unknown", semver: "unknown", buildId: "unknown", timestamp: "unknown" };
+      try {
+        const commit = execSync("git rev-parse --short HEAD", { cwd: repoRoot, encoding: "utf8" }).trim();
         const tag = execSync("git describe --tags --always", { cwd: repoRoot, encoding: "utf8" }).trim();
         newVersion = { commit, tag };
         try {
-          const vj = JSON.parse(require("fs").readFileSync(path.join(repoRoot, "apps/lantern-garage/public/version.json"), "utf8"));
+          const vjPath = path.join(repoRoot, "apps/lantern-garage/version.json");
+          const vj = JSON.parse(require("fs").readFileSync(vjPath, "utf8"));
           if (vj.version) newVersion.semver = vj.version;
+          if (vj.buildId) newVersion.buildId = vj.buildId;
+          if (vj.timestamp) newVersion.timestamp = vj.timestamp;
         } catch {}
       } catch {}
 
