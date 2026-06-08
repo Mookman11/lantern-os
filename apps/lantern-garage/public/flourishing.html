@@ -458,6 +458,81 @@
       </div>
     </div>
 
+    <!-- FEATURES CAROUSEL -->
+    <style>
+      .carousel-container {
+        width: 100%;
+        overflow: hidden;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 20px 0;
+        margin: 32px 0;
+      }
+
+      .carousel-track {
+        display: flex;
+        gap: 16px;
+        padding: 0 20px;
+        animation: scroll 30s linear infinite;
+      }
+
+      .carousel-track:hover {
+        animation-play-state: paused;
+      }
+
+      .carousel-item {
+        flex-shrink: 0;
+        min-width: 240px;
+        padding: 16px;
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        text-align: center;
+      }
+
+      .carousel-item .icon {
+        font-size: 2rem;
+        margin-bottom: 8px;
+      }
+
+      .carousel-item .title {
+        font-weight: 600;
+        color: var(--text);
+        font-size: 0.9rem;
+        margin-bottom: 6px;
+      }
+
+      .carousel-item .desc {
+        color: var(--muted);
+        font-size: 0.78rem;
+        line-height: 1.4;
+      }
+
+      @keyframes scroll {
+        0% { transform: translateX(0); }
+        100% { transform: translateX(-50%); }
+      }
+    </style>
+
+    <div class="carousel-container">
+      <div class="carousel-track" id="carousel">
+        <div class="carousel-item"><div class="icon">✍️</div><div class="title">Write Dreams</div><div class="desc">Capture thoughts and visions</div></div>
+        <div class="carousel-item"><div class="icon">🧠</div><div class="title">AI Reflect</div><div class="desc">Chat about what you recorded</div></div>
+        <div class="carousel-item"><div class="icon">🔍</div><div class="title">Search</div><div class="desc">Find patterns over time</div></div>
+        <div class="carousel-item"><div class="icon">💾</div><div class="title">Export</div><div class="desc">Download all your data</div></div>
+        <div class="carousel-item"><div class="icon">🔑</div><div class="title">Private</div><div class="desc">Runs on your computer</div></div>
+        <div class="carousel-item"><div class="icon">✅</div><div class="title">Ready</div><div class="desc">Start using right now</div></div>
+        <!-- Duplicate for infinite scroll -->
+        <div class="carousel-item"><div class="icon">✍️</div><div class="title">Write Dreams</div><div class="desc">Capture thoughts and visions</div></div>
+        <div class="carousel-item"><div class="icon">🧠</div><div class="title">AI Reflect</div><div class="desc">Chat about what you recorded</div></div>
+        <div class="carousel-item"><div class="icon">🔍</div><div class="title">Search</div><div class="desc">Find patterns over time</div></div>
+        <div class="carousel-item"><div class="icon">💾</div><div class="title">Export</div><div class="desc">Download all your data</div></div>
+        <div class="carousel-item"><div class="icon">🔑</div><div class="title">Private</div><div class="desc">Runs on your computer</div></div>
+        <div class="carousel-item"><div class="icon">✅</div><div class="title">Ready</div><div class="desc">Start using right now</div></div>
+      </div>
+    </div>
+
     <!-- HOW DIFFERENT GROUPS ARE DOING -->
     <div class="section-header">
       <h2>How Different Groups Are Doing</h2>
