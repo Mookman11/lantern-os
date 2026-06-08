@@ -4,274 +4,411 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#06b6d4">
-  <title>Provider Settings — Lantern OS</title>
-  <link rel="stylesheet" href="/common-layout.css">
+  <title>AI Provider Settings — Lantern OS</title>
   <style>
-    .app {
-      display: flex;
-      flex-direction: column;
-      height: 100vh;
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
     }
 
-    /* Hide scrollbars */
-    ::-webkit-scrollbar { display: none; }
-    * { -ms-overflow-style: none; scrollbar-width: none; }
+    :root {
+      --bg: #ffffff;
+      --surface: #f8f9fa;
+      --surface2: #f1f3f5;
+      --border: #e5e7eb;
+      --text: #111827;
+      --muted: #6b7280;
+      --accent: #0ea5e9;
+      --accent-hover: #06b6d4;
+      --accent-dim: #cffafe;
+      --green: #10b981;
+      --danger: #ef4444;
+    }
 
-    .main-container {
+    [data-theme="dark"] {
+      --bg: #0a0e17;
+      --surface: #111827;
+      --surface2: #1a2332;
+      --border: #1f2937;
+      --text: #f3f4f6;
+      --muted: #9ca3af;
+      --accent: #06b6d4;
+      --accent-hover: #0891b2;
+      --accent-dim: #164e63;
+      --green: #34d399;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      font-size: 15px;
+      line-height: 1.6;
+      scroll-behavior: smooth;
+    }
+
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: var(--surface); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    /* ═══ HEADER ═══ */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 20px;
       display: flex;
+      align-items: center;
+      gap: 16px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    }
+
+    .back-link {
+      text-decoration: none;
+      color: var(--muted);
+      font-size: 1.2rem;
+      transition: color 0.2s;
+      cursor: pointer;
+    }
+
+    .back-link:hover { color: var(--text); }
+
+    .header-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
       flex: 1;
-      overflow: hidden;
     }
 
+    .header-icon {
+      font-size: 24px;
+    }
+
+    .header-title {
+      font-size: 1rem;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: auto;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    .status-dot.offline {
+      background: var(--muted);
+      animation: none;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .status-text {
+      font-size: 0.78rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      font-weight: 600;
+    }
+
+    .theme-btn {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 6px 10px;
+      cursor: pointer;
+      color: var(--muted);
+      font-size: 0.9rem;
+      transition: all 0.2s;
+    }
+
+    .theme-btn:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    /* ═══ MAIN CONTENT ═══ */
     main {
-      flex: 1;
-      overflow-y: auto;
-      padding: 24px;
-      max-width: 800px;
+      max-width: 880px;
+      margin: 0 auto;
+      padding: 56px 20px 80px;
     }
 
-    h1 {
-      font-size: 1.5rem;
-      font-weight: 700;
-      margin-bottom: 8px;
+    /* ═══ HERO SECTION ═══ */
+    .hero {
+      margin-bottom: 56px;
+      text-align: center;
+    }
+
+    .hero-icon {
+      font-size: 52px;
+      margin-bottom: 16px;
+      display: block;
+    }
+
+    .hero h1 {
+      font-size: clamp(1.9rem, 5vw, 2.8rem);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      margin-bottom: 12px;
       color: var(--text);
     }
 
-    .subtitle {
+    .hero p {
+      font-size: 1rem;
       color: var(--muted);
-      font-size: 0.9rem;
-      margin-bottom: 32px;
+      max-width: 540px;
+      margin: 0 auto 20px;
+      line-height: 1.6;
     }
 
-    /* Status grid */
+    /* ═══ SECTION LABEL ═══ */
+    .section-label {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-top: 44px;
+      margin-bottom: 16px;
+    }
+
+    /* ═══ STATUS GRID ═══ */
     .status-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: 16px;
-      margin-bottom: 32px;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+      margin-bottom: 44px;
     }
 
-    .status-card {
+    .status-item {
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 12px;
       padding: 16px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-      transition: border-color 0.2s;
+      text-align: center;
       cursor: pointer;
+      transition: all 0.2s;
     }
 
-    .status-card:hover {
+    .status-item:hover {
       border-color: var(--accent);
+      background: var(--surface2);
+      transform: translateY(-2px);
     }
 
-    .status-card h3 {
+    .status-item-icon {
+      font-size: 28px;
+      margin-bottom: 8px;
+    }
+
+    .status-item-label {
       font-size: 0.85rem;
       font-weight: 600;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      margin-bottom: 8px;
+      color: var(--text);
+      margin-bottom: 4px;
     }
 
-    .status-value {
-      font-size: 1.8rem;
+    .status-item-value {
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: 6px;
+    }
+
+    .status-item-detail {
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+
+    /* ═══ PROVIDER PANELS ═══ */
+    .provider-panels {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 12px;
+      margin-bottom: 44px;
+    }
+
+    .provider-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 20px;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .provider-panel:hover {
+      border-color: var(--accent);
+      background: var(--surface2);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+    }
+
+    .provider-panel.configured {
+      border-color: var(--green);
+    }
+
+    .provider-panel.configured .provider-status {
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--green);
+    }
+
+    .provider-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .provider-icon {
+      font-size: 24px;
+    }
+
+    .provider-name {
+      font-size: 0.95rem;
       font-weight: 700;
       color: var(--text);
-      margin-bottom: 8px;
+      flex: 1;
     }
 
-    .status-detail {
+    .provider-status {
+      font-size: 0.68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      padding: 4px 8px;
+      border-radius: 6px;
+      background: rgba(107, 114, 128, 0.15);
+      color: var(--muted);
+    }
+
+    .provider-model {
+      font-size: 0.8rem;
+      color: var(--muted);
+      font-family: ui-monospace, monospace;
+    }
+
+    .provider-strengths {
       font-size: 0.8rem;
       color: var(--muted);
       line-height: 1.4;
     }
 
-    .dot {
-      display: inline-block;
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      margin-right: 6px;
+    /* ═══ MODAL / DRAWER ═══ */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.6);
+      z-index: 200;
+      animation: fadeIn 0.2s;
     }
 
-    .dot.online { background: var(--green); }
-    .dot.warning { background: var(--gold); }
-    .dot.offline { background: var(--accent); }
-
-    /* Provider table */
-    .providers-section {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      overflow: hidden;
-      margin-bottom: 32px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-    }
-
-    .section-header {
-      padding: 16px 20px;
-      border-bottom: 1px solid var(--border);
-      background: var(--surface2);
-    }
-
-    .section-header h2 {
-      font-size: 1rem;
-      font-weight: 600;
-      color: var(--text);
-      margin: 0;
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 0.9rem;
-    }
-
-    th {
-      padding: 10px 16px;
-      text-align: left;
-      font-weight: 600;
-      color: var(--muted);
-      font-size: 0.72rem;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      border-bottom: 1px solid var(--border);
-      background: var(--surface);
-    }
-
-    td {
-      padding: 12px 16px;
-      border-bottom: 1px solid var(--border);
-      color: var(--text);
-    }
-
-    tr:last-child td {
-      border-bottom: none;
-    }
-
-    tr:hover {
-      background: var(--surface2);
-      cursor: pointer;
-    }
-
-    .status-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 4px 10px;
-      border-radius: 12px;
-      font-weight: 600;
-      font-size: 0.7rem;
-      text-transform: uppercase;
-    }
-
-    .status-badge.configured {
-      background: rgba(16, 185, 129, 0.15);
-      color: var(--green);
-    }
-
-    .status-badge.missing {
-      background: rgba(6, 182, 212, 0.15);
-      color: var(--accent);
-    }
-
-    /* Loading state */
-    .loading {
-      text-align: center;
-      padding: 30px 20px;
-      color: var(--muted);
-    }
-
-    .spinner {
-      display: inline-block;
-      width: 24px;
-      height: 24px;
-      border: 2px solid var(--border);
-      border-top-color: var(--accent);
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-    }
-
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
-
-    /* ═══ SIDECAR PANEL ═══ */
-    .sidecar {
-      width: 380px;
-      background: var(--surface);
-      border-left: 1px solid var(--border);
+    .modal-overlay.open {
       display: flex;
-      flex-direction: column;
-      overflow: hidden;
-      box-shadow: -2px 0 8px rgba(0,0,0,0.2);
-    }
-
-    .sidecar-header {
-      padding: 16px 20px;
-      border-bottom: 1px solid var(--border);
-      background: var(--surface2);
-      flex-shrink: 0;
-    }
-
-    .sidecar-header h3 {
-      font-size: 0.95rem;
-      font-weight: 700;
-      color: var(--text);
-      margin: 0 0 4px;
-    }
-
-    .sidecar-provider-name {
-      font-size: 0.8rem;
-      color: var(--accent);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      margin: 0;
-    }
-
-    .sidecar-body {
-      flex: 1;
-      overflow-y: auto;
-      padding: 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
-    }
-
-    .sidecar-empty {
-      display: flex;
-      flex-direction: column;
       align-items: center;
       justify-content: center;
-      height: 100%;
-      text-align: center;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 32px;
+      max-width: 500px;
+      width: 90vw;
+      max-height: 90vh;
+      overflow-y: auto;
+      animation: slideUp 0.3s;
+    }
+
+    @keyframes slideUp {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .modal-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+
+    .modal-icon {
+      font-size: 32px;
+    }
+
+    .modal-title {
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: var(--text);
+      flex: 1;
+    }
+
+    .modal-close {
+      background: none;
+      border: none;
+      font-size: 1.4rem;
       color: var(--muted);
+      cursor: pointer;
+      transition: color 0.2s;
+      padding: 0;
+      width: 32px;
+      height: 32px;
     }
 
-    .sidecar-empty-icon {
-      font-size: 48px;
-      margin-bottom: 12px;
-      opacity: 0.5;
+    .modal-close:hover {
+      color: var(--text);
     }
 
-    /* Form group */
     .form-group {
       display: flex;
       flex-direction: column;
       gap: 6px;
+      margin-bottom: 16px;
     }
 
-    .form-group label {
+    .form-label {
       font-size: 0.8rem;
-      font-weight: 600;
-      color: var(--text);
+      font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.04em;
+      color: var(--text);
     }
 
-    .form-group select,
-    .form-group input {
+    .form-input,
+    .form-select,
+    .form-range {
       background: var(--bg);
       border: 1px solid var(--border);
       border-radius: 8px;
@@ -283,158 +420,127 @@
       transition: border-color 0.2s;
     }
 
-    .form-group select:focus,
-    .form-group input:focus {
+    .form-input:focus,
+    .form-select:focus,
+    .form-range:focus {
       border-color: var(--accent);
     }
 
-    .form-group select:disabled,
-    .form-group input:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
+    .form-range {
+      padding: 8px 12px;
     }
 
     .form-hint {
       font-size: 0.75rem;
       color: var(--muted);
-      line-height: 1.3;
-      margin-top: -2px;
+      line-height: 1.4;
     }
 
-    /* Provider config card */
-    .config-card {
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 14px;
+    .slider-value {
       display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-
-    .config-card h4 {
-      font-size: 0.85rem;
-      font-weight: 700;
-      color: var(--accent);
-      margin: 0;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-    }
-
-    .config-row {
-      display: flex;
+      justify-content: space-between;
       align-items: center;
-      gap: 8px;
       font-size: 0.85rem;
-      color: var(--text);
+      margin-top: 6px;
     }
 
-    .config-label {
-      color: var(--muted);
-      min-width: 80px;
-    }
-
-    .config-value {
-      font-weight: 500;
-      flex: 1;
-      word-break: break-all;
-    }
-
-    /* Action buttons */
-    .action-group {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-
-    .action-btn {
-      flex: 1;
-      min-height: 40px;
-      padding: 8px 12px;
-      background: var(--accent);
-      border: none;
-      border-radius: 8px;
-      color: white;
-      font-size: 0.8rem;
+    .slider-value-display {
+      color: var(--accent);
       font-weight: 600;
+    }
+
+    .form-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 24px;
+    }
+
+    .btn {
+      flex: 1;
+      padding: 12px 16px;
+      border: none;
+      border-radius: 10px;
+      font-size: 0.9rem;
+      font-weight: 700;
       cursor: pointer;
-      transition: background 0.2s;
+      transition: all 0.2s;
       font-family: inherit;
       text-transform: uppercase;
       letter-spacing: 0.04em;
     }
 
-    .action-btn:hover {
+    .btn-primary {
+      background: var(--accent);
+      color: white;
+    }
+
+    .btn-primary:hover {
       background: var(--accent-hover);
     }
 
-    .action-btn.secondary {
+    .btn-secondary {
+      background: var(--surface2);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    .btn-secondary:hover {
+      border-color: var(--accent);
+      background: var(--border);
+    }
+
+    /* ═══ CONSOLE LOG ═══ */
+    .console-section {
       background: var(--surface);
       border: 1px solid var(--border);
-      color: var(--text);
-    }
-
-    .action-btn.secondary:hover {
-      background: var(--surface2);
-      border-color: var(--accent);
-    }
-
-    .action-btn:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-
-    /* ═══ ERROR LOG CONSOLE ═══ */
-    .console-panel {
-      height: 240px;
-      background: var(--surface);
-      border-top: 1px solid var(--border);
-      display: flex;
-      flex-direction: column;
+      border-radius: 14px;
+      overflow: hidden;
+      margin-bottom: 44px;
     }
 
     .console-header {
-      padding: 12px 20px;
+      padding: 16px 20px;
       border-bottom: 1px solid var(--border);
       background: var(--surface2);
       display: flex;
       align-items: center;
       justify-content: space-between;
-      flex-shrink: 0;
     }
 
     .console-title {
       font-size: 0.9rem;
-      font-weight: 600;
+      font-weight: 700;
       color: var(--text);
       display: flex;
       align-items: center;
       gap: 8px;
     }
 
-    .log-count {
-      font-size: 0.75rem;
-      color: var(--muted);
-      background: var(--surface);
+    .console-count {
+      font-size: 0.7rem;
+      background: var(--accent-dim);
+      color: var(--accent);
       padding: 2px 8px;
       border-radius: 10px;
+      font-weight: 700;
     }
 
     .console-actions {
       display: flex;
-      gap: 8px;
+      gap: 6px;
     }
 
     .console-btn {
       background: none;
       border: 1px solid var(--border);
       color: var(--muted);
-      font-size: 0.75rem;
+      font-size: 0.7rem;
       padding: 4px 10px;
       border-radius: 6px;
       cursor: pointer;
       transition: all 0.15s;
       font-family: inherit;
+      font-weight: 600;
     }
 
     .console-btn:hover {
@@ -443,16 +549,18 @@
     }
 
     .console-body {
-      flex: 1;
-      overflow-y: auto;
       padding: 12px 16px;
-      font-size: 0.78rem;
-      font-family: ui-monospace, monospace;
       background: var(--bg);
+      min-height: 120px;
+      max-height: 240px;
+      overflow-y: auto;
+      font-size: 0.75rem;
+      font-family: ui-monospace, monospace;
+      line-height: 1.5;
     }
 
     .log-entry {
-      padding: 6px 0;
+      padding: 4px 0;
       border-bottom: 1px solid var(--border);
       display: flex;
       gap: 8px;
@@ -465,14 +573,14 @@
 
     .log-time {
       color: var(--muted);
-      min-width: 70px;
+      min-width: 65px;
       flex-shrink: 0;
     }
 
     .log-level {
       text-transform: uppercase;
-      font-weight: 600;
-      min-width: 50px;
+      font-weight: 700;
+      min-width: 45px;
       flex-shrink: 0;
     }
 
@@ -481,15 +589,11 @@
     }
 
     .log-level.warn {
-      color: var(--gold);
+      color: #f59e0b;
     }
 
     .log-level.info {
       color: var(--green);
-    }
-
-    .log-level.debug {
-      color: var(--muted);
     }
 
     .log-message {
@@ -505,520 +609,432 @@
       font-style: italic;
     }
 
+    /* ═══ FOOTER ═══ */
     footer {
-      padding: 10px 20px;
+      background: var(--surface);
       border-top: 1px solid var(--border);
-      font-size: 0.75rem;
-      color: var(--muted);
+      padding: 40px 20px;
       text-align: center;
-      background: var(--surface2);
-      flex-shrink: 0;
+      color: var(--muted);
+      font-size: 0.85rem;
     }
 
-    @media (max-width: 1200px) {
-      .sidecar {
-        width: 320px;
-      }
-      .sidecar-body {
-        padding: 16px;
-        gap: 16px;
-      }
+    .footer-links {
+      display: flex;
+      justify-content: center;
+      gap: 16px;
+      margin-top: 12px;
+      flex-wrap: wrap;
     }
 
-    @media (max-width: 1024px) {
-      .main-container {
-        flex-direction: column;
+    .footer-link {
+      color: var(--accent);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+
+    .footer-link:hover {
+      color: var(--accent-hover);
+    }
+
+    .footer-divider {
+      color: var(--border);
+    }
+
+    @media (max-width: 640px) {
+      main {
+        padding: 40px 16px 60px;
       }
-      .sidecar {
-        width: 100%;
-        border-left: none;
-        border-top: 1px solid var(--border);
-        max-height: 300px;
+
+      .hero h1 {
+        font-size: 1.8rem;
       }
-      .console-panel {
-        height: 200px;
+
+      .status-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .provider-panels {
+        grid-template-columns: 1fr;
+      }
+
+      .modal {
+        padding: 20px;
       }
     }
   </style>
 </head>
 <body>
-<div class="app">
+  <!-- Header -->
   <header>
-    <a href="/" class="back-link" title="Back to home" style="text-decoration:none;color:var(--muted);font-size:1.1rem;margin-right:4px;">←</a>
-    <div class="logo">⚡</div>
-    <div class="title-block">
-      <h1>AI Providers</h1>
-      <span style="font-size:0.78rem;color:var(--muted);">Lantern OS · settings</span>
+    <a href="/" class="back-link" title="Back to home">←</a>
+    <div class="header-brand">
+      <div class="header-icon">⚡</div>
+      <div class="header-title">AI Providers</div>
     </div>
-    <div style="margin-left:auto;display:flex;align-items:center;gap:12px;" id="status-indicator">
-      <span style="font-size:0.78rem;color:var(--muted);display:flex;align-items:center;gap:5px">
-        <span class="dot online"></span><span id="status-text">checking…</span>
-      </span>
-      <button onclick="toggleTheme()" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:6px 10px;cursor:pointer;color:var(--muted);font-size:14px;" title="Toggle theme">☀</button>
+    <div class="header-actions">
+      <div style="display:flex;align-items:center;gap:6px;">
+        <div class="status-dot" id="status-dot"></div>
+        <span class="status-text" id="status-text">connecting</span>
+      </div>
+      <button class="theme-btn" onclick="toggleTheme()" title="Toggle theme">☀</button>
     </div>
   </header>
 
-  <div class="main-container">
-    <main>
+  <!-- Main Content -->
+  <main>
+    <!-- Hero Section -->
+    <section class="hero">
+      <div class="hero-icon">🔮</div>
       <h1>AI Provider Settings</h1>
-      <p class="subtitle">Select a provider to configure agents, models, and settings. All keys are optional.</p>
+      <p>Configure which AI services power your Lantern experience. Select a provider to fine-tune agent selection, model variants, and performance parameters.</p>
+    </section>
 
-      <!-- Status cards -->
-      <div class="status-grid" id="status-cards">
-        <div class="loading" style="grid-column: 1/-1;">
-          <div class="spinner"></div>
-          <p>Loading orchestrator status…</p>
+    <!-- Status Overview -->
+    <div class="section-label">System Status</div>
+    <div class="status-grid" id="status-grid">
+      <div class="status-item">
+        <div class="status-item-icon">⚙️</div>
+        <div class="status-item-label">Providers</div>
+        <div class="status-item-value" id="provider-count">0/5</div>
+        <div class="status-item-detail">Configured</div>
+      </div>
+      <div class="status-item">
+        <div class="status-item-icon">💾</div>
+        <div class="status-item-label">Memory</div>
+        <div class="status-item-value" id="memory-count">0</div>
+        <div class="status-item-detail">Entries</div>
+      </div>
+      <div class="status-item">
+        <div class="status-item-icon">🔗</div>
+        <div class="status-item-label">Health</div>
+        <div class="status-item-value" id="health-status">—</div>
+        <div class="status-item-detail">System Status</div>
+      </div>
+    </div>
+
+    <!-- Provider Selection -->
+    <div class="section-label">Select Provider</div>
+    <div class="provider-panels" id="provider-panels"></div>
+
+    <!-- Console Log -->
+    <div class="section-label">System Log</div>
+    <div class="console-section">
+      <div class="console-header">
+        <div class="console-title">
+          📋 Event Log
+          <span class="console-count" id="log-count">0</span>
+        </div>
+        <div class="console-actions">
+          <button class="console-btn" onclick="clearLogs()" title="Clear logs">Clear</button>
+          <button class="console-btn" onclick="downloadLogs()" title="Download logs">Export</button>
         </div>
       </div>
+      <div class="console-body" id="console-body">
+        <div class="log-empty">Initializing system…</div>
+      </div>
+    </div>
+  </main>
 
-      <!-- Providers table -->
-      <div class="providers-section">
-        <div class="section-header">
-          <h2>AI Provider Chain</h2>
-        </div>
-        <table id="providers-table">
-          <thead>
-            <tr>
-              <th>Provider</th>
-              <th>Model</th>
-              <th>Agent</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody id="providers-body">
-            <tr><td colspan="4" class="loading"><div class="spinner"></div> Loading…</td></tr>
-          </tbody>
-        </table>
+  <!-- Configuration Modal -->
+  <div class="modal-overlay" id="modal-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-icon" id="modal-icon">⚙️</div>
+        <div class="modal-title" id="modal-title">Configure</div>
+        <button class="modal-close" onclick="closeModal()">×</button>
       </div>
 
-      <!-- Memory status -->
-      <div class="providers-section">
-        <div class="section-header">
-          <h2>Memory Systems</h2>
-        </div>
-        <table>
-          <thead>
-            <tr>
-              <th>System</th>
-              <th>Status</th>
-              <th>Details</th>
-            </tr>
-          </thead>
-          <tbody id="memory-body">
-            <tr><td colspan="3" class="loading"><div class="spinner"></div> Loading…</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </main>
+      <div id="modal-content"></div>
 
-    <!-- ═══ SIDECAR PANEL ═══ -->
-    <div class="sidecar" id="sidecar">
-      <div class="sidecar-header">
-        <h3>Provider Configuration</h3>
-        <p class="sidecar-provider-name" id="sidecar-provider-name">Select a provider</p>
-      </div>
-      <div class="sidecar-body" id="sidecar-body">
-        <div class="sidecar-empty">
-          <div class="sidecar-empty-icon">⚙️</div>
-          <p>Click a provider row to configure agents, models, and settings.</p>
-        </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" onclick="saveConfiguration()">💾 Save</button>
+        <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
       </div>
     </div>
   </div>
 
-  <!-- ═══ ERROR LOG CONSOLE ═══ -->
-  <div class="console-panel">
-    <div class="console-header">
-      <div class="console-title">
-        📋 Error & Action Log
-        <span class="log-count" id="log-count">0</span>
-      </div>
-      <div class="console-actions">
-        <button class="console-btn" onclick="clearLogs()" title="Clear logs">Clear</button>
-        <button class="console-btn" onclick="downloadLogs()" title="Download logs">Export</button>
-        <button class="console-btn" onclick="toggleConsole()" title="Toggle auto-scroll">📌</button>
-      </div>
-    </div>
-    <div class="console-body" id="console-body">
-      <div class="log-empty">No errors or action items yet. System is operating normally.</div>
-    </div>
-  </div>
-
+  <!-- Footer -->
   <footer>
-    <span id="footer-text">Lantern OS · Ready</span>
+    <div>Lantern OS · AI Provider Settings</div>
+    <div class="footer-links">
+      <a href="/" class="footer-link">← Back Home</a>
+      <span class="footer-divider">·</span>
+      <a href="/docs" class="footer-link">Documentation</a>
+      <span class="footer-divider">·</span>
+      <span id="footer-time">—</span>
+    </div>
   </footer>
-</div>
 
-<script>
-  const $ = id => document.getElementById(id);
+  <script>
+    // ═══ STATE & CONFIG ═══
+    const PROVIDER_CONFIG = {
+      'ANTHROPIC_API_KEY': {
+        name: 'Anthropic (Claude)',
+        icon: '🧠',
+        agents: ['lantern', 'founder', 'waterfall'],
+        models: ['claude-3-5-sonnet', 'claude-3-opus', 'claude-3-haiku'],
+        defaultModel: 'claude-3-5-sonnet',
+        strengths: 'Chat, coding, reasoning, extended context'
+      },
+      'OPENAI_API_KEY': {
+        name: 'OpenAI (GPT)',
+        icon: '🔥',
+        agents: ['blinkbug', 'keystone'],
+        models: ['gpt-4-turbo', 'gpt-4-vision', 'gpt-3.5-turbo'],
+        defaultModel: 'gpt-4-turbo',
+        strengths: 'Chat, vision, reasoning, multimodal'
+      },
+      'GEMINI_API_KEY': {
+        name: 'Google (Gemini)',
+        icon: '✨',
+        agents: ['xenon', 'founder'],
+        models: ['gemini-2.0-flash', 'gemini-pro-vision', 'gemini-pro'],
+        defaultModel: 'gemini-2.0-flash',
+        strengths: 'Chat, vision, fast, creative'
+      },
+      'XAI_API_KEY': {
+        name: 'xAI (Grok)',
+        icon: '⚡',
+        agents: ['keystone'],
+        models: ['grok-2', 'grok-1'],
+        defaultModel: 'grok-2',
+        strengths: 'Chat, creative, real-time knowledge'
+      },
+      'OLLAMA_BASE_URL': {
+        name: 'Ollama (Local)',
+        icon: '🖥️',
+        agents: ['lantern'],
+        models: ['llama2', 'mistral', 'neural-chat'],
+        defaultModel: 'llama2',
+        strengths: 'Privacy, offline, fallback'
+      }
+    };
 
-  // Provider configuration data
-  const PROVIDER_CONFIG = {
-    'ANTHROPIC_API_KEY': {
-      name: 'Anthropic (Claude)',
-      icon: '🧠',
-      agents: ['lantern', 'founder', 'waterfall'],
-      models: ['claude-3-5-sonnet', 'claude-3-opus', 'claude-3-haiku'],
-      defaultModel: 'claude-3-5-sonnet',
-      strengths: 'Chat, coding, reasoning, extended context',
-      status: 'configured'
-    },
-    'OPENAI_API_KEY': {
-      name: 'OpenAI (GPT)',
-      icon: '🔥',
-      agents: ['blinkbug', 'keystone'],
-      models: ['gpt-4-turbo', 'gpt-4-vision', 'gpt-3.5-turbo'],
-      defaultModel: 'gpt-4-turbo',
-      strengths: 'Chat, vision, reasoning, multimodal',
-      status: 'configured'
-    },
-    'GEMINI_API_KEY': {
-      name: 'Google (Gemini)',
-      icon: '✨',
-      agents: ['xenon', 'founder'],
-      models: ['gemini-2.0-flash', 'gemini-pro-vision', 'gemini-pro'],
-      defaultModel: 'gemini-2.0-flash',
-      strengths: 'Chat, vision, fast, creative',
-      status: 'configured'
-    },
-    'XAI_API_KEY': {
-      name: 'xAI (Grok)',
-      icon: '⚡',
-      agents: ['keystone'],
-      models: ['grok-2', 'grok-1'],
-      defaultModel: 'grok-2',
-      strengths: 'Chat, creative, real-time knowledge',
-      status: 'configured'
-    },
-    'OLLAMA_BASE_URL': {
-      name: 'Ollama (Local)',
-      icon: '🖥️',
-      agents: ['lantern'],
-      models: ['llama2', 'mistral', 'neural-chat'],
-      defaultModel: 'llama2',
-      strengths: 'Privacy, offline, fallback',
-      status: 'configured'
+    const AGENTS = {
+      'lantern': { name: 'Lantern', role: 'Steady Guide' },
+      'blinkbug': { name: 'Blinkbug', role: 'Curious Observer' },
+      'keystone': { name: 'Keystone', role: 'Logical Anchor' },
+      'waterfall': { name: 'Waterfall', role: 'Flow Facilitator' },
+      'xenon': { name: 'Xenon', role: 'Cosmic Witness' },
+      'founder': { name: 'Founder', role: 'Visionary' }
+    };
+
+    let logs = [];
+    let currentProvider = null;
+    let providerStatus = {};
+
+    // ═══ LOGGING ═══
+    function addLog(level, message) {
+      const time = new Date().toLocaleTimeString();
+      logs.push({ level, message, time });
+      if (logs.length > 50) logs.shift();
+
+      const body = document.getElementById('console-body');
+      if (body.querySelector('.log-empty')) {
+        body.innerHTML = '';
+      }
+
+      const entry = document.createElement('div');
+      entry.className = 'log-entry';
+      entry.innerHTML = `
+        <span class="log-time">${time}</span>
+        <span class="log-level ${level}">${level}</span>
+        <span class="log-message">${escapeHtml(message)}</span>
+      `;
+      body.appendChild(entry);
+      body.scrollTop = body.scrollHeight;
+
+      document.getElementById('log-count').textContent = logs.length;
     }
-  };
 
-  const AGENTS = {
-    'lantern': { name: 'Lantern', color: '#0ea5e9', role: 'Steady Guide' },
-    'blinkbug': { name: 'Blinkbug', color: '#10b981', role: 'Curious Observer' },
-    'keystone': { name: 'Keystone', color: '#f59e0b', role: 'Logical Anchor' },
-    'waterfall': { name: 'Waterfall', color: '#8b5cf6', role: 'Flow Facilitator' },
-    'xenon': { name: 'Xenon', color: '#06b6d4', role: 'Cosmic Witness' },
-    'founder': { name: 'Founder', color: '#ec4899', role: 'Visionary' }
-  };
-
-  let currentProvider = null;
-  let logs = [];
-  let autoScroll = true;
-
-  // ═══ LOGGING SYSTEM ═══
-  function addLog(level, message, timestamp = new Date()) {
-    logs.push({ level, message, timestamp });
-    if (logs.length > 100) logs.shift();
-
-    const logBody = $('console-body');
-    if (logBody.querySelector('.log-empty')) {
-      logBody.innerHTML = '';
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
     }
 
-    const entry = document.createElement('div');
-    entry.className = 'log-entry';
-    entry.innerHTML = `
-      <span class="log-time">${timestamp.toLocaleTimeString()}</span>
-      <span class="log-level ${level}">${level.toUpperCase()}</span>
-      <span class="log-message">${escapeHtml(message)}</span>
-    `;
-    logBody.appendChild(entry);
-
-    $('log-count').textContent = logs.length;
-
-    if (autoScroll) {
-      logBody.scrollTop = logBody.scrollHeight;
+    function clearLogs() {
+      logs = [];
+      document.getElementById('console-body').innerHTML = '<div class="log-empty">Logs cleared.</div>';
+      document.getElementById('log-count').textContent = '0';
     }
-  }
 
-  function clearLogs() {
-    logs = [];
-    $('console-body').innerHTML = '<div class="log-empty">No errors or action items yet. System is operating normally.</div>';
-    $('log-count').textContent = '0';
-  }
+    function downloadLogs() {
+      const csv = logs.map(l => `"${l.time}","${l.level}","${l.message}"`).join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `lantern-logs-${Date.now()}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
 
-  function downloadLogs() {
-    const csv = logs.map(l => `${l.timestamp.toISOString()},"${l.level}","${l.message}"`).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `lantern-logs-${Date.now()}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
+    // ═══ MODAL ═══
+    function openModal(providerKey) {
+      currentProvider = providerKey;
+      const config = PROVIDER_CONFIG[providerKey];
+      const icon = config.icon;
 
-  function toggleConsole() {
-    autoScroll = !autoScroll;
-  }
+      document.getElementById('modal-icon').textContent = icon;
+      document.getElementById('modal-title').textContent = config.name;
 
-  function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-  }
+      let agentOptions = config.agents.map(a =>
+        `<option value="${a}">${AGENTS[a].name} — ${AGENTS[a].role}</option>`
+      ).join('');
 
-  // ═══ PROVIDER SELECTION ═══
-  function selectProvider(providerKey) {
-    currentProvider = providerKey;
-    const config = PROVIDER_CONFIG[providerKey];
+      let modelOptions = config.models.map(m =>
+        `<option value="${m}" ${m === config.defaultModel ? 'selected' : ''}>${m}</option>`
+      ).join('');
 
-    $('sidecar-provider-name').textContent = config.name;
-    const body = $('sidecar-body');
-
-    body.innerHTML = `
-      <div class="config-card">
-        <h4>${config.icon} Status</h4>
-        <div class="config-row">
-          <span class="config-label">Status:</span>
-          <span class="config-value">
-            <span class="status-badge configured">Detected</span>
-          </span>
+      document.getElementById('modal-content').innerHTML = `
+        <div class="form-group">
+          <label class="form-label">Primary Agent</label>
+          <select class="form-select" id="agent-select">
+            <option value="">— Select Agent —</option>
+            ${agentOptions}
+          </select>
+          <div class="form-hint">Which agent persona handles requests to this provider?</div>
         </div>
-        <div class="config-row">
-          <span class="config-label">Strengths:</span>
-          <span class="config-value">${config.strengths}</span>
+
+        <div class="form-group">
+          <label class="form-label">Model</label>
+          <select class="form-select" id="model-select">
+            ${modelOptions}
+          </select>
+          <div class="form-hint">Choose the specific model variant to use.</div>
         </div>
-      </div>
 
-      <div class="form-group">
-        <label for="agent-select">Primary Agent</label>
-        <select id="agent-select" onchange="updateConfig()">
-          <option value="">— Select Agent —</option>
-          ${config.agents.map(a => `<option value="${a}">${AGENTS[a].name} (${AGENTS[a].role})</option>`).join('')}
-        </select>
-        <div class="form-hint">Which agent persona handles requests to this provider?</div>
-      </div>
+        <div class="form-group">
+          <label class="form-label">Temperature (Creativity)</label>
+          <input type="range" class="form-range" id="temp-input" min="0" max="2" step="0.1" value="0.7">
+          <div class="slider-value">
+            <span>Response Creativity</span>
+            <span class="slider-value-display" id="temp-display">0.7 — Balanced</span>
+          </div>
+          <div class="form-hint">Lower = focused, logical. Higher = creative, diverse.</div>
+        </div>
 
-      <div class="form-group">
-        <label for="model-select">Model</label>
-        <select id="model-select" onchange="updateConfig()">
-          <option value="">— Select Model —</option>
-          ${config.models.map(m => `<option value="${m}" ${m === config.defaultModel ? 'selected' : ''}>${m}</option>`).join('')}
-        </select>
-        <div class="form-hint">Choose the specific model variant to use.</div>
-      </div>
+        <div class="form-group">
+          <label class="form-label">Timeout (seconds)</label>
+          <input type="number" class="form-input" id="timeout-input" min="5" max="120" value="30">
+          <div class="form-hint">How long to wait for a response before timing out.</div>
+        </div>
+      `;
 
-      <div class="form-group">
-        <label for="temp-input">Temperature (Creativity)</label>
-        <input type="range" id="temp-input" min="0" max="2" step="0.1" value="0.7" style="cursor:pointer;" onchange="updateConfig()">
-        <div class="form-hint" id="temp-hint">0.7 — Balanced (warm, creative responses)</div>
-      </div>
+      document.getElementById('temp-input').addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        let label = '';
+        if (val < 0.5) label = 'Focused';
+        else if (val < 1) label = 'Balanced';
+        else if (val < 1.5) label = 'Creative';
+        else label = 'Chaotic';
+        document.getElementById('temp-display').textContent = val.toFixed(1) + ' — ' + label;
+      });
 
-      <div class="form-group">
-        <label for="timeout-input">Timeout (seconds)</label>
-        <input type="number" id="timeout-input" min="5" max="120" value="30" onchange="updateConfig()">
-        <div class="form-hint">How long to wait for a response before failing over.</div>
-      </div>
+      document.getElementById('modal-overlay').classList.add('open');
+      addLog('info', `Opened configuration for ${config.name}`);
+    }
 
-      <div class="action-group">
-        <button class="action-btn" onclick="testProvider('${providerKey}')">🧪 Test</button>
-        <button class="action-btn secondary" onclick="resetProvider('${providerKey}')">↻ Reset</button>
-      </div>
-    `;
+    function closeModal() {
+      document.getElementById('modal-overlay').classList.remove('open');
+    }
 
-    // Update temperature hint
-    document.getElementById('temp-input').addEventListener('input', (e) => {
-      const val = parseFloat(e.target.value);
-      let hint = val + ' — ';
-      if (val < 0.5) hint += 'Focused (precise, logical)';
-      else if (val < 1) hint += 'Balanced (warm, creative)';
-      else if (val < 1.5) hint += 'Creative (diverse, playful)';
-      else hint += 'Chaotic (wild, unpredictable)';
-      $('temp-hint').textContent = hint;
+    function saveConfiguration() {
+      if (!currentProvider) return;
+      const config = PROVIDER_CONFIG[currentProvider];
+      const agent = document.getElementById('agent-select')?.value;
+      const model = document.getElementById('model-select')?.value;
+      const temp = document.getElementById('temp-input')?.value;
+
+      addLog('info', `✓ Saved ${config.name} config: ${agent || 'default'} agent, temp=${temp}`);
+      closeModal();
+    }
+
+    // ═══ LOAD STATUS ═══
+    async function loadStatus() {
+      try {
+        const res = await fetch('/api/status', { cache: 'no-store', signal: AbortSignal.timeout(5000) });
+        if (!res.ok) throw new Error('API error');
+
+        const data = await res.json();
+        providerStatus = data.providers || {};
+
+        updateUI();
+        addLog('info', '✓ System status loaded');
+
+        document.getElementById('status-dot').classList.remove('offline');
+        document.getElementById('status-text').textContent = 'online';
+      } catch (e) {
+        addLog('warn', `Connection failed: ${e.message}`);
+        document.getElementById('status-dot').classList.add('offline');
+        document.getElementById('status-text').textContent = 'offline';
+      }
+    }
+
+    function updateUI() {
+      let configured = 0;
+      let totalMemory = 0;
+
+      // Render provider panels
+      let html = '';
+      for (const [key, config] of Object.entries(PROVIDER_CONFIG)) {
+        const isConfigured = !!providerStatus[key];
+        if (isConfigured) configured++;
+
+        html += `
+          <div class="provider-panel ${isConfigured ? 'configured' : ''}" onclick="openModal('${key}')">
+            <div class="provider-header">
+              <div class="provider-icon">${config.icon}</div>
+              <div class="provider-name">${config.name}</div>
+              <div class="provider-status">${isConfigured ? '✓ Set' : 'Add'}</div>
+            </div>
+            <div class="provider-model">${config.defaultModel}</div>
+            <div class="provider-strengths">${config.strengths}</div>
+          </div>
+        `;
+      }
+
+      document.getElementById('provider-panels').innerHTML = html;
+      document.getElementById('provider-count').textContent = `${configured}/5`;
+      document.getElementById('memory-count').textContent = providerStatus.memory?.entry_count || '0';
+      document.getElementById('health-status').textContent = providerStatus.memory?.available ? '✓' : '○';
+      document.getElementById('footer-time').textContent = new Date().toLocaleTimeString();
+    }
+
+    // ═══ THEME ═══
+    function toggleTheme() {
+      const h = document.documentElement;
+      const next = h.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      h.setAttribute('data-theme', next);
+      localStorage.setItem('lantern-theme', next);
+    }
+
+    // ═══ INIT ═══
+    (function() {
+      const theme = localStorage.getItem('lantern-theme');
+      if (theme) document.documentElement.setAttribute('data-theme', theme);
+
+      addLog('info', 'Lantern OS Provider Settings');
+      addLog('info', 'Loading system status…');
+
+      loadStatus();
+      setInterval(loadStatus, 15000);
+      setInterval(() => {
+        document.getElementById('footer-time').textContent = new Date().toLocaleTimeString();
+      }, 1000);
+    })();
+
+    // Close modal on escape
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeModal();
     });
 
-    // Highlight row
-    document.querySelectorAll('#providers-body tr').forEach(tr => tr.style.opacity = '0.6');
-    document.querySelector(`[data-provider="${providerKey}"]`)?.parentElement?.style.removeProperty('opacity');
-  }
-
-  function updateConfig() {
-    const agent = document.getElementById('agent-select')?.value;
-    const model = document.getElementById('model-select')?.value;
-    const temp = document.getElementById('temp-input')?.value;
-    const timeout = document.getElementById('timeout-input')?.value;
-
-    if (agent) addLog('info', `Updated agent for ${PROVIDER_CONFIG[currentProvider].name} → ${AGENTS[agent].name}`);
-    if (model) addLog('info', `Updated model for ${PROVIDER_CONFIG[currentProvider].name} → ${model}`);
-  }
-
-  function testProvider(providerKey) {
-    const config = PROVIDER_CONFIG[providerKey];
-    addLog('info', `Testing ${config.name}…`);
-    setTimeout(() => {
-      addLog('info', `✓ ${config.name} connection successful`);
-    }, 1000);
-  }
-
-  function resetProvider(providerKey) {
-    const config = PROVIDER_CONFIG[providerKey];
-    addLog('warn', `Reset configuration for ${config.name}`);
-    if (currentProvider === providerKey) {
-      selectProvider(providerKey);
-    }
-  }
-
-  // ═══ MAIN STATUS LOADING ═══
-  async function loadStatus() {
-    const [status, readiness] = await Promise.all([
-      fetch('/api/status', { cache: 'no-store', signal: AbortSignal.timeout(5000) })
-        .then(r => r.ok ? r.json() : null)
-        .catch(() => null),
-      fetch('/api/readiness', { cache: 'no-store', signal: AbortSignal.timeout(5000) })
-        .then(r => r.ok ? r.json() : null)
-        .catch(() => null),
-    ]);
-
-    // Check for API keys in environment (reflected in status)
-    const providers = {};
-    const hasAnthropicKey = !!process.env.ANTHROPIC_API_KEY;
-    const hasOpenAIKey = !!process.env.OPENAI_API_KEY;
-    const hasGeminiKey = !!process.env.GEMINI_API_KEY;
-    const hasXAIKey = !!process.env.XAI_API_KEY;
-    const hasOllamaUrl = !!process.env.OLLAMA_BASE_URL;
-
-    // Update status indicator based on readiness
-    const dot = $('status-indicator').querySelector('.dot');
-    const text = $('status-text');
-    const isHealthy = readiness?.healthy === true;
-
-    if (isHealthy) {
-      dot.className = 'dot online';
-      text.textContent = 'healthy';
-      addLog('info', '✓ System health check passed');
-    } else if (status) {
-      dot.className = 'dot warning';
-      text.textContent = 'connected';
-      addLog('info', '⚠ System partially available');
-    } else {
-      dot.className = 'dot offline';
-      text.textContent = 'offline';
-      addLog('error', '✗ Cannot reach server endpoints');
-    }
-
-    // Count configured providers
-    let configuredCount = 0;
-    if (status?.providers?.ANTHROPIC_API_KEY) { providers.ANTHROPIC_API_KEY = true; configuredCount++; }
-    if (status?.providers?.OPENAI_API_KEY) { providers.OPENAI_API_KEY = true; configuredCount++; }
-    if (status?.providers?.GEMINI_API_KEY) { providers.GEMINI_API_KEY = true; configuredCount++; }
-    if (status?.providers?.XAI_API_KEY) { providers.XAI_API_KEY = true; configuredCount++; }
-    if (status?.providers?.OLLAMA_BASE_URL) { providers.OLLAMA_BASE_URL = true; configuredCount++; }
-
-    const totalProviders = 5;
-
-    $('status-cards').innerHTML = `
-      <div class="status-card" onclick="selectProvider('ANTHROPIC_API_KEY')" style="cursor:pointer;">
-        <h3>Claude</h3>
-        <div class="status-value">${status?.providers?.ANTHROPIC_API_KEY ? '✓' : '○'}</div>
-        <div class="status-detail">
-          <span class="dot ${status?.providers?.ANTHROPIC_API_KEY ? 'online' : 'offline'}"></span>
-          ${status?.providers?.ANTHROPIC_API_KEY ? 'Configured' : 'No key'}
-        </div>
-      </div>
-      <div class="status-card" onclick="selectProvider('OPENAI_API_KEY')" style="cursor:pointer;">
-        <h3>GPT</h3>
-        <div class="status-value">${status?.providers?.OPENAI_API_KEY ? '✓' : '○'}</div>
-        <div class="status-detail">
-          <span class="dot ${status?.providers?.OPENAI_API_KEY ? 'online' : 'offline'}"></span>
-          ${status?.providers?.OPENAI_API_KEY ? 'Configured' : 'No key'}
-        </div>
-      </div>
-      <div class="status-card" onclick="selectProvider('GEMINI_API_KEY')" style="cursor:pointer;">
-        <h3>Gemini</h3>
-        <div class="status-value">${status?.providers?.GEMINI_API_KEY ? '✓' : '○'}</div>
-        <div class="status-detail">
-          <span class="dot ${status?.providers?.GEMINI_API_KEY ? 'online' : 'offline'}"></span>
-          ${status?.providers?.GEMINI_API_KEY ? 'Configured' : 'No key'}
-        </div>
-      </div>
-      <div class="status-card" onclick="selectProvider('XAI_API_KEY')" style="cursor:pointer;">
-        <h3>Grok</h3>
-        <div class="status-value">${status?.providers?.XAI_API_KEY ? '✓' : '○'}</div>
-        <div class="status-detail">
-          <span class="dot ${status?.providers?.XAI_API_KEY ? 'online' : 'offline'}"></span>
-          ${status?.providers?.XAI_API_KEY ? 'Configured' : 'No key'}
-        </div>
-      </div>
-      <div class="status-card" onclick="selectProvider('OLLAMA_BASE_URL')" style="cursor:pointer;">
-        <h3>Ollama</h3>
-        <div class="status-value">${status?.providers?.OLLAMA_BASE_URL ? '✓' : '○'}</div>
-        <div class="status-detail">
-          <span class="dot ${status?.providers?.OLLAMA_BASE_URL ? 'online' : 'offline'}"></span>
-          ${status?.providers?.OLLAMA_BASE_URL ? 'Running' : 'Offline'}
-        </div>
-      </div>
-      <div class="status-card">
-        <h3>System</h3>
-        <div class="status-value">${isHealthy ? '●' : '○'}</div>
-        <div class="status-detail">
-          <span class="dot ${isHealthy ? 'online' : 'offline'}"></span>
-          ${isHealthy ? 'All systems ready' : 'Check configuration'}
-        </div>
-      </div>
-    `;
-
-    // Provider table
-    let providerRows = '';
-    for (const [key, config] of Object.entries(PROVIDER_CONFIG)) {
-      const isConfigured = !!status?.providers?.[key];
-      const statusText = isConfigured ? 'Configured' : 'Missing';
-      const badge = isConfigured ? 'configured' : 'missing';
-      providerRows += `
-        <tr data-provider="${key}" onclick="selectProvider('${key}')" style="cursor:pointer;">
-          <td>${config.icon} ${config.name}</td>
-          <td>${config.defaultModel}</td>
-          <td>${config.agents[0] ? AGENTS[config.agents[0]].name : '—'}</td>
-          <td><span class="status-badge ${badge}">${statusText}</span></td>
-        </tr>
-      `;
-    }
-    $('providers-body').innerHTML = providerRows;
-
-    // Memory table
-    const memoryCount = status?.memory?.entry_count || 0;
-    let memoryRows = `
-      <tr>
-        <td>MemOS</td>
-        <td>
-          <span class="status-badge ${status?.memory?.available ? 'configured' : 'missing'}">
-            ${status?.memory?.available ? 'Online' : 'Fallback'}
-          </span>
-        </td>
-        <td>${status?.memory?.available ? `${memoryCount} entries, healthy` : `${memoryCount} entries, fallback mode`}</td>
-      </tr>
-    `;
-    $('memory-body').innerHTML = memoryRows;
-
-    // Footer
-    $('footer-text').textContent = `Lantern OS · ${configuredCount}/${totalProviders} providers · ${memoryCount} memory entries · ${new Date().toLocaleTimeString()}`;
-  }
-
-  loadStatus();
-  setInterval(loadStatus, 15000);
-
-  function toggleTheme() {
-    const h = document.documentElement;
-    const next = h.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
-    h.setAttribute('data-theme', next);
-    localStorage.setItem('lantern-theme', next);
-  }
-
-  (function() {
-    const s = localStorage.getItem('lantern-theme');
-    if (s) document.documentElement.setAttribute('data-theme', s);
-    addLog('info', 'Lantern OS initialized. Ready to configure providers.');
-  })();
-</script>
-<script src="/js/common-layout.js" defer></script>
+    // Close modal on overlay click
+    document.getElementById('modal-overlay').addEventListener('click', (e) => {
+      if (e.target.id === 'modal-overlay') closeModal();
+    });
+  </script>
 </body>
 </html>
