@@ -1,3 +1,11 @@
+## [1.2.2] - 2026-06-08
+**Build:** 1.2.2+2026-06-08.013652
+**Commit:** d8b05e3
+
+push
+
+---
+
 # Changelog
 
 All notable changes to Lantern OS should be documented in this file.
