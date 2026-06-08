@@ -4,6 +4,28 @@ Get every service running in under 5 minutes.
 
 ---
 
+## Dual Boot Quickstart (Recommended)
+
+**Start both stable release and dev server simultaneously:**
+
+```powershell
+make quickstart
+```
+
+Or directly:
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File start-dual-servers.ps1
+```
+
+**What this does:**
+- **Port 4177**: Stable tagged release (checks out master, pulls latest)
+- **Port 4178**: Development version (your current working branch)
+- Opens Chrome to http://127.0.0.1:4177/dream-chat.html
+
+**Dual boot means:** You can test stable releases while developing on the same machine without conflicts.
+
+---
+
 ## Prerequisites
 
 ```bash
