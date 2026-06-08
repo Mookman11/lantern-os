@@ -16,6 +16,43 @@ module.exports = async function dreamRoutes(req, res, url, deps) {
     unifiedAgentGreet, unifiedAgentHealth, unifiedAgentInspect,
     handleStreamChat } = deps;
 
+  // ── CSF search endpoint ───────────────────────────────────────────────
+  if (url.pathname === "/api/csf/search" && req.method === "GET") {
+    const query = (url.searchParams.get("q") || "").trim();
+    if (!query) {
+      sendJson(res, { error: "q parameter required" }, 400);
+      return true;
+    }
+    const topN = Math.min(10, Math.max(1, parseInt(url.searchParams.get("top_n") || "3", 10) || 3));
+    try {
+      const { spawn } = require("child_process");
+      const py = process.platform === "win32" ? "python" : "python3";
+      const result = await new Promise((resolve, reject) => {
+        const proc = spawn(py, ["src/csf_search.py"], {
+          cwd: repoRoot,
+          env: { ...process.env, PYTHONPATH: path.join(repoRoot, "src") },
+        });
+        let out = "", err = "";
+        proc.stdout.on("data", (c) => (out += c));
+        proc.stderr.on("data", (c) => (err += c));
+        const timeout = setTimeout(() => { proc.kill(); reject(new Error("csf_search timeout")); }, 8000);
+        proc.on("close", (code) => {
+          clearTimeout(timeout);
+          if (code !== 0) reject(new Error(err || `csf_search exit ${code}`));
+          else resolve(out.trim());
+        });
+        proc.on("error", (e) => { clearTimeout(timeout); reject(e); });
+        proc.stdin.write(JSON.stringify({ query, top_n: topN }));
+        proc.stdin.end();
+      });
+      const data = JSON.parse(result);
+      sendJson(res, { ...data, query, generatedAt: new Date().toISOString() });
+    } catch (err) {
+      sendJson(res, { segments: [], query, error: err.message, generatedAt: new Date().toISOString() });
+    }
+    return true;
+  }
+
   // ── Unified agent endpoints ───────────────────────────────────────────
   if (url.pathname === "/api/dream/greet" && req.method === "GET") {
     try {
@@ -196,13 +233,18 @@ module.exports = async function dreamRoutes(req, res, url, deps) {
       const choice = String(body.choice || "");
 
       const { spawn } = require("child_process");
-      const enginePath = path.join(repoRoot, "src", "three_doors_engine.py");
       const py = process.platform === "win32" ? "python" : "python3";
 
-      const script = `import sys,json; from three_doors_engine import ThreeDoorsEngine; req=json.loads(sys.stdin.read()); e=ThreeDoorsEngine(req['userId']); \\
-result = e.to_api_response(); \\
-if req['action'] in ['start','reset']: result = e.to_api_response(e.reset() if req['action']=='reset' else e.start_game()); \\
-elif req['action']=='choose': s=e.choose_door(req['choice']); result = e.to_api_response(s) if s else {"error":"invalid_choice"}; \\
+      const script = `import sys,json
+from three_doors_engine import ThreeDoorsEngine
+req = json.loads(sys.stdin.read())
+e = ThreeDoorsEngine(req['userId'])
+result = e.to_api_response()
+if req['action'] in ['start','reset']:
+    result = e.to_api_response(e.reset() if req['action']=='reset' else e.start_game())
+elif req['action']=='choose':
+    s = e.choose_door(req['choice'])
+    result = e.to_api_response(s) if s else {"error":"invalid_choice"}
 print(json.dumps(result))`;
 
       const result = await new Promise((resolve, reject) => {
@@ -236,7 +278,13 @@ print(json.dumps(result))`;
       if (!sdUrl) {
         const { spawn } = require("child_process");
         const py = process.platform === "win32" ? "python" : "python3";
-        const script = `import sys,json; from three_doors_engine import ThreeDoorsEngine; req=json.loads(sys.stdin.read()); e=ThreeDoorsEngine(req['userId']); suggestions=e.image_suggestions_for_ai(); print(json.dumps(suggestions[req['doorIdx']] if req['doorIdx'] < len(suggestions) else {}))`;
+        const script = `import sys,json
+from three_doors_engine import ThreeDoorsEngine
+req = json.loads(sys.stdin.read())
+e = ThreeDoorsEngine(req['userId'])
+suggestions = e.image_suggestions_for_ai()
+result = suggestions[req['doorIdx']] if req['doorIdx'] < len(suggestions) else {}
+print(json.dumps(result))`;
         const result = await new Promise((resolve, reject) => {
           const proc = spawn(py, ["-c", script], { cwd: repoRoot, env: { ...process.env, PYTHONPATH: path.join(repoRoot, "src") } });
           let out = "";
@@ -259,7 +307,11 @@ print(json.dumps(result))`;
 
       const { spawn } = require("child_process");
       const py = process.platform === "win32" ? "python" : "python3";
-      const script = `import sys,json; from three_doors_engine import ThreeDoorsEngine; req=json.loads(sys.stdin.read()); e=ThreeDoorsEngine(req['userId']); print(e.sd_prompt_for_state())`;
+      const script = `import sys,json
+from three_doors_engine import ThreeDoorsEngine
+req = json.loads(sys.stdin.read())
+e = ThreeDoorsEngine(req['userId'])
+print(e.sd_prompt_for_state())`;
       const promptResult = await new Promise((resolve, reject) => {
         const proc = spawn(py, ["-c", script], { cwd: repoRoot, env: { ...process.env, PYTHONPATH: path.join(repoRoot, "src") } });
         let out = "";
