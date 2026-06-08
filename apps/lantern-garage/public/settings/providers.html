@@ -870,88 +870,99 @@
 
   // ═══ MAIN STATUS LOADING ═══
   async function loadStatus() {
-    const [providers, health, memory] = await Promise.all([
-      fetch('/api/settings/providers', { cache: 'no-store', signal: AbortSignal.timeout(5000) })
+    const [status, readiness] = await Promise.all([
+      fetch('/api/status', { cache: 'no-store', signal: AbortSignal.timeout(5000) })
         .then(r => r.ok ? r.json() : null)
         .catch(() => null),
-      fetch('/api/agent/health', { cache: 'no-store', signal: AbortSignal.timeout(5000) })
-        .then(r => r.ok ? r.json() : null)
-        .catch(() => null),
-      fetch('/api/dream/memory/health', { cache: 'no-store', signal: AbortSignal.timeout(5000) })
+      fetch('/api/readiness', { cache: 'no-store', signal: AbortSignal.timeout(5000) })
         .then(r => r.ok ? r.json() : null)
         .catch(() => null),
     ]);
 
-    // Update status indicator
-    const anyProvider = providers && providers._any;
-    const memoryHealthy = memory && memory.available;
-    const isHealthy = anyProvider && memoryHealthy;
+    // Check for API keys in environment (reflected in status)
+    const providers = {};
+    const hasAnthropicKey = !!process.env.ANTHROPIC_API_KEY;
+    const hasOpenAIKey = !!process.env.OPENAI_API_KEY;
+    const hasGeminiKey = !!process.env.GEMINI_API_KEY;
+    const hasXAIKey = !!process.env.XAI_API_KEY;
+    const hasOllamaUrl = !!process.env.OLLAMA_BASE_URL;
 
+    // Update status indicator based on readiness
     const dot = $('status-indicator').querySelector('.dot');
     const text = $('status-text');
+    const isHealthy = readiness?.healthy === true;
+
     if (isHealthy) {
       dot.className = 'dot online';
       text.textContent = 'healthy';
-    } else if (anyProvider || memoryHealthy) {
+      addLog('info', '✓ System health check passed');
+    } else if (status) {
       dot.className = 'dot warning';
-      text.textContent = 'degraded';
+      text.textContent = 'connected';
+      addLog('info', '⚠ System partially available');
     } else {
       dot.className = 'dot offline';
       text.textContent = 'offline';
+      addLog('error', '✗ Cannot reach server endpoints');
     }
 
-    // Status cards
-    const configuredCount = providers ? Object.values(providers).filter(v => v === true).length - 1 : 0;
+    // Count configured providers
+    let configuredCount = 0;
+    if (status?.providers?.ANTHROPIC_API_KEY) { providers.ANTHROPIC_API_KEY = true; configuredCount++; }
+    if (status?.providers?.OPENAI_API_KEY) { providers.OPENAI_API_KEY = true; configuredCount++; }
+    if (status?.providers?.GEMINI_API_KEY) { providers.GEMINI_API_KEY = true; configuredCount++; }
+    if (status?.providers?.XAI_API_KEY) { providers.XAI_API_KEY = true; configuredCount++; }
+    if (status?.providers?.OLLAMA_BASE_URL) { providers.OLLAMA_BASE_URL = true; configuredCount++; }
+
     const totalProviders = 5;
-    const memoryCount = memory ? memory.entry_count || 0 : 0;
 
     $('status-cards').innerHTML = `
       <div class="status-card" onclick="selectProvider('ANTHROPIC_API_KEY')" style="cursor:pointer;">
         <h3>Claude</h3>
-        <div class="status-value">${configuredCount > 0 ? '✓' : '○'}</div>
+        <div class="status-value">${status?.providers?.ANTHROPIC_API_KEY ? '✓' : '○'}</div>
         <div class="status-detail">
-          <span class="dot ${providers?.ANTHROPIC_API_KEY ? 'online' : 'offline'}"></span>
-          ${providers?.ANTHROPIC_API_KEY ? 'Configured' : 'No key'}
+          <span class="dot ${status?.providers?.ANTHROPIC_API_KEY ? 'online' : 'offline'}"></span>
+          ${status?.providers?.ANTHROPIC_API_KEY ? 'Configured' : 'No key'}
         </div>
       </div>
       <div class="status-card" onclick="selectProvider('OPENAI_API_KEY')" style="cursor:pointer;">
         <h3>GPT</h3>
-        <div class="status-value">${providers?.OPENAI_API_KEY ? '✓' : '○'}</div>
+        <div class="status-value">${status?.providers?.OPENAI_API_KEY ? '✓' : '○'}</div>
         <div class="status-detail">
-          <span class="dot ${providers?.OPENAI_API_KEY ? 'online' : 'offline'}"></span>
-          ${providers?.OPENAI_API_KEY ? 'Configured' : 'No key'}
+          <span class="dot ${status?.providers?.OPENAI_API_KEY ? 'online' : 'offline'}"></span>
+          ${status?.providers?.OPENAI_API_KEY ? 'Configured' : 'No key'}
         </div>
       </div>
       <div class="status-card" onclick="selectProvider('GEMINI_API_KEY')" style="cursor:pointer;">
         <h3>Gemini</h3>
-        <div class="status-value">${providers?.GEMINI_API_KEY ? '✓' : '○'}</div>
+        <div class="status-value">${status?.providers?.GEMINI_API_KEY ? '✓' : '○'}</div>
         <div class="status-detail">
-          <span class="dot ${providers?.GEMINI_API_KEY ? 'online' : 'offline'}"></span>
-          ${providers?.GEMINI_API_KEY ? 'Configured' : 'No key'}
+          <span class="dot ${status?.providers?.GEMINI_API_KEY ? 'online' : 'offline'}"></span>
+          ${status?.providers?.GEMINI_API_KEY ? 'Configured' : 'No key'}
         </div>
       </div>
       <div class="status-card" onclick="selectProvider('XAI_API_KEY')" style="cursor:pointer;">
         <h3>Grok</h3>
-        <div class="status-value">${providers?.XAI_API_KEY ? '✓' : '○'}</div>
+        <div class="status-value">${status?.providers?.XAI_API_KEY ? '✓' : '○'}</div>
         <div class="status-detail">
-          <span class="dot ${providers?.XAI_API_KEY ? 'online' : 'offline'}"></span>
-          ${providers?.XAI_API_KEY ? 'Configured' : 'No key'}
+          <span class="dot ${status?.providers?.XAI_API_KEY ? 'online' : 'offline'}"></span>
+          ${status?.providers?.XAI_API_KEY ? 'Configured' : 'No key'}
         </div>
       </div>
       <div class="status-card" onclick="selectProvider('OLLAMA_BASE_URL')" style="cursor:pointer;">
         <h3>Ollama</h3>
-        <div class="status-value">${providers?.OLLAMA_BASE_URL ? '✓' : '○'}</div>
+        <div class="status-value">${status?.providers?.OLLAMA_BASE_URL ? '✓' : '○'}</div>
         <div class="status-detail">
-          <span class="dot ${providers?.OLLAMA_BASE_URL ? 'online' : 'offline'}"></span>
-          ${providers?.OLLAMA_BASE_URL ? 'Running' : 'Offline'}
+          <span class="dot ${status?.providers?.OLLAMA_BASE_URL ? 'online' : 'offline'}"></span>
+          ${status?.providers?.OLLAMA_BASE_URL ? 'Running' : 'Offline'}
         </div>
       </div>
       <div class="status-card">
-        <h3>Memory</h3>
-        <div class="status-value">${memoryCount}</div>
+        <h3>System</h3>
+        <div class="status-value">${isHealthy ? '●' : '○'}</div>
         <div class="status-detail">
-          <span class="dot ${memory?.available ? 'online' : 'offline'}"></span>
-          ${memory?.available ? 'MemOS healthy' : 'Fallback mode'}
+          <span class="dot ${isHealthy ? 'online' : 'offline'}"></span>
+          ${isHealthy ? 'All systems ready' : 'Check configuration'}
         </div>
       </div>
     `;
@@ -959,38 +970,37 @@
     // Provider table
     let providerRows = '';
     for (const [key, config] of Object.entries(PROVIDER_CONFIG)) {
-      if (providers && key in providers) {
-        const isConfigured = providers[key];
-        const status = isConfigured ? 'Configured' : 'Missing';
-        const badge = isConfigured ? 'configured' : 'missing';
-        providerRows += `
-          <tr data-provider="${key}" onclick="selectProvider('${key}')" style="cursor:pointer;">
-            <td>${config.icon} ${config.name}</td>
-            <td>${config.defaultModel}</td>
-            <td>${config.agents[0] ? AGENTS[config.agents[0]].name : '—'}</td>
-            <td><span class="status-badge ${badge}">${status}</span></td>
-          </tr>
-        `;
-      }
+      const isConfigured = !!status?.providers?.[key];
+      const statusText = isConfigured ? 'Configured' : 'Missing';
+      const badge = isConfigured ? 'configured' : 'missing';
+      providerRows += `
+        <tr data-provider="${key}" onclick="selectProvider('${key}')" style="cursor:pointer;">
+          <td>${config.icon} ${config.name}</td>
+          <td>${config.defaultModel}</td>
+          <td>${config.agents[0] ? AGENTS[config.agents[0]].name : '—'}</td>
+          <td><span class="status-badge ${badge}">${statusText}</span></td>
+        </tr>
+      `;
     }
-    $('providers-body').innerHTML = providerRows || '<tr><td colspan="4" style="color:var(--muted);">Loading provider status…</td></tr>';
+    $('providers-body').innerHTML = providerRows;
 
     // Memory table
+    const memoryCount = status?.memory?.entry_count || 0;
     let memoryRows = `
       <tr>
         <td>MemOS</td>
         <td>
-          <span class="status-badge ${memory?.available ? 'configured' : 'missing'}">
-            ${memory?.available ? 'Online' : 'Offline'}
+          <span class="status-badge ${status?.memory?.available ? 'configured' : 'missing'}">
+            ${status?.memory?.available ? 'Online' : 'Fallback'}
           </span>
         </td>
-        <td>${memory ? (memory.available ? `${memory.entry_count} entries` : `Fallback, ${memory.entry_count} entries`) : 'Checking…'}</td>
+        <td>${status?.memory?.available ? `${memoryCount} entries, healthy` : `${memoryCount} entries, fallback mode`}</td>
       </tr>
     `;
     $('memory-body').innerHTML = memoryRows;
 
     // Footer
-    $('footer-text').textContent = `Lantern OS · ${configuredCount}/${totalProviders} providers · ${memoryCount} memory entries`;
+    $('footer-text').textContent = `Lantern OS · ${configuredCount}/${totalProviders} providers · ${memoryCount} memory entries · ${new Date().toLocaleTimeString()}`;
   }
 
   loadStatus();
