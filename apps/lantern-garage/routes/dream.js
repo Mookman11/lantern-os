@@ -100,14 +100,15 @@ module.exports = async function dreamRoutes(req, res, url, deps) {
       try {
         const { spawn } = require("child_process");
         const py = process.platform === "win32" ? "python" : "python3";
-        const entryJson = JSON.stringify(entry).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-        const script = `from convergence_io.memos_bridge import get_cube; c=get_cube(); r=c.ingest_entry(__import__('json').loads('${entryJson}')); print(__import__('json').dumps({'ingested': r}))`;
+        const script = `import sys,json; from convergence_io.memos_bridge import get_cube; c=get_cube(); r=c.ingest_entry(json.loads(sys.stdin.read())); print(json.dumps({'ingested': r}))`;
         const proc = spawn(py, ["-c", script], { cwd: repoRoot, env: { ...process.env, PYTHONPATH: path.join(repoRoot, "src") } });
         let out = "";
         proc.stdout.on("data", (d) => { out += d.toString(); });
         proc.on("close", () => {
           try { memosResult = JSON.parse(out.trim()); } catch { /* non-critical */ }
         });
+        proc.stdin.write(JSON.stringify(entry));
+        proc.stdin.end();
       } catch { /* MemOS ingest is non-critical */ }
 
       sendJson(res, { id: dreamId, saved: true, entry, csf: csfStats, memos: memosResult });
@@ -198,14 +199,11 @@ module.exports = async function dreamRoutes(req, res, url, deps) {
       const enginePath = path.join(repoRoot, "src", "three_doors_engine.py");
       const py = process.platform === "win32" ? "python" : "python3";
 
-      let script = "";
-      if (action === "start" || action === "reset") {
-        script = `from three_doors_engine import ThreeDoorsEngine; e=ThreeDoorsEngine("${userId}"); print(__import__('json').dumps(e.to_api_response(e.reset() if "${action}"=="reset" else e.start_game())))`;
-      } else if (action === "choose") {
-        script = `from three_doors_engine import ThreeDoorsEngine; e=ThreeDoorsEngine("${userId}"); s=e.choose_door("${choice}"); print(__import__('json').dumps(e.to_api_response(s) if s else {"error":"invalid_choice"}))`;
-      } else {
-        script = `from three_doors_engine import ThreeDoorsEngine; e=ThreeDoorsEngine("${userId}"); print(__import__('json').dumps(e.to_api_response()))`;
-      }
+      const script = `import sys,json; from three_doors_engine import ThreeDoorsEngine; req=json.loads(sys.stdin.read()); e=ThreeDoorsEngine(req['userId']); \\
+result = e.to_api_response(); \\
+if req['action'] in ['start','reset']: result = e.to_api_response(e.reset() if req['action']=='reset' else e.start_game()); \\
+elif req['action']=='choose': s=e.choose_door(req['choice']); result = e.to_api_response(s) if s else {"error":"invalid_choice"}; \\
+print(json.dumps(result))`;
 
       const result = await new Promise((resolve, reject) => {
         const proc = spawn(py, ["-c", script], { cwd: repoRoot, env: { ...process.env, PYTHONPATH: path.join(repoRoot, "src") } });
@@ -217,6 +215,8 @@ module.exports = async function dreamRoutes(req, res, url, deps) {
           else resolve(out.trim());
         });
         proc.on("error", reject);
+        proc.stdin.write(JSON.stringify({ userId, action, choice }));
+        proc.stdin.end();
       });
 
       const data = JSON.parse(result);
@@ -236,13 +236,15 @@ module.exports = async function dreamRoutes(req, res, url, deps) {
       if (!sdUrl) {
         const { spawn } = require("child_process");
         const py = process.platform === "win32" ? "python" : "python3";
-        const script = `from three_doors_engine import ThreeDoorsEngine; e=ThreeDoorsEngine("${userId}"); print(__import__('json').dumps(e.image_suggestions_for_ai()[${doorIdx}] if ${doorIdx} < 3 else {}))`;
+        const script = `import sys,json; from three_doors_engine import ThreeDoorsEngine; req=json.loads(sys.stdin.read()); e=ThreeDoorsEngine(req['userId']); suggestions=e.image_suggestions_for_ai(); print(json.dumps(suggestions[req['doorIdx']] if req['doorIdx'] < len(suggestions) else {}))`;
         const result = await new Promise((resolve, reject) => {
           const proc = spawn(py, ["-c", script], { cwd: repoRoot, env: { ...process.env, PYTHONPATH: path.join(repoRoot, "src") } });
           let out = "";
           proc.stdout.on("data", (c) => (out += c));
           proc.on("close", (code) => resolve(out.trim()));
           proc.on("error", reject);
+          proc.stdin.write(JSON.stringify({ userId, doorIdx }));
+          proc.stdin.end();
         });
         const suggestion = JSON.parse(result);
         sendJson(res, {
@@ -257,13 +259,15 @@ module.exports = async function dreamRoutes(req, res, url, deps) {
 
       const { spawn } = require("child_process");
       const py = process.platform === "win32" ? "python" : "python3";
-      const script = `from three_doors_engine import ThreeDoorsEngine; e=ThreeDoorsEngine("${userId}"); print(e.sd_prompt_for_state())`;
+      const script = `import sys,json; from three_doors_engine import ThreeDoorsEngine; req=json.loads(sys.stdin.read()); e=ThreeDoorsEngine(req['userId']); print(e.sd_prompt_for_state())`;
       const promptResult = await new Promise((resolve, reject) => {
         const proc = spawn(py, ["-c", script], { cwd: repoRoot, env: { ...process.env, PYTHONPATH: path.join(repoRoot, "src") } });
         let out = "";
         proc.stdout.on("data", (c) => (out += c));
         proc.on("close", (code) => resolve(out.trim()));
         proc.on("error", reject);
+        proc.stdin.write(JSON.stringify({ userId }));
+        proc.stdin.end();
       });
 
       sendJson(res, {
