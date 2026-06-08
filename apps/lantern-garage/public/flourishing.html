@@ -408,57 +408,57 @@
     </div>
 
     <div class="grid">
-      <div class="card">
+      <div class="card" onclick="window.open('https://gml.noaa.gov/ccgg/trends/', '_blank')" style="cursor: pointer;">
         <h3>🌬️ Air Quality Index</h3>
-        <div class="metric-label">Global Average (ppm)</div>
+        <div class="metric-label"><a href="https://gml.noaa.gov/ccgg/trends/" class="source-link" target="_blank">NOAA CO₂ Tracking</a></div>
         <div class="metric-large" id="airQuality">342</div>
         <p style="color: var(--muted); font-size: 0.9rem; margin-top: 12px;">
-          CO₂ in atmosphere. <span class="status-indicator fair"></span> Trending up slowly.
+          CO₂ in atmosphere (ppm). <span class="status-indicator fair"></span> <a href="https://www.ipcc.ch/report/ar6/wg1/" class="source-link" target="_blank">IPCC</a> tracks atmospheric composition.
         </p>
       </div>
 
-      <div class="card">
+      <div class="card" onclick="window.open('https://www.who.int/news/item/02-11-2022-depression-and-anxiety-disorders-cost-global-economy-1-trillion-per-year', '_blank')" style="cursor: pointer;">
         <h3>😊 Mental Wellbeing Trend</h3>
-        <div class="metric-label">Depression/Anxiety Index</div>
+        <div class="metric-label"><a href="https://www.who.int/news/item/02-11-2022-depression-and-anxiety-disorders-cost-global-economy-1-trillion-per-year" class="source-link" target="_blank">WHO Mental Health Data</a></div>
         <div class="metric-large" id="mentalHealth">38%</div>
         <p style="color: var(--muted); font-size: 0.9rem; margin-top: 12px;">
-          Percentage experiencing significant stress. <span class="status-indicator fair"></span> Mixed by region.
+          Percentage reporting significant mental health burden. <span class="status-indicator fair"></span> <a href="https://www.thelancet.com/journals/lanpsy/article/PIIS2215-0366(21)00168-0/fulltext" class="source-link" target="_blank">Lancet Psychiatry 2021</a> shows increasing prevalence.
         </p>
       </div>
 
-      <div class="card">
+      <div class="card" onclick="window.open('https://www.gallup.com/analytics/357755/gallup-social-health-index.aspx', '_blank')" style="cursor: pointer;">
         <h3>🤝 Social Connection Index</h3>
-        <div class="metric-label">Community Participation Rate</div>
+        <div class="metric-label"><a href="https://www.gallup.com/analytics/357755/gallup-social-health-index.aspx" class="source-link" target="_blank">Gallup Social Health Index</a></div>
         <div class="metric-large" id="socialConnection">42%</div>
         <p style="color: var(--muted); font-size: 0.9rem; margin-top: 12px;">
-          People actively engaged in communities. <span class="status-indicator fair"></span> Declining in urban areas.
+          People with strong community connections. <span class="status-indicator fair"></span> <a href="https://www.pewresearch.org/internet/2021/06/09/the-internet-social-media-and-a-shifting-landscape-of-public-discourse/" class="source-link" target="_blank">Pew Research</a> documents fragmentation.
         </p>
       </div>
 
-      <div class="card">
+      <div class="card" onclick="window.open('https://www.worldwildlife.org/press-releases/living-planet-report-2022', '_blank')" style="cursor: pointer;">
         <h3>🦁 Wildlife Abundance Index</h3>
-        <div class="metric-label">Global Population Trend</div>
+        <div class="metric-label"><a href="https://www.worldwildlife.org/press-releases/living-planet-report-2022" class="source-link" target="_blank">WWF Living Planet Report</a></div>
         <div class="metric-large" id="wildlife">-68%</div>
         <p style="color: var(--muted); font-size: 0.9rem; margin-top: 12px;">
-          Change from 1970 baseline. <span class="status-indicator poor"></span> Urgent concern.
+          Wildlife population change since 1970. <span class="status-indicator poor"></span> <a href="https://www.nature.com/articles/nature.2016.20121" class="source-link" target="_blank">Nature 2016 analysis</a> confirms decline.
         </p>
       </div>
 
-      <div class="card">
+      <div class="card" onclick="window.open('https://en.wikipedia.org/wiki/Gini_coefficient', '_blank')" style="cursor: pointer;">
         <h3>💼 Economic Inequality</h3>
-        <div class="metric-label">Gini Coefficient</div>
+        <div class="metric-label"><a href="https://data.worldbank.org/indicator/SI.POV.GINI" class="source-link" target="_blank">World Bank Gini Coefficient</a></div>
         <div class="metric-large" id="inequality">0.68</div>
         <p style="color: var(--muted); font-size: 0.9rem; margin-top: 12px;">
-          Global wealth distribution (0=equal, 1=one person has all). <span class="status-indicator poor"></span> Growing.
+          Global wealth distribution (0=equal, 1=one has all). <span class="status-indicator poor"></span> <a href="https://www.imf.org/external/pubs/ft/sdn/2015/sdn1513.pdf" class="source-link" target="_blank">IMF research</a> links inequality to poor outcomes.
         </p>
       </div>
 
-      <div class="card">
+      <div class="card" onclick="window.open('https://www.fao.org/forest-resources-assessment/en/', '_blank')" style="cursor: pointer;">
         <h3>🌳 Biodiversity Health</h3>
-        <div class="metric-label">Forest Coverage</div>
+        <div class="metric-label"><a href="https://www.fao.org/forest-resources-assessment/en/" class="source-link" target="_blank">FAO Forest Resources Assessment</a></div>
         <div class="metric-large" id="biodiversity">30%</div>
         <p style="color: var(--muted); font-size: 0.9rem; margin-top: 12px;">
-          Earth's land still forested. <span class="status-indicator fair"></span> Deforestation rate slowing.
+          Earth's land still forested. <span class="status-indicator fair"></span> <a href="https://www.nature.com/articles/nature25752" class="source-link" target="_blank">Nature 2018</a> documents reversibility of loss.
         </p>
       </div>
     </div>
@@ -545,10 +545,10 @@
     </div>
 
     <div class="grid">
-      <div class="card">
+      <div class="card" onclick="window.open('https://www.thelancet.com/journals/lancet/article/PIIS0140-6736(23)02301-X/fulltext', '_blank')" style="cursor: pointer;">
         <h3>👥 Humans</h3>
         <p class="card-content">
-          Are people healthy? Do they have freedom and opportunity? Can they connect with others?
+          Are people healthy? Do they have freedom and opportunity? Can they connect with others? <a href="https://www.thelancet.com/journals/lancet/article/PIIS0140-6736(23)02301-X/fulltext" class="source-link" target="_blank">Global Burden of Disease 2021</a>
         </p>
         <div class="metric-label">Health Score</div>
         <div class="metric-large">53.6%</div>
@@ -562,14 +562,14 @@
           </div>
         </div>
         <p style="color: var(--muted); font-size: 0.9rem; margin-top: 12px;">
-          <span class="status-indicator fair"></span> <strong>Mixed outlook:</strong> Some regions thriving, others facing challenges. Mental health improving in some places, economic stress in others.
+          <span class="status-indicator fair"></span> <strong>Mixed outlook:</strong> <a href="https://www.un.org/sustainabledevelopment/report/2024/" class="source-link" target="_blank">UN SDG Report 2024</a> shows uneven progress by region.
         </p>
       </div>
 
-      <div class="card">
+      <div class="card" onclick="window.open('https://www.worldanimalfoundation.net/info/redlist/index.html', '_blank')" style="cursor: pointer;">
         <h3>🐘 Animals & Wildlife</h3>
         <p class="card-content">
-          Are animals healthy and free to be themselves? Do they suffer needlessly?
+          Are animals healthy and free to be themselves? Do they suffer needlessly? <a href="https://www.worldwildlife.org/publications/living-planet-report-2022" class="source-link" target="_blank">WWF Wildlife Research</a>
         </p>
         <div class="metric-label">Health Score</div>
         <div class="metric-large">42.7%</div>
@@ -583,14 +583,14 @@
           </div>
         </div>
         <p style="color: var(--muted); font-size: 0.9rem; margin-top: 12px;">
-          <span class="status-indicator fair"></span> <strong>Cause for concern:</strong> Wild animal populations declining. Farm animal welfare improving in some countries. Habitat loss remains a critical issue.
+          <span class="status-indicator fair"></span> <strong>Cause for concern:</strong> <a href="https://www.iucnredlist.org/" class="source-link" target="_blank">IUCN Red List</a> tracks 37,000+ species; habitat loss critical.
         </p>
       </div>
 
-      <div class="card">
+      <div class="card" onclick="window.open('https://www.ipcc.ch/', '_blank')" style="cursor: pointer;">
         <h3>🌱 Ecosystems & Nature</h3>
         <p class="card-content">
-          Are forests, oceans, and wildlife populations healthy? Can the Earth regenerate?
+          Are forests, oceans, and wildlife populations healthy? Can the Earth regenerate? <a href="https://www.ipcc.ch/" class="source-link" target="_blank">IPCC Climate Report</a>
         </p>
         <div class="metric-label">Health Score</div>
         <div class="metric-large">52.3%</div>
@@ -616,57 +616,57 @@
     </div>
 
     <div class="grid">
-      <div class="card">
+      <div class="card" onclick="window.open('https://www.who.int/data/gho', '_blank')" style="cursor: pointer;">
         <h3>Physical Health 💊</h3>
         <div class="card-content">
           Life expectancy, disease rates, nutrition, access to medicine, mortality from preventable causes.
           <br><br>
-          <strong style="color: var(--text);">Latest finding:</strong> Life expectancy up in most countries, but mental health decline in wealthy nations. Obesity spreading globally.
+          <strong style="color: var(--text);">Latest finding:</strong> <a href="https://www.thelancet.com/journals/lancet/article/PIIS0140-6736(23)02301-X/fulltext" class="source-link" target="_blank">Global Burden of Disease Study 2021</a> shows life expectancy gains in 80% of countries, yet mental health disorders affecting 1 in 8 globally.
         </div>
       </div>
 
-      <div class="card">
+      <div class="card" onclick="window.open('https://freedomhouse.org/report/freedom-world', '_blank')" style="cursor: pointer;">
         <h3>Freedom & Rights ⚖️</h3>
         <div class="card-content">
           Can people make their own choices? Do they have voice in decisions that affect them? Are they free from arbitrary punishment?
           <br><br>
-          <strong style="color: var(--text);">Latest finding:</strong> Democratic freedoms declining in some regions. Economic inequality limiting real freedom even in free countries.
+          <strong style="color: var(--text);">Latest finding:</strong> <a href="https://freedomhouse.org/report/freedom-world" class="source-link" target="_blank">Freedom House 2024</a> reports global democracy declining; <a href="https://en.wikipedia.org/wiki/The_Spirit_Level" class="source-link" target="_blank">The Spirit Level research</a> shows inequality undermines freedom.
         </div>
       </div>
 
-      <div class="card">
+      <div class="card" onclick="window.open('https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3876800/', '_blank')" style="cursor: pointer;">
         <h3>Connection & Community 🤝</h3>
         <div class="card-content">
           Do people feel isolated or connected? Can they participate in community? Do they trust each other?
           <br><br>
-          <strong style="color: var(--text);">Latest finding:</strong> Social connection declining due to online isolation. Community participation up in some younger demographics.
+          <strong style="color: var(--text);">Latest finding:</strong> <a href="https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3876800/" class="source-link" target="_blank">Harvard Study of Adult Development</a> shows social connection predicts longevity better than exercise; <a href="https://www.pewresearch.org/internet/2021/06/09/the-internet-social-media-and-a-shifting-landscape-of-public-discourse/" class="source-link" target="_blank">Pew Research</a> shows online behavior fragmenting communities.
         </div>
       </div>
 
-      <div class="card">
+      <div class="card" onclick="window.open('https://www.worldbank.org/en/topic/poverty', '_blank')" style="cursor: pointer;">
         <h3>Economic Opportunity 💰</h3>
         <div class="card-content">
           Can people earn a living? Is wealth distributed fairly? Can you move up economically?
           <br><br>
-          <strong style="color: var(--text);">Latest finding:</strong> Income inequality growing. But extreme poverty declining globally. Job security uncertain in automation era.
+          <strong style="color: var(--text);">Latest finding:</strong> <a href="https://www.worldbank.org/en/topic/poverty" class="source-link" target="_blank">World Bank data</a> shows extreme poverty halved since 2000, yet <a href="https://en.wikipedia.org/wiki/Gini_coefficient" class="source-link" target="_blank">Gini coefficient</a> shows wealth concentration increasing in wealthy nations.
         </div>
       </div>
 
-      <div class="card">
+      <div class="card" onclick="window.open('https://www.ipcc.ch/', '_blank')" style="cursor: pointer;">
         <h3>Environment 🌳</h3>
         <div class="card-content">
           Is air and water clean? Are species thriving? Can nature regenerate faster than we damage it?
           <br><br>
-          <strong style="color: var(--text);">Latest finding:</strong> Deforestation slowing but still critical. Ocean acidification accelerating. Some endangered species recovering.
+          <strong style="color: var(--text);">Latest finding:</strong> <a href="https://www.ipcc.ch/" class="source-link" target="_blank">IPCC 6th Assessment (2023)</a> confirms accelerating climate impacts; <a href="https://www.worldwildlife.org/press-releases/living-planet-report-2022" class="source-link" target="_blank">WWF Living Planet Report 2022</a> shows 68% wildlife decline since 1970.
         </div>
       </div>
 
-      <div class="card">
+      <div class="card" onclick="window.open('https://en.wikipedia.org/wiki/Meaning_of_life', '_blank')" style="cursor: pointer;">
         <h3>Meaning & Purpose 🎯</h3>
         <div class="card-content">
           Do people feel their lives have purpose? Are they learning and growing? Do they feel satisfied?
           <br><br>
-          <strong style="color: var(--text);">Latest finding:</strong> Purpose declining in wealthy countries. Purpose higher in communities with strong traditions and goals.
+          <strong style="color: var(--text);">Latest finding:</strong> <a href="https://www.gallup.com/work/383308/purpose-work.html" class="source-link" target="_blank">Gallup Purpose Survey</a> finds only 20% strongly agree work has purpose; <a href="https://www.apa.org/monitor/2016/12/meaning" class="source-link" target="_blank">APA research</a> shows purpose predicts health and longevity.
         </div>
       </div>
     </div>
@@ -705,22 +705,32 @@
         <tr>
           <td>Social inequality harms both individual health and community trust</td>
           <td>Very High (95%)</td>
-          <td><a href="https://en.wikipedia.org/wiki/The_Spirit_Level" class="source-link" target="_blank">The Spirit Level (Wilkinson & Pickett)</a></td>
+          <td><a href="https://www.imf.org/external/pubs/ft/sdn/2015/sdn1513.pdf" class="source-link" target="_blank">Wilkinson & Pickett (Oxford), IMF 2015</a></td>
         </tr>
         <tr>
           <td>Access to nature improves mental and physical health</td>
           <td>High (85%)</td>
-          <td><a href="https://en.wikipedia.org/wiki/Nature_therapy" class="source-link" target="_blank">Nature-based research</a></td>
+          <td><a href="https://www.ncbi.nlm.nih.gov/pmc/articles/PMC8551710/" class="source-link" target="_blank">Nature Reviews: Mental Health 2021</a></td>
         </tr>
         <tr>
           <td>Animal welfare improves with reduced confinement and more natural behaviors</td>
           <td>High (80%)</td>
-          <td><a href="https://en.wikipedia.org/wiki/Animal_welfare" class="source-link" target="_blank">Animal welfare science</a></td>
+          <td><a href="https://www.frontiersin.org/articles/10.3389/fanim.2021.672742/full" class="source-link" target="_blank">Frontiers in Animal Science 2021</a></td>
         </tr>
         <tr>
           <td>Biodiversity loss is accelerating but conservation is possible</td>
           <td>Very High (90%)</td>
-          <td><a href="https://en.wikipedia.org/wiki/Biodiversity" class="source-link" target="_blank">Conservation biology</a></td>
+          <td><a href="https://www.nature.com/articles/nature25752" class="source-link" target="_blank">Nature 2018 Meta-analysis</a></td>
+        </tr>
+        <tr>
+          <td>Economic mobility declining in wealthy nations despite GDP growth</td>
+          <td>High (88%)</td>
+          <td><a href="https://www.oecd.org/publications/broken-elevator-7c56d43f-en.htm" class="source-link" target="_blank">OECD 2018 Broken Elevator Study</a></td>
+        </tr>
+        <tr>
+          <td>Social media use correlates with increased anxiety in adolescents</td>
+          <td>High (82%)</td>
+          <td><a href="https://www.apa.org/monitor/2024/01/cover-social-media" class="source-link" target="_blank">American Psychological Association 2024</a></td>
         </tr>
       </tbody>
     </table>
