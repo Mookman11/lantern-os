@@ -375,11 +375,13 @@
 </head>
 <body>
 <div class="app">
-  <!-- Minimal header -->
+  <!-- Header -->
   <header class="app-header">
     <div class="header-brand">
+      <a href="/" style="font-size:16px;color:var(--muted);text-decoration:none;padding:4px 6px;border-radius:6px;transition:color 0.15s;margin-right:4px" title="Home">←</a>
       <span class="header-brand-icon">🪔</span>
       <span>Dream Journal</span>
+      <span id="header-status" style="font-size:11px;color:var(--muted);margin-left:8px;display:none">· connecting…</span>
     </div>
     <div class="header-controls">
       <button class="icon-btn" id="settings-btn" onclick="openSettings()" title="Settings">⚙️</button>
@@ -391,14 +393,14 @@
   <!-- Chat area -->
   <div class="chat-container" id="messages">
     <div class="empty-state" id="empty-state">
-      <div class="empty-icon">🪔</div>
-      <h2>The dream door is open.</h2>
-      <p>Write about a dream, a symbol, or a feeling. Your local models are ready.</p>
-      <div class="starter-chips">
-        <button class="starter-chip" onclick="fillPrompt('Last night I dreamed that ')">Last night I dreamed that…</button>
-        <button class="starter-chip" onclick="fillPrompt('A symbol appeared: ')">A symbol appeared</button>
-        <button class="starter-chip" onclick="fillPrompt('I keep having a recurring dream about ')">Recurring dream</button>
-        <button class="starter-chip" onclick="fillPrompt('I want to remember this: ')">Quick note</button>
+      <div class="empty-icon" style="opacity:0.7">🪔</div>
+      <h2>What's on your mind?</h2>
+      <p>Write a dream, a reflection, or anything you want to explore. Your journal stays private on your device.</p>
+      <div style="display:flex;flex-direction:column;gap:8px;width:100%;max-width:320px;margin-top:8px">
+        <button onclick="fillPrompt('Last night I dreamed that ')" style="background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:10px 14px;color:var(--text);cursor:pointer;text-align:left;font-size:13px;transition:border-color 0.15s;font-family:inherit" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">💭 Record a dream…</button>
+        <button onclick="fillPrompt('I keep having a recurring dream about ')" style="background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:10px 14px;color:var(--text);cursor:pointer;text-align:left;font-size:13px;transition:border-color 0.15s;font-family:inherit" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">🔄 Explore a recurring dream…</button>
+        <button onclick="fillPrompt('What does it mean when you dream about ')" style="background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:10px 14px;color:var(--text);cursor:pointer;text-align:left;font-size:13px;transition:border-color 0.15s;font-family:inherit" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">✨ Ask about a dream symbol…</button>
+        <button onclick="fillPrompt('!three-doors')" style="background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:10px 14px;color:var(--text);cursor:pointer;text-align:left;font-size:13px;transition:border-color 0.15s;font-family:inherit" onmouseover="this.style.borderColor='#a78bfa'" onmouseout="this.style.borderColor='var(--border)'" title="Play Three Doors">🚪 Play Three Doors game…</button>
       </div>
     </div>
   </div>
@@ -406,8 +408,8 @@
   <!-- Input area -->
   <div class="input-container">
     <div class="input-wrapper">
-      <textarea id="input" class="input-field" placeholder="What's on your mind?" rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage();}"></textarea>
-      <button class="send-button" id="send-btn" onclick="sendMessage()" title="Send">→</button>
+      <textarea id="input" class="input-field" placeholder="Write your dream, ask a question…" rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage();}"></textarea>
+      <button class="send-button" id="send-btn" onclick="sendMessage()" title="Send">↑</button>
     </div>
   </div>
 </div>
@@ -537,6 +539,7 @@
     if (el) el.style.display = 'none';
   }
 
+
   function addUserBubble(text) {
     hideEmptyState();
     const container = document.getElementById('messages');
@@ -616,7 +619,8 @@
             if (evt.type === 'token' && evt.text) {
               fullText += evt.text;
               cursor.remove();
-              bubble.textContent = fullText;
+              // Strip [DOORS:...] during streaming
+              bubble.textContent = fullText.replace(/\[DOORS:[^\]]*\]?/i, '').trimEnd();
               bubble.appendChild(cursor);
               container.scrollTop = container.scrollHeight;
             } else if (evt.type === 'error') {

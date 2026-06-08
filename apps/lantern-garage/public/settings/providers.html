@@ -197,18 +197,20 @@
     <a href="/" class="back-link" title="Back to home" style="text-decoration:none;color:var(--muted);font-size:1.1rem;margin-right:4px;">←</a>
     <div class="logo">⚡</div>
     <div class="title-block">
-      <h1>Provider Settings</h1>
-      <a href="/repo/SKILLS.md" target="_blank" style="font-size:0.78rem;color:var(--muted);text-decoration:none;cursor:pointer;">Lantern OS · Orchestrator Health</a>
+      <h1>AI Providers</h1>
+      <span style="font-size:0.78rem;color:var(--muted);">Lantern OS · settings</span>
     </div>
-    <div style="margin-left:auto;" id="status-indicator">
-      <div class="dot online"></div>
-      <span id="status-text">checking…</span>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:12px;" id="status-indicator">
+      <span style="font-size:0.78rem;color:var(--muted);display:flex;align-items:center;gap:5px">
+        <span class="dot online"></span><span id="status-text">checking…</span>
+      </span>
+      <button onclick="toggleTheme()" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:6px 10px;cursor:pointer;color:var(--muted);font-size:14px;" title="Toggle theme">☀</button>
     </div>
   </header>
 
   <main>
-    <h1>Orchestrator & Swarm Health</h1>
-    <p class="subtitle">Real-time status of AI providers, memory systems, and agent capacity</p>
+    <h1>AI Provider Settings</h1>
+    <p class="subtitle">Configure which AI services Lantern uses. All keys are optional — the journal works without any.</p>
 
     <!-- Status cards -->
     <div class="status-grid" id="status-cards">
@@ -376,6 +378,17 @@
 
   loadStatus();
   setInterval(loadStatus, 10_000);
+
+  function toggleTheme() {
+    const h = document.documentElement;
+    const next = h.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    h.setAttribute('data-theme', next);
+    localStorage.setItem('lantern-theme', next);
+  }
+  (function() {
+    const s = localStorage.getItem('lantern-theme');
+    if (s) document.documentElement.setAttribute('data-theme', s);
+  })();
 </script>
 <script src="/js/common-layout.js" defer></script>
 </body>
