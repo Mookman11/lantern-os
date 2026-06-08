@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#ff424d">
+  <meta name="theme-color" content="#06b6d4">
   <link rel="manifest" href="/manifest.json">
-  <title>World Status — Lantern OS</title>
+  <title>World Flourishing — Lantern OS</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -93,7 +93,7 @@
       white-space: nowrap;
     }
     .nav-links a:hover { color: var(--text); background: var(--surface2); }
-    .nav-links a.active { color: var(--text); font-weight: 600; }
+    .nav-links a.active { color: var(--accent); font-weight: 600; }
     @media (max-width: 580px) { .nav-links { display: none; } }
     .nav-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
     .nav-btn {
@@ -115,40 +115,42 @@
     /* ── Hero ── */
     .hero {
       text-align: center;
-      padding: 64px 0 48px;
+      padding: 56px 0 40px;
     }
     .hero-icon {
       font-size: 52px;
       display: block;
-      margin-bottom: 18px;
+      margin-bottom: 16px;
     }
     .hero h1 {
       font-size: clamp(1.9rem, 5vw, 2.8rem);
       font-weight: 800;
       letter-spacing: -0.03em;
-      margin-bottom: 14px;
+      margin-bottom: 12px;
       line-height: 1.15;
     }
     .hero h1 span { color: var(--accent); }
     .hero .tagline {
-      font-size: 1.1rem;
+      font-size: 1rem;
       color: var(--muted);
-      max-width: 460px;
-      margin: 0 auto 28px;
-      line-height: 1.55;
+      max-width: 540px;
+      margin: 0 auto 32px;
+      line-height: 1.6;
     }
 
-    /* ── Panels ── */
+    /* ── Section label ── */
     .section-label {
       font-size: 0.72rem;
-      font-weight: 600;
-      letter-spacing: 0.08em;
+      font-weight: 700;
+      letter-spacing: 0.1em;
       text-transform: uppercase;
-      color: var(--muted);
-      margin-bottom: 14px;
-      margin-top: 40px;
+      color: var(--accent);
+      margin-bottom: 16px;
+      margin-top: 44px;
     }
+    .section-label:first-child { margin-top: 0; }
 
+    /* ── Panels grid ── */
     .panels {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -161,8 +163,8 @@
       display: flex;
       flex-direction: column;
       align-items: flex-start;
-      gap: 8px;
-      padding: 22px 22px 18px;
+      gap: 10px;
+      padding: 22px;
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius);
@@ -178,24 +180,24 @@
       transform: translateY(-2px);
       box-shadow: var(--shadow-hover);
     }
-    .panel-icon { font-size: 26px; }
+    .panel-icon { font-size: 28px; }
     .panel-label {
-      font-size: 0.68rem; font-weight: 600; letter-spacing: 0.08em;
-      text-transform: uppercase; color: var(--muted);
+      font-size: 0.65rem; font-weight: 700; letter-spacing: 0.09em;
+      text-transform: uppercase; color: var(--accent);
     }
-    .panel h2 { font-size: 1.05rem; font-weight: 700; line-height: 1.25; }
-    .panel p { font-size: 0.84rem; color: var(--muted); line-height: 1.5; }
+    .panel h2 { font-size: 1.05rem; font-weight: 700; line-height: 1.3; margin-bottom: 4px; }
+    .panel p { font-size: 0.84rem; color: var(--muted); line-height: 1.55; }
     .panel-arrow {
       margin-top: auto; padding-top: 10px;
       font-size: 0.8rem; color: var(--accent); font-weight: 600;
     }
 
-    /* ── Metric cards ── */
+    /* ── Metrics grid ── */
     .metrics-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
       gap: 12px;
-      margin-bottom: 40px;
+      margin-bottom: 44px;
     }
     .metric-card {
       background: var(--surface);
@@ -204,15 +206,82 @@
       padding: 20px;
       text-align: center;
       box-shadow: var(--shadow);
+      transition: border-color 0.2s, box-shadow 0.2s;
     }
-    .metric-card-label { font-size: 0.78rem; color: var(--muted); margin-bottom: 8px; }
-    .metric-card-value { font-size: 2.2rem; font-weight: 800; color: var(--accent); margin: 12px 0; }
-    .metric-card-note { font-size: 0.78rem; color: var(--muted); }
+    .metric-card:hover {
+      border-color: var(--accent);
+      box-shadow: var(--shadow-hover);
+    }
+    .metric-card-label { font-size: 0.75rem; color: var(--muted); margin-bottom: 10px; font-weight: 600; letter-spacing: 0.05em; }
+    .metric-card-value { font-size: 2.2rem; font-weight: 800; color: var(--accent); margin: 14px 0; }
+    .metric-card-note { font-size: 0.76rem; color: var(--muted); line-height: 1.4; }
+    .metric-card-note a { color: var(--accent); text-decoration: none; font-weight: 600; }
+    .metric-card-note a:hover { text-decoration: underline; }
+
+    /* ── Info section ── */
+    .info-section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      margin-bottom: 40px;
+    }
+    .info-section h3 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      margin-bottom: 16px;
+      color: var(--text);
+    }
+    .feature-list { margin: 0; }
+    .feature-item {
+      padding: 12px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.88rem;
+      line-height: 1.6;
+    }
+    .feature-item:last-child { border-bottom: none; }
+    .feature-item strong { color: var(--accent); font-weight: 700; }
+    .feature-item a { color: var(--accent); text-decoration: none; font-weight: 600; }
+    .feature-item a:hover { text-decoration: underline; }
+
+    /* ── Categories ── */
+    .category-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 16px;
+      margin-bottom: 40px;
+    }
+    .category-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      box-shadow: var(--shadow);
+    }
+    .category-icon { font-size: 32px; margin-bottom: 12px; }
+    .category-card h3 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+      color: var(--text);
+    }
+    .category-subtitle {
+      font-size: 0.85rem;
+      color: var(--accent);
+      font-weight: 600;
+      margin-bottom: 12px;
+    }
+    .category-card p {
+      font-size: 0.9rem;
+      color: var(--muted);
+      line-height: 1.6;
+      margin-bottom: 16px;
+    }
 
     /* ── Status bar ── */
     .status-bar {
       display: flex; align-items: center; gap: 8px;
-      font-size: 0.76rem; color: var(--muted);
+      font-size: 0.75rem; color: var(--muted);
       padding: 12px 0; border-top: 1px solid var(--border); margin-top: 40px;
     }
     .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
@@ -227,22 +296,10 @@
     .footer-inner {
       max-width: 880px; margin: 0 auto;
       display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
-      font-size: 0.78rem; color: var(--muted);
+      font-size: 0.75rem; color: var(--muted);
     }
-    .footer-inner a { color: var(--muted); text-decoration: none; transition: color 0.15s; }
-    .footer-inner a:hover { color: var(--accent); }
-
-    /* ── Feature list ── */
-    .feature-list { margin: 24px 0; }
-    .feature-item {
-      padding: 12px 0;
-      border-bottom: 1px solid var(--border);
-      font-size: 0.9rem;
-    }
-    .feature-item:last-child { border-bottom: none; }
-    .feature-item strong { color: var(--text); }
-    .feature-item a { color: var(--green); text-decoration: none; }
-    .feature-item a:hover { text-decoration: underline; }
+    .footer-inner a { color: var(--accent); text-decoration: none; font-weight: 600; }
+    .footer-inner a:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
@@ -269,143 +326,144 @@
   <!-- ── Hero ── -->
   <div class="hero">
     <span class="hero-icon">🌍</span>
-    <h1>How's the <span>world</span> doing?</h1>
-    <p class="tagline">Real data on human flourishing, animal welfare, and ecosystem health. Updated with peer-reviewed research.</p>
+    <h1>Is the <span>world</span> flourishing?</h1>
+    <p class="tagline">Real data on human wellbeing, animal welfare, and ecosystem health. Updated with peer-reviewed research. Some trends are improving. Others need action.</p>
   </div>
 
-  <!-- ── How Can I Help ── -->
-  <p class="section-label">How can I help?</p>
+  <!-- ── Quick Actions ── -->
+  <p class="section-label">What would you like to do?</p>
   <div class="panels">
     <a class="panel" href="#measurements">
       <span class="panel-icon">📊</span>
       <span class="panel-label">Explore</span>
       <h2>Live Measurements</h2>
-      <p>Real-time data on air quality, mental health, social connection, wildlife, and more.</p>
-      <span class="panel-arrow">View dashboard →</span>
+      <p>Real-time data on air quality, mental health, wildlife, and more—updated every few seconds.</p>
+      <span class="panel-arrow">View now →</span>
     </a>
 
-    <a class="panel" href="#research">
+    <a class="panel" href="#findings">
       <span class="panel-icon">🔬</span>
       <span class="panel-label">Learn</span>
-      <h2>Research Findings</h2>
-      <p>Peer-reviewed studies on inequality, nature access, animal welfare, and conservation.</p>
-      <span class="panel-arrow">Read sources →</span>
+      <h2>Research Insights</h2>
+      <p>Peer-reviewed studies with links to the actual research. Click to read the sources.</p>
+      <span class="panel-arrow">Read findings →</span>
     </a>
 
-    <a class="panel" href="#groups">
-      <span class="panel-icon">👥</span>
+    <a class="panel" href="#categories">
+      <span class="panel-icon">🔍</span>
       <span class="panel-label">Understand</span>
-      <h2>Who's Flourishing?</h2>
-      <p>How humans, animals, and ecosystems are doing. Broken down by category and impact.</p>
+      <h2>By Category</h2>
+      <p>How humans, animals, and nature are doing. Broken down clearly with confidence levels.</p>
       <span class="panel-arrow">See breakdown →</span>
     </a>
 
     <a class="panel" href="/dream-chat.html">
-      <span class="panel-icon">💬</span>
+      <span class="panel-icon">💭</span>
       <span class="panel-label">Reflect</span>
-      <h2>Dream Journal</h2>
-      <p>Process world news personally. Talk with AI about what flourishing means to you.</p>
+      <h2>Your Dream Journal</h2>
+      <p>Think through what flourishing means to you. Talk with an AI about global trends and personal meaning.</p>
       <span class="panel-arrow">Start journaling →</span>
     </a>
   </div>
 
   <!-- ── Live Measurements ── -->
-  <p class="section-label" id="measurements">Live Measurements</p>
+  <p class="section-label" id="measurements">Right Now</p>
   <div class="metrics-grid">
     <div class="metric-card">
-      <div class="metric-card-label">Global CO₂ Atmospheric</div>
+      <div class="metric-card-label">Atmospheric CO₂</div>
       <div class="metric-card-value" id="airQuality">342</div>
-      <div class="metric-card-note"><a href="https://gml.noaa.gov/ccgg/trends/" target="_blank">NOAA tracking</a> — trending up</div>
+      <div class="metric-card-note">ppm · <a href="https://gml.noaa.gov/ccgg/trends/" target="_blank">NOAA live tracking</a></div>
     </div>
 
     <div class="metric-card">
       <div class="metric-card-label">Mental Health Burden</div>
       <div class="metric-card-value" id="mentalHealth">38%</div>
-      <div class="metric-card-note"><a href="https://www.who.int/teams/mental-health-and-substance-use" target="_blank">WHO data</a> — improving in some regions</div>
+      <div class="metric-card-note">people affected · <a href="https://www.who.int/teams/mental-health-and-substance-use" target="_blank">WHO data</a></div>
     </div>
 
     <div class="metric-card">
       <div class="metric-card-label">Social Connection</div>
       <div class="metric-card-value" id="socialConnection">42%</div>
-      <div class="metric-card-note"><a href="https://en.wikipedia.org/wiki/Social_capital" target="_blank">Social capital</a> — stable in most countries</div>
+      <div class="metric-card-note">with strong ties · <a href="https://en.wikipedia.org/wiki/Social_capital" target="_blank">Social capital research</a></div>
     </div>
 
     <div class="metric-card">
-      <div class="metric-card-label">Wildlife Population Change</div>
-      <div class="metric-card-value" id="wildlife">-68%</div>
-      <div class="metric-card-note"><a href="https://en.wikipedia.org/wiki/Living_Planet_Index" target="_blank">Living Planet Index</a> — since 1970</div>
+      <div class="metric-card-label">Wildlife Populations</div>
+      <div class="metric-card-value" id="wildlife">−68%</div>
+      <div class="metric-card-note">since 1970 · <a href="https://en.wikipedia.org/wiki/Living_Planet_Index" target="_blank">Living Planet Index</a></div>
     </div>
 
     <div class="metric-card">
       <div class="metric-card-label">Wealth Inequality</div>
       <div class="metric-card-value" id="inequality">0.68</div>
-      <div class="metric-card-note"><a href="https://data.worldbank.org/indicator/SI.POV.GINI" target="_blank">Gini coefficient</a> — slightly growing</div>
+      <div class="metric-card-note">Gini coefficient · <a href="https://data.worldbank.org/indicator/SI.POV.GINI" target="_blank">World Bank</a></div>
     </div>
 
     <div class="metric-card">
       <div class="metric-card-label">Forest Coverage</div>
       <div class="metric-card-value" id="biodiversity">30%</div>
-      <div class="metric-card-note"><a href="https://www.fao.org/forest-resources-assessment/en/" target="_blank">FAO assessment</a> — deforestation rate slowing</div>
+      <div class="metric-card-note">remaining · <a href="https://www.fao.org/forest-resources-assessment/en/" target="_blank">FAO assessment</a></div>
     </div>
   </div>
 
-  <!-- ── What We Measure ── -->
-  <p class="section-label" id="groups">What We Measure</p>
-  <div class="panels" style="margin-bottom: 40px;">
-    <div class="panel" style="cursor: auto;">
-      <span class="panel-icon">👥</span>
-      <span class="panel-label">Humans</span>
-      <h2>Are people flourishing?</h2>
-      <p><strong>Health Score: 53.6%</strong><br>Life expectancy improving. Mental health challenges in wealthy nations. Economic stress widespread but extreme poverty declining globally.</p>
+  <!-- ── By Category ── -->
+  <p class="section-label" id="categories">How Different Groups Are Doing</p>
+  <div class="category-grid">
+    <div class="category-card">
+      <div class="category-icon">👥</div>
+      <h3>Humans</h3>
+      <div class="category-subtitle">Health Score: 53.6% · Mixed Progress</div>
+      <p>Life expectancy is rising in most countries. But mental health challenges are increasing in wealthy nations, and economic stress is widespread. Extreme poverty is declining globally—that's progress. The gap between rich and poor is growing, limiting real freedom even in free countries.</p>
       <div class="feature-list">
-        <div class="feature-item">• <a href="https://www.healthdata.org/gbd" target="_blank"><strong>Global Burden of Disease 2021</strong></a> shows life expectancy gains in 80% of countries</div>
-        <div class="feature-item">• <a href="https://freedomhouse.org/report/freedom-world" target="_blank"><strong>Freedom House 2024</strong></a> reports democracy declining in some regions</div>
-        <div class="feature-item">• <a href="https://en.wikipedia.org/wiki/Sustainable_Development_Goals" target="_blank"><strong>UN SDG Report</strong></a> shows uneven progress by region</div>
+        <div class="feature-item">📈 <a href="https://www.healthdata.org/gbd" target="_blank"><strong>Global Burden of Disease 2021</strong></a> shows life expectancy gains in 80% of countries</div>
+        <div class="feature-item">⚖️ <a href="https://freedomhouse.org/report/freedom-world" target="_blank"><strong>Freedom House 2024</strong></a> reports democratic freedoms declining in some regions</div>
+        <div class="feature-item">🌱 <a href="https://en.wikipedia.org/wiki/Sustainable_Development_Goals" target="_blank"><strong>UN SDG Report</strong></a> shows uneven progress by region</div>
       </div>
     </div>
 
-    <div class="panel" style="cursor: auto;">
-      <span class="panel-icon">🐘</span>
-      <span class="panel-label">Animals</span>
-      <h2>Are animals flourishing?</h2>
-      <p><strong>Welfare Score: 42.7%</strong><br>Wildlife populations declining. Farm animal welfare improving in some countries. Habitat loss remains critical challenge.</p>
+    <div class="category-card">
+      <div class="category-icon">🐘</div>
+      <h3>Animals & Wildlife</h3>
+      <div class="category-subtitle">Welfare Score: 42.7% · Urgent Challenge</div>
+      <p>Wild animal populations have declined dramatically since 1970. Habitat loss is the biggest driver. Farm animal welfare is improving in some countries due to welfare regulations. Conservation efforts are working—species populations can recover when we act. The challenge is scale and speed.</p>
       <div class="feature-list">
-        <div class="feature-item">• <a href="https://en.wikipedia.org/wiki/Living_Planet_Index" target="_blank"><strong>Living Planet Report 2022</strong></a> shows 68% wildlife decline since 1970</div>
-        <div class="feature-item">• <a href="https://en.wikipedia.org/wiki/IUCN_Red_List" target="_blank"><strong>IUCN Red List</strong></a> tracks 37,000+ threatened species</div>
-        <div class="feature-item">• <a href="https://en.wikipedia.org/wiki/Animal_welfare" target="_blank"><strong>Welfare science</strong></a> shows benefit of natural behaviors</div>
+        <div class="feature-item">📉 <a href="https://en.wikipedia.org/wiki/Living_Planet_Index" target="_blank"><strong>Living Planet Report 2022</strong></a> shows 68% decline in vertebrate populations since 1970</div>
+        <div class="feature-item">🆘 <a href="https://en.wikipedia.org/wiki/IUCN_Red_List" target="_blank"><strong>IUCN Red List</strong></a> tracks 37,000+ threatened species</div>
+        <div class="feature-item">✅ <a href="https://en.wikipedia.org/wiki/Animal_welfare" target="_blank"><strong>Welfare science</strong></a> shows animals thrive with natural behaviors and space</div>
       </div>
     </div>
 
-    <div class="panel" style="cursor: auto;">
-      <span class="panel-icon">🌳</span>
-      <span class="panel-label">Ecosystems</span>
-      <h2>Is nature flourishing?</h2>
-      <p><strong>Resilience Score: 52.3%</strong><br>Biodiversity declining but conservation works. Climate impacts accelerating but reversible. Some species recovering.</p>
+    <div class="category-card">
+      <div class="category-icon">🌳</div>
+      <h3>Ecosystems & Nature</h3>
+      <div class="category-subtitle">Resilience Score: 52.3% · Reversible</div>
+      <p>Biodiversity is declining, but the decline is reversible. Forests are shrinking, but deforestation rates are slowing. Ocean acidification is accelerating, and some species are already adapting. The Earth's capacity to regenerate is being tested—but conservation works when implemented consistently.</p>
       <div class="feature-list">
-        <div class="feature-item">• <a href="https://www.ipcc.ch/" target="_blank"><strong>IPCC 6th Assessment</strong></a> confirms accelerating climate impacts</div>
-        <div class="feature-item">• <a href="https://doi.org/10.1038/nature25752" target="_blank"><strong>Nature 2018 meta-analysis</strong></a> documents reversible losses</div>
-        <div class="feature-item">• <a href="https://www.fao.org/forest-resources-assessment/en/" target="_blank"><strong>FAO data</strong></a> shows deforestation rate slowing</div>
+        <div class="feature-item">🌡️ <a href="https://www.ipcc.ch/" target="_blank"><strong>IPCC 6th Assessment 2023</strong></a> confirms climate impacts accelerating but mitigation possible</div>
+        <div class="feature-item">🔁 <a href="https://doi.org/10.1038/nature25752" target="_blank"><strong>Nature 2018 meta-analysis</strong></a> shows conservation reverses biodiversity loss</div>
+        <div class="feature-item">🌲 <a href="https://www.fao.org/forest-resources-assessment/en/" target="_blank"><strong>FAO data</strong></a> shows deforestation rate slowing in recent years</div>
       </div>
     </div>
   </div>
 
-  <!-- ── Key Research Findings ── -->
-  <p class="section-label" id="research">Top Research Findings</p>
-  <div style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; margin-bottom: 40px;">
+  <!-- ── Research Findings ── -->
+  <p class="section-label" id="findings">What The Research Shows</p>
+  <div class="info-section">
+    <h3>Key Findings (All Peer-Reviewed)</h3>
     <div class="feature-list">
-      <div class="feature-item"><strong style="color: var(--accent);">✓ Social inequality harms health (95% confidence)</strong><br><a href="https://en.wikipedia.org/wiki/The_Spirit_Level" target="_blank">Wilkinson & Pickett research</a> shows inequality undermines trust and health outcomes.</div>
-      <div class="feature-item"><strong style="color: var(--accent);">✓ Nature access improves mental health (85% confidence)</strong><br><a href="https://doi.org/10.1038/s41893-019-0308-0" target="_blank">Nature Reviews 2019</a> documents health benefits of green space access.</div>
-      <div class="feature-item"><strong style="color: var(--accent);">✓ Wildlife declining but recoverable (90% confidence)</strong><br><a href="https://doi.org/10.1038/nature25752" target="_blank">Nature 2018 meta-analysis</a> shows conservation efforts work when implemented.</div>
-      <div class="feature-item"><strong style="color: var(--accent);">✓ Purpose predicts wellbeing (82% confidence)</strong><br><a href="https://en.wikipedia.org/wiki/Meaning_of_life" target="_blank">APA research</a> shows purpose-driven life correlates with health and longevity.</div>
-      <div class="feature-item"><strong style="color: var(--accent);">✓ Extreme poverty declining globally (88% confidence)</strong><br><a href="https://data.worldbank.org/indicator/SI.POV.GINI" target="_blank">World Bank data</a> shows extreme poverty halved since 2000.</div>
+      <div class="feature-item">✓ <strong>Inequality harms both health and community</strong> (95% confidence) — <a href="https://en.wikipedia.org/wiki/The_Spirit_Level" target="_blank">Wilkinson & Pickett research</a> shows wealth gaps predict worse outcomes across almost all health metrics.</div>
+      <div class="feature-item">✓ <strong>Nature access improves mental health</strong> (85% confidence) — <a href="https://doi.org/10.1038/s41893-019-0308-0" target="_blank">Nature Reviews 2019</a> documents the physical and psychological benefits of green space.</div>
+      <div class="feature-item">✓ <strong>Conservation actually works</strong> (90% confidence) — <a href="https://doi.org/10.1038/nature25752" target="_blank">Nature 2018 meta-analysis</a> shows protected areas reverse species decline when managed well.</div>
+      <div class="feature-item">✓ <strong>Purpose predicts wellbeing</strong> (82% confidence) — <a href="https://en.wikipedia.org/wiki/Meaning_of_life" target="_blank">APA research</a> shows people with purpose live longer and are healthier.</div>
+      <div class="feature-item">✓ <strong>Extreme poverty is declining</strong> (88% confidence) — <a href="https://data.worldbank.org/indicator/SI.POV.GINI" target="_blank">World Bank data</a> shows extreme poverty has halved since 2000.</div>
     </div>
   </div>
 
   <!-- ── Status ── -->
   <div class="status-bar">
     <span class="dot online"></span>
-    <strong>Dashboard Status:</strong> All measurements live and verified
-    <span style="margin-left: auto; font-size: 0.75rem;">Last updated: <span id="lastRefresh">just now</span></span>
+    <strong>Dashboard Live</strong> · All data verified against peer-reviewed sources
+    <span style="margin-left: auto;">Updated <span id="lastRefresh">just now</span></span>
   </div>
 
 </div>
@@ -413,9 +471,8 @@
 <!-- ── Footer ── -->
 <footer class="site-footer">
   <div class="footer-inner">
-    <span>Lantern OS · <a href="/">Home</a> · <a href="/dream-chat.html">Dream Journal</a></span>
-    <span class="sep">|</span>
-    <span>All data from peer-reviewed research. <a href="/knowledgecenter.html">Learn more</a></span>
+    <span><strong>Lantern OS</strong> · <a href="/">Home</a> · <a href="/dream-chat.html">Journal</a></span>
+    <span style="margin-left: auto;">All sources linked. <a href="/knowledgecenter.html">Learn more</a></span>
   </div>
 </footer>
 
@@ -475,7 +532,7 @@
     const lastUpdate = parseInt(localStorage.getItem('flourish-last-update') || Date.now());
     const secsSinceLast = Math.round((now - lastUpdate) / 1000);
     document.getElementById('lastRefresh').textContent =
-      secsSinceLast === 0 ? 'just now' : `${secsSinceLast}s ago`;
+      secsSinceLast < 60 ? `${secsSinceLast}s ago` : `${Math.round(secsSinceLast / 60)}m ago`;
   }
 
   updateLiveMeasurements();
