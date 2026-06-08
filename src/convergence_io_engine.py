@@ -212,11 +212,14 @@ class SlotManager:
                     json.dump(self._cache, f, indent=2)
                 self._dirty = False
 
-    def claim(self, slot_type: str, request_id: str) -> Optional[str]:
+    def claim(self, slot_type: str, request_id: str, context: Optional[Dict[str, Any]] = None) -> Optional[str]:
         with self._lock:
             data = self._read()
             slot_id = f"{slot_type}-{request_id}"
-            data["slots"][slot_id] = {"claimed_at": _now(), "status": "active"}
+            record: Dict[str, Any] = {"claimed_at": _now(), "status": "active"}
+            if context:
+                record["context"] = context
+            data["slots"][slot_id] = record
             self._write(data)
             return slot_id
 
@@ -671,6 +674,7 @@ class ConvergenceLoop:
         self.artifacts: Dict[str, Any] = {}
         self._phase_cache: Dict[str, PhaseResult] = {}
         self._repo_hash: Optional[str] = None
+        self._previous_receipt_path = self.repo_root / "manifests" / "evidence" / "convergence-latest.json"
 
     def _repo_state_hash(self) -> str:
         """Fast fingerprint of repo state for cache invalidation."""
@@ -719,8 +723,8 @@ class ConvergenceLoop:
             tick_results: List[PhaseResult] = []
             any_fail = False
             for num, key, desc in self.PHASES:
-                # Skip external-facing phases on internal ticks
-                if tick < max_ticks - 1 and key in external_io_phases:
+                # External-facing phases run after the main loop
+                if key in external_io_phases:
                     continue
                 # Cache hit for read-only phases when repo hasn't changed
                 if not hash_changed and tick > 0 and key in self._CACHEABLE_PHASES and key in self._phase_cache:
@@ -769,6 +773,22 @@ class ConvergenceLoop:
             if safety.get("throttle"):
                 time.sleep(0.01 * self.external_dilation)
 
+        # Run external-facing phases unconditionally after main loop
+        for num, key, desc in self.PHASES:
+            if key in external_io_phases:
+                start = time.time()
+                method = getattr(self, f"_phase_{key}")
+                try:
+                    result = method()
+                except Exception as exc:
+                    result = PhaseResult(
+                        phase=num, name=key, status="fail",
+                        issues_found=[str(exc)],
+                        elapsed_ms=round((time.time() - start) * 1000, 2),
+                    )
+                audit.append(result)
+                self.results.append(result)
+
         total_ms = round((time.time() - overall_start) * 1000, 2)
         promotion_ready = all(r.status == "pass" for r in self.results)
         # Convergence score: 0.0–1.0 based on pass ratio and speed
@@ -777,6 +797,7 @@ class ConvergenceLoop:
         score = round(pass_count / max(len(all_statuses), 1), 3) if total_ms < 5000 else round(pass_count / max(len(all_statuses), 1) * 0.9, 3)
 
         status = "clean" if promotion_ready else "needs_review"
+        drift = self._detect_drift()
         return {
             "timestamp": _now(),
             "status": status,
@@ -788,6 +809,7 @@ class ConvergenceLoop:
             "internal_ticks": tick + 1,
             "convergence_score": score,
             "adaptive_terminated": tick + 1 < max_ticks,
+            "drift": drift,
         }
 
     def _phase_to_dict(self, r: PhaseResult) -> Dict[str, Any]:
@@ -827,15 +849,26 @@ class ConvergenceLoop:
         return PhaseResult(3, "read_manifests", "pass", evidence={"manifests": len(manifests)})
 
     def _phase_state_objective(self) -> PhaseResult:
-        readme = self.repo_root / "README.md"
         objective = "unknown"
-        if readme.exists():
-            text = readme.read_text(encoding="utf-8")
-            for line in text.splitlines()[:20]:
-                if "Current Focus" in line or "Focus" in line:
-                    objective = line.strip()
-                    break
-        return PhaseResult(4, "state_objective", "pass", evidence={"objective": objective})
+        source = "none"
+        objective_path = self.repo_root / "manifests" / "objective-current.json"
+        if objective_path.exists():
+            try:
+                obj = json.loads(objective_path.read_text(encoding="utf-8"))
+                objective = obj.get("objective", "unknown")
+                source = "manifest"
+            except Exception:
+                pass
+        if objective == "unknown":
+            readme = self.repo_root / "README.md"
+            if readme.exists():
+                text = readme.read_text(encoding="utf-8")
+                for line in text.splitlines()[:20]:
+                    if "Current Focus" in line or "Focus" in line:
+                        objective = line.strip()
+                        source = "readme"
+                        break
+        return PhaseResult(4, "state_objective", "pass", evidence={"objective": objective, "source": source})
 
     def _phase_retire_old(self) -> PhaseResult:
         retired = []
@@ -903,9 +936,13 @@ class ConvergenceLoop:
         receipt_dir = self.repo_root / "manifests" / "evidence"
         receipt_dir.mkdir(parents=True, exist_ok=True)
         receipt_path = receipt_dir / f"convergence-{_now().replace(':', '-').replace('+', '-')}.json"
+        payload = {"phases": [self._phase_to_dict(r) for r in self.results]}
         try:
             with open(receipt_path, "w", encoding="utf-8") as f:
-                json.dump({"phases": [self._phase_to_dict(r) for r in self.results]}, f, indent=2)
+                json.dump(payload, f, indent=2)
+            # Also overwrite latest for drift detection
+            with open(self._previous_receipt_path, "w", encoding="utf-8") as f:
+                json.dump(payload, f, indent=2)
         except Exception as exc:
             return PhaseResult(12, "record_evidence", "fail", [str(exc)])
         return PhaseResult(12, "record_evidence", "pass", evidence={"receipt": str(receipt_path)})
@@ -913,6 +950,26 @@ class ConvergenceLoop:
     def _phase_promote_or_hold(self) -> PhaseResult:
         ready = all(r.status == "pass" for r in self.results)
         return PhaseResult(13, "promote_or_hold", "pass" if ready else "hold", evidence={"ready": ready})
+
+    def _detect_drift(self) -> Dict[str, Any]:
+        """Compare current results with previous receipt."""
+        if not self._previous_receipt_path.exists():
+            return {"status": "first_run", "drift": []}
+        try:
+            prev = json.loads(self._previous_receipt_path.read_text(encoding="utf-8"))
+            prev_phases = {p["name"]: p for p in prev.get("phases", [])}
+            drift = []
+            for r in self.results:
+                prev_p = prev_phases.get(r.name)
+                if prev_p and prev_p.get("status") != r.status:
+                    drift.append({
+                        "phase": r.name,
+                        "from": prev_p.get("status"),
+                        "to": r.status,
+                    })
+            return {"status": "drift_detected" if drift else "stable", "drift": drift}
+        except Exception:
+            return {"status": "error", "drift": []}
 
 
 class TesseractEngine:
