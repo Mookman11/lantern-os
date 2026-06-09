@@ -387,7 +387,6 @@
     <p class="tagline" id="hero-tagline">Local-first dream journaling. Private capture, JSONL export, and optional AI reflection—no account, no cloud required.</p>
     <div class="hero-cta-row">
       <a class="btn-primary" href="/dream-chat.html">✦ Open Dream Journal</a>
-      <a class="btn-ghost" href="/three-doors-game.html" data-prod-hidden>🚪 Play Three Doors</a>
     </div>
     <p class="sub"><span id="hero-edition">Orion Edition</span> · <span data-version-badge="">v—</span> · <span id="hero-git"></span></p>
   </div>
@@ -679,7 +678,7 @@
 (function applyIndexFeatureFlag() {
   const params = new URLSearchParams(location.search);
   const forcedFull = params.get("full");
-  const isDev = location.port === "4178";
+  const isDev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
   const showFullIndex =
     forcedFull === "1" ? true :
     forcedFull === "0" ? false :
