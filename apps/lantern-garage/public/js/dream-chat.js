@@ -320,24 +320,26 @@
     conversationHistory.push({ role: "user", text });
     const row = document.createElement("div");
     row.className = "msg-row user";
-    row.innerHTML = `<div class="msg-label">You</div><div class="bubble">${escapeHtml(text)}</div>`;
+    row.innerHTML = `<div class="msg-label">You · ${fmtTime(new Date())}</div><div class="bubble">${escapeHtml(text)}</div>`;
     messagesEl.appendChild(row);
     scrollToBottom();
   }
 
   // ── Stream agent response ───────────────────────────────────────────────────
   function streamAgentResponse(message) {
+    stopSpeaking();
     isStreaming = true;
     sendBtn.disabled = true;
     setThinking(true);
 
     const agentName = directModeEnabled ? "Model" : (agents.find((a) => a.id === detectAgent(message))?.name || "Lantern");
+    const msgTime = new Date();
     const row = document.createElement("div");
     row.className = "msg-row agent";
 
     const label = document.createElement("div");
     label.className = "msg-label";
-    label.textContent = agentName;
+    label.textContent = `${agentName} · ${fmtTime(msgTime)}`;
 
     const bubble = document.createElement("div");
     bubble.className = "bubble";
@@ -383,6 +385,8 @@
               if (evt.type === "token" && evt.text) {
                 if (!hasTokens) { hasTokens = true; setThinking(false); }
                 fullText += evt.text;
+                streamTtsBuf += evt.text;
+                streamTtsFlush(false);
                 analytics.tokensReceived++;
                 cursor.remove();
                 // Strip [DOORS:...] tag during streaming; chips rendered on done
@@ -458,17 +462,20 @@
     if (isFallback) analytics.fallbacks++;
     analytics.record(isFallback ? "fallback" : "done", `${source}${latency ? " @ " + latency + "ms" : ""}`);
 
-    if (source === "failed" || source === "unavailable" || source === "error" || error) {
-      const badge = document.createElement("div");
-      badge.className = "source-badge offline";
-      badge.textContent = error ? error : source;
-      row.appendChild(badge);
-    } else if (source) {
-      const badge = document.createElement("div");
-      badge.className = `source-badge ${source}`;
-      const names = { anthropic: "Claude", openai: "ChatGPT", gemini: "Gemini", grok: "Grok", ollama: "Ollama" };
-      badge.textContent = `❆ ${names[source] || source}`;
-      row.appendChild(badge);
+    {
+      const provNames = { anthropic: "Claude", openai: "ChatGPT", gemini: "Gemini", grok: "Grok", ollama: "Ollama" };
+      const turn = conversationHistory.filter(m => m.role === "assistant").length;
+      const latStr = latency ? `${(latency / 1000).toFixed(1)}s` : null;
+      const isErr = source === "failed" || source === "unavailable" || source === "error" || !!error;
+      const footer = document.createElement("div");
+      footer.className = `msg-footer${isErr ? " offline" : source ? ` ${source}` : ""}`;
+      const parts = [];
+      if (isErr) parts.push(error || source || "error");
+      else if (source) parts.push(`❆ ${provNames[source] || source}`);
+      if (latStr) parts.push(latStr);
+      if (turn) parts.push(`turn ${turn}`);
+      footer.textContent = parts.join(" · ");
+      row.appendChild(footer);
     }
 
     // Render contextual suggestion chips from dream memory
@@ -571,8 +578,8 @@
     sendBtn.disabled = false;
     setThinking(false);
     scrollToBottom();
-    // TTS — speak the clean reply after stream completes
-    if (text && source !== "failed" && source !== "error") speakText(text);
+    // TTS — flush remainder and wrap bubble for word highlighting
+    if (text && source !== "failed" && source !== "error") streamTtsFinish(text, bubble);
   }
 
   function appendErrorNotice(row, msg) {
@@ -598,6 +605,10 @@
 
   function escapeHtml(s) {
     return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  function fmtTime(d) {
+    return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   }
 
   // ── Settings drawer ─────────────────────────────────────────────────────
@@ -962,9 +973,120 @@
 
   let ttsAudio = null;
 
+  // --- Streaming TTS state ---
+  let streamTtsBuf = "";
+  let streamTtsQueue = [];
+  let streamTtsBusy = false;
+  let ttsWordBubble = null;
+  let streamTtsSentenceOffset = 0; // cumulative char offset into bubble text as sentences complete
+  const SENT_RE = /[^.!?…\n]+(?:[.!?…]+\s*|\n{2,})/g;
+
+  function streamTtsReset() {
+    streamTtsBuf = "";
+    streamTtsQueue = [];
+    streamTtsBusy = false;
+    ttsWordBubble = null;
+    streamTtsSentenceOffset = 0;
+    clearTtsHighlight();
+  }
+
+  function streamTtsFlush(force) {
+    if (!window.speechSynthesis) return;
+    const matches = streamTtsBuf.match(SENT_RE);
+    if (!matches) return;
+    const last = matches[matches.length - 1];
+    const consumed = streamTtsBuf.lastIndexOf(last) + last.length;
+    const sentences = force
+      ? matches.concat(streamTtsBuf.slice(consumed).trim() ? [streamTtsBuf.slice(consumed).trim()] : [])
+      : matches;
+    streamTtsBuf = force ? "" : streamTtsBuf.slice(consumed);
+    for (const s of sentences) {
+      const t = s.trim().replace(/\[DOORS:[^\]]*\]?/gi, "").trim();
+      if (t) streamTtsQueue.push(t);
+    }
+    streamTtsDrain();
+  }
+
+  function streamTtsDrain() {
+    if (streamTtsBusy || streamTtsQueue.length === 0) return;
+    const prefs = JSON.parse(localStorage.getItem("lantern_tts_prefs") || "{}");
+    const text = streamTtsQueue.shift();
+    const utt = new SpeechSynthesisUtterance(text);
+    utt.rate = prefs.rate ?? 0.88;
+    utt.pitch = prefs.pitch ?? 1.05;
+    const voices = window.speechSynthesis.getVoices();
+    if (prefs.voiceURI) {
+      const pick = voices.find(v => v.voiceURI === prefs.voiceURI);
+      if (pick) utt.voice = pick;
+    } else {
+      const fallback = voices.find(v => /samantha|karen|moira|fiona|victoria|female/i.test(v.name))
+                  || voices.find(v => v.lang === "en-GB" || v.lang === "en-AU");
+      if (fallback) utt.voice = fallback;
+    }
+    utt.onboundary = (e) => {
+      if (e.name === "word" && ttsWordBubble) highlightTtsWord(streamTtsSentenceOffset + e.charIndex);
+    };
+    utt.onend = () => {
+      streamTtsBusy = false;
+      streamTtsSentenceOffset += text.length + 1;
+      clearTtsHighlight();
+      streamTtsDrain();
+    };
+    utt.onerror = () => { streamTtsBusy = false; streamTtsDrain(); };
+    streamTtsBusy = true;
+    window.speechSynthesis.speak(utt);
+  }
+
+  function wrapBubbleWords(bubble) {
+    const text = bubble.textContent;
+    bubble.textContent = "";
+    for (const part of text.split(/(\s+)/)) {
+      if (!part) continue;
+      if (/\S/.test(part)) {
+        const span = document.createElement("span");
+        span.className = "tts-word";
+        span.textContent = part;
+        bubble.appendChild(span);
+      } else {
+        bubble.appendChild(document.createTextNode(part));
+      }
+    }
+    ttsWordBubble = bubble;
+  }
+
+  function highlightTtsWord(charIndex) {
+    if (!ttsWordBubble) return;
+    const spans = ttsWordBubble.querySelectorAll(".tts-word");
+    let pos = 0;
+    for (const span of spans) {
+      const len = span.textContent.length + 1; // +1 for space
+      if (charIndex >= pos && charIndex < pos + len) {
+        span.classList.add("tts-active");
+      } else {
+        span.classList.remove("tts-active");
+      }
+      pos += len;
+    }
+  }
+
+  function clearTtsHighlight() {
+    if (!ttsWordBubble) return;
+    ttsWordBubble.querySelectorAll(".tts-active").forEach(s => s.classList.remove("tts-active"));
+  }
+
+  function streamTtsFinish(text, bubble) {
+    if (!text || !window.speechSynthesis) return;
+    // Flush any leftover buffer
+    streamTtsFlush(true);
+    // Wrap bubble words for highlighting of queued/remaining utterances
+    if (bubble && !ttsWordBubble) wrapBubbleWords(bubble);
+    streamTtsDrain();
+  }
+
   function stopSpeaking() {
     if (ttsAudio) { ttsAudio.pause(); ttsAudio = null; }
     if (window.speechSynthesis) window.speechSynthesis.cancel();
+    streamTtsReset();
   }
 
   async function speakText(text) {
