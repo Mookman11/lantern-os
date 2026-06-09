@@ -978,6 +978,7 @@
   let streamTtsQueue = [];
   let streamTtsBusy = false;
   let ttsWordBubble = null;
+  let streamTtsSentenceOffset = 0; // cumulative char offset into bubble text as sentences complete
   const SENT_RE = /[^.!?…\n]+(?:[.!?…]+\s*|\n{2,})/g;
 
   function streamTtsReset() {
@@ -985,6 +986,7 @@
     streamTtsQueue = [];
     streamTtsBusy = false;
     ttsWordBubble = null;
+    streamTtsSentenceOffset = 0;
     clearTtsHighlight();
   }
 
@@ -999,7 +1001,7 @@
       : matches;
     streamTtsBuf = force ? "" : streamTtsBuf.slice(consumed);
     for (const s of sentences) {
-      const t = s.trim();
+      const t = s.trim().replace(/\[DOORS:[^\]]*\]?/gi, "").trim();
       if (t) streamTtsQueue.push(t);
     }
     streamTtsDrain();
@@ -1022,9 +1024,14 @@
       if (fallback) utt.voice = fallback;
     }
     utt.onboundary = (e) => {
-      if (e.name === "word" && ttsWordBubble) highlightTtsWord(e.charIndex);
+      if (e.name === "word" && ttsWordBubble) highlightTtsWord(streamTtsSentenceOffset + e.charIndex);
     };
-    utt.onend = () => { streamTtsBusy = false; clearTtsHighlight(); streamTtsDrain(); };
+    utt.onend = () => {
+      streamTtsBusy = false;
+      streamTtsSentenceOffset += text.length + 1;
+      clearTtsHighlight();
+      streamTtsDrain();
+    };
     utt.onerror = () => { streamTtsBusy = false; streamTtsDrain(); };
     streamTtsBusy = true;
     window.speechSynthesis.speak(utt);
@@ -1032,8 +1039,18 @@
 
   function wrapBubbleWords(bubble) {
     const text = bubble.textContent;
-    const html = text.replace(/(\S+)/g, '<span class="tts-word">$1</span>');
-    bubble.innerHTML = html;
+    bubble.textContent = "";
+    for (const part of text.split(/(\s+)/)) {
+      if (!part) continue;
+      if (/\S/.test(part)) {
+        const span = document.createElement("span");
+        span.className = "tts-word";
+        span.textContent = part;
+        bubble.appendChild(span);
+      } else {
+        bubble.appendChild(document.createTextNode(part));
+      }
+    }
     ttsWordBubble = bubble;
   }
 

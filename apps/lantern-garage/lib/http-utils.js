@@ -24,7 +24,7 @@ function sendFile(res, filePath) {
     ".jpg": "image/jpeg",
     ".jpeg": "image/jpeg",
     ".gif": "image/gif",
-    ".svg": "image/svg+xml; charset=utf-8",
+    ".svg": "image/svg+xml",
     ".ico": "image/x-icon",
     ".json": "application/json; charset=utf-8",
     ".md": "text/markdown; charset=utf-8",
