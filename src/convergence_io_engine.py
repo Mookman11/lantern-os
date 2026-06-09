@@ -1814,6 +1814,9 @@ class TesseractEngine:
         self._cache_manager: Any = None
         self._persona_cache: Dict[str, str] = {}
         self._persona_cache_max = 500  # Reduced from 1000
+        self._max_queue_depth = 8
+        self._queue_depth = 0
+        self._queue_lock = threading.Lock()
         if _CSF_CACHE_AVAILABLE:
             try:
                 self._cache_manager = CsfCacheManager()
@@ -1842,113 +1845,131 @@ class TesseractEngine:
 
     def converge(self, message: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         params = params or {}
-        ctx = ConvergenceContext(
-            persona=params.get("persona", "lantern"),
-            provider=params.get("provider"),
-        )
-        start_total = time.time()
-        trace: List[Dict[str, Any]] = []
-        provider = ctx.provider or "default"
-        circuit = self._circuit(provider)
-        if not circuit.allow():
-            health = circuit.health
-            retry = health.get("recovery_timeout", 30)
-            return {
-                "text": f"[Circuit open for {provider}] The dream door is locked. Try again in {retry}s.",
-                "persona": ctx.persona, "provider": provider,
-                "source": "circuit_breaker", "timing": {},
-            }
+        with self._queue_lock:
+            if self._queue_depth >= self._max_queue_depth:
+                self.metrics.record_error("backpressure")
+                return {
+                    "text": "[429 Too Many Requests] The convergence chamber is full. Retry after 5s.",
+                    "persona": params.get("persona", "lantern"),
+                    "provider": params.get("provider", "default"),
+                    "source": "backpressure",
+                    "retry_after": 5,
+                    "timing": {},
+                }
+            self._queue_depth += 1
+            current_depth = self._queue_depth
+        self.metrics.record_throughput("queue_depth")
         try:
-            # Surface + Interface parallel (I/O bound)
-            futures = {
-                self._executor.submit(self._surface, ctx, message): (Layer.SURFACE, "persona_select"),
-                self._executor.submit(self._interface_mcp, replace(ctx)): (Layer.INTERFACE, "mcp_bridge"),
-            }
-            for future in as_completed(futures):
-                layer, op = futures[future]
-                trace.append(self._enter(layer, op))
-                try:
-                    ctx_update = future.result(timeout=2.0)
-                    # Fast selective merge: only copy non-empty fields
-                    if ctx_update.persona != ctx.persona:
-                        ctx.persona = ctx_update.persona
-                    if ctx_update.provider:
-                        ctx.provider = ctx_update.provider
-                    if ctx_update.mcp_tools:
-                        ctx.mcp_tools = ctx_update.mcp_tools
-                except Exception as exc:
-                    trace.append(self._exit(layer, op, start_total, error=str(exc)))
-                    self.metrics.record_error(f"{layer.name}.{op}")
-                else:
-                    trace.append(self._exit(layer, op, start_total))
+            ctx = ConvergenceContext(
+                persona=params.get("persona", "lantern"),
+                provider=params.get("provider"),
+            )
+            start_total = time.time()
+            trace: List[Dict[str, Any]] = []
+            provider = ctx.provider or "default"
+            circuit = self._circuit(provider)
+            if not circuit.allow():
+                health = circuit.health
+                retry = health.get("recovery_timeout", 30)
+                return {
+                    "text": f"[Circuit open for {provider}] The dream door is locked. Try again in {retry}s.",
+                    "persona": ctx.persona, "provider": provider,
+                    "source": "circuit_breaker", "timing": {},
+                }
+            try:
+                # Surface + Interface parallel (I/O bound)
+                futures = {
+                    self._executor.submit(self._surface, ctx, message): (Layer.SURFACE, "persona_select"),
+                    self._executor.submit(self._interface_mcp, replace(ctx)): (Layer.INTERFACE, "mcp_bridge"),
+                }
+                for future in as_completed(futures):
+                    layer, op = futures[future]
+                    trace.append(self._enter(layer, op))
+                    try:
+                        ctx_update = future.result(timeout=2.0)
+                        # Fast selective merge: only copy non-empty fields
+                        if ctx_update.persona != ctx.persona:
+                            ctx.persona = ctx_update.persona
+                        if ctx_update.provider:
+                            ctx.provider = ctx_update.provider
+                        if ctx_update.mcp_tools:
+                            ctx.mcp_tools = ctx_update.mcp_tools
+                    except Exception as exc:
+                        trace.append(self._exit(layer, op, start_total, error=str(exc)))
+                        self.metrics.record_error(f"{layer.name}.{op}")
+                    else:
+                        trace.append(self._exit(layer, op, start_total))
 
-            trace.append(self._enter(Layer.INTERFACE, "slot_claim"))
-            ctx = self._interface_slot_claim(ctx)
-            trace.append(self._exit(Layer.INTERFACE, "slot_claim", start_total))
+                trace.append(self._enter(Layer.INTERFACE, "slot_claim"))
+                ctx = self._interface_slot_claim(ctx)
+                trace.append(self._exit(Layer.INTERFACE, "slot_claim", start_total))
 
-            # Convergence layer parallel (csf + rag enrich context independently)
-            conv_futures = {
-                self._executor.submit(self._convergence_csf, ctx): "csf_context",
-                self._executor.submit(self._convergence_rag, ctx): "rag_pull",
-            }
-            for future in as_completed(conv_futures):
-                op = conv_futures[future]
-                trace.append(self._enter(Layer.CONVERGENCE, op))
-                try:
-                    ctx_update = future.result(timeout=3.0)
-                    if ctx_update.csf_segments:
-                        ctx.csf_segments = ctx_update.csf_segments
-                    if ctx_update.lore_hints:
-                        ctx.lore_hints.extend(ctx_update.lore_hints)
-                except Exception as exc:
-                    trace.append(self._exit(Layer.CONVERGENCE, op, start_total, error=str(exc)))
-                    self.metrics.record_error(f"CONVERGENCE.{op}")
-                else:
-                    trace.append(self._exit(Layer.CONVERGENCE, op, start_total))
+                # Convergence layer parallel (csf + rag enrich context independently)
+                conv_futures = {
+                    self._executor.submit(self._convergence_csf, ctx): "csf_context",
+                    self._executor.submit(self._convergence_rag, ctx): "rag_pull",
+                }
+                for future in as_completed(conv_futures):
+                    op = conv_futures[future]
+                    trace.append(self._enter(Layer.CONVERGENCE, op))
+                    try:
+                        ctx_update = future.result(timeout=3.0)
+                        if ctx_update.csf_segments:
+                            ctx.csf_segments = ctx_update.csf_segments
+                        if ctx_update.lore_hints:
+                            ctx.lore_hints.extend(ctx_update.lore_hints)
+                    except Exception as exc:
+                        trace.append(self._exit(Layer.CONVERGENCE, op, start_total, error=str(exc)))
+                        self.metrics.record_error(f"CONVERGENCE.{op}")
+                    else:
+                        trace.append(self._exit(Layer.CONVERGENCE, op, start_total))
 
-            trace.append(self._enter(Layer.CORE, "inference_stream"))
-            result = self._core_inference(ctx, message)
-            trace.append(self._exit(Layer.CORE, "inference_stream", start_total))
-            circuit.record_success()
+                trace.append(self._enter(Layer.CORE, "inference_stream"))
+                result = self._core_inference(ctx, message)
+                trace.append(self._exit(Layer.CORE, "inference_stream", start_total))
+                circuit.record_success()
 
-            trace.append(self._enter(Layer.CONVERGENCE, "log_dollhouse"))
-            self._convergence_log(ctx, message, result)
-            trace.append(self._exit(Layer.CONVERGENCE, "log_dollhouse", start_total))
+                trace.append(self._enter(Layer.CONVERGENCE, "log_dollhouse"))
+                self._convergence_log(ctx, message, result)
+                trace.append(self._exit(Layer.CONVERGENCE, "log_dollhouse", start_total))
 
-            trace.append(self._enter(Layer.INTERFACE, "slot_release"))
-            self._interface_slot_release(ctx)
-            trace.append(self._exit(Layer.INTERFACE, "slot_release", start_total))
+                trace.append(self._enter(Layer.INTERFACE, "slot_release"))
+                self._interface_slot_release(ctx)
+                trace.append(self._exit(Layer.INTERFACE, "slot_release", start_total))
 
-            trace.append(self._enter(Layer.SURFACE, "render_reply"))
-            surface_result = self._surface_render(ctx, result)
-            trace.append(self._exit(Layer.SURFACE, "render_reply", start_total))
-        except Exception as exc:
-            circuit.record_failure()
-            self.metrics.record_error("converge")
+                trace.append(self._enter(Layer.SURFACE, "render_reply"))
+                surface_result = self._surface_render(ctx, result)
+                trace.append(self._exit(Layer.SURFACE, "render_reply", start_total))
+            except Exception as exc:
+                circuit.record_failure()
+                self.metrics.record_error("converge")
+                total_ms = round((time.time() - start_total) * 1000, 2)
+                self._log({
+                    "timestamp": _now(), "message_preview": message[:120],
+                    "persona": ctx.persona, "provider": provider,
+                    "total_ms": total_ms, "trace": trace, "error": str(exc),
+                })
+                return {
+                    "text": f"[Engine held: {exc}] The dream door stays open.",
+                    "persona": ctx.persona, "provider": provider,
+                    "source": "engine_fallback", "timing": ctx.timing,
+                }
             total_ms = round((time.time() - start_total) * 1000, 2)
+            self.metrics.record_latency("converge", total_ms)
+            self.metrics.record_throughput("requests")
+            # Adaptive quality feedback: slow responses degrade persona weight
+            quality = max(0.0, 1.0 - (total_ms / 10000))
             self._log({
                 "timestamp": _now(), "message_preview": message[:120],
-                "persona": ctx.persona, "provider": provider,
-                "total_ms": total_ms, "trace": trace, "error": str(exc),
+                "persona": ctx.persona, "provider": result.get("provider", "unknown"),
+                "total_ms": total_ms, "trace": trace,
+                "result_preview": str(result.get("text", ""))[:120],
+                "quality_score": round(quality, 3),
             })
-            return {
-                "text": f"[Engine held: {exc}] The dream door stays open.",
-                "persona": ctx.persona, "provider": provider,
-                "source": "engine_fallback", "timing": ctx.timing,
-            }
-        total_ms = round((time.time() - start_total) * 1000, 2)
-        self.metrics.record_latency("converge", total_ms)
-        self.metrics.record_throughput("requests")
-        # Adaptive quality feedback: slow responses degrade persona weight
-        quality = max(0.0, 1.0 - (total_ms / 10000))
-        self._log({
-            "timestamp": _now(), "message_preview": message[:120],
-            "persona": ctx.persona, "provider": result.get("provider", "unknown"),
-            "total_ms": total_ms, "trace": trace,
-            "result_preview": str(result.get("text", ""))[:120],
-            "quality_score": round(quality, 3),
-        })
-        return surface_result
+            return surface_result
+        finally:
+            with self._queue_lock:
+                self._queue_depth = max(0, self._queue_depth - 1)
 
     def _surface(self, ctx: ConvergenceContext, message: str) -> ConvergenceContext:
         # Fast-path persona cache using first 64 chars hash
