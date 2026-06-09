@@ -39,49 +39,60 @@
       --accent-hover: #06b6d4;
     }
 
-    /* Modern minimal header */
-    .app-header {
+    /* ── Site nav (matches index.html) ── */
+    .site-nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      height: 56px;
+      gap: 8px;
       padding: 0 20px;
-      border-bottom: 1px solid var(--border);
+      height: 52px;
       background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      box-shadow: 0 1px 0 var(--border);
       flex-shrink: 0;
     }
-    .header-brand {
+    .nav-brand {
       display: flex;
       align-items: center;
-      gap: 10px;
-      font-size: 16px;
-      font-weight: 600;
-      letter-spacing: -0.5px;
-    }
-    .header-brand-icon { font-size: 20px; }
-    .header-controls {
-      display: flex;
       gap: 8px;
-      align-items: center;
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text);
+      text-decoration: none;
+      letter-spacing: -0.3px;
+      margin-right: 8px;
     }
-    .icon-btn {
-      width: 36px;
-      height: 36px;
-      border-radius: 8px;
-      border: none;
-      background: transparent;
-      color: var(--muted);
-      cursor: pointer;
+    .nav-links {
       display: flex;
       align-items: center;
-      justify-content: center;
-      transition: all 0.2s;
-      font-size: 16px;
+      gap: 2px;
+      flex: 1;
     }
-    .icon-btn:hover {
-      background: var(--surface2);
-      color: var(--text);
+    .nav-links a {
+      font-size: 13px;
+      color: var(--muted);
+      text-decoration: none;
+      padding: 6px 10px;
+      border-radius: 7px;
+      transition: color 0.15s, background 0.15s;
+      white-space: nowrap;
     }
+    .nav-links a:hover { color: var(--text); background: var(--surface2); }
+    .nav-links a.active { color: var(--accent); font-weight: 600; }
+    @media (max-width: 580px) { .nav-links { display: none; } }
+    .nav-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+    .nav-btn {
+      display: flex; align-items: center; justify-content: center;
+      width: 34px; height: 34px; border-radius: 8px;
+      border: 1px solid var(--border); background: var(--surface2);
+      color: var(--muted); cursor: pointer; font-size: 15px;
+      transition: all 0.15s;
+    }
+    .nav-btn:hover { border-color: var(--accent); color: var(--accent); }
+    #header-status { font-size: 11px; color: var(--muted); margin-left: 6px; }
 
     /* Main container */
     .app {
@@ -404,19 +415,23 @@
 <body>
 <div class="app">
   <!-- Header -->
-  <header class="app-header">
-    <div class="header-brand">
-      <a href="/" style="font-size:16px;color:var(--muted);text-decoration:none;padding:4px 6px;border-radius:6px;transition:color 0.15s;margin-right:4px" title="Home">←</a>
-      <img src="/mandala.svg" class="mandala-icon" alt="" aria-hidden="true" style="width:22px;height:22px;vertical-align:middle">
-      <span>Dream Journal</span>
-      <span id="header-status" style="font-size:11px;color:var(--muted);margin-left:8px;display:none">· connecting…</span>
+  <nav class="site-nav">
+    <a class="nav-brand" href="/">
+      <img src="/mandala.svg" alt="" aria-hidden="true" style="width:18px;height:18px;vertical-align:middle">
+      Lantern OS
+    </a>
+    <div class="nav-links">
+      <a href="/dream-chat.html" class="active">Dream Journal</a>
+      <a href="/three-doors-game.html">Three Doors</a>
+      <a href="/flourishing">World Status</a>
+      <a href="/knowledgecenter.html">Help</a>
     </div>
-    <div class="header-controls">
-      <button class="icon-btn" id="settings-btn" onclick="openSettings()" title="Settings">⚙️</button>
-      <button class="icon-btn" id="theme-toggle" onclick="toggleTheme()" title="Theme">🌙</button>
-      <a href="/" class="icon-btn" title="Home" style="text-decoration:none;font-size:13px;color:var(--muted);">⌂</a>
+    <div class="nav-actions">
+      <span id="header-status" style="display:none">· connecting…</span>
+      <button class="nav-btn" id="settings-btn" onclick="openSettings()" title="Settings">⚙</button>
+      <button class="nav-btn" id="theme-toggle" onclick="toggleTheme()" title="Toggle theme">🌙</button>
     </div>
-  </header>
+  </nav>
 
   <!-- Chat area -->
   <div class="chat-container" id="messages">
