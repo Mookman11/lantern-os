@@ -852,6 +852,9 @@ class ConvergenceLoop:
 
         status = "clean" if promotion_ready else "needs_review"
         drift = self._detect_drift()
+        watch = ConvergenceWatch(self.repo_root).check()
+        if watch["stale"]:
+            status = "stale"
         return {
             "timestamp": _now(),
             "status": status,
@@ -864,6 +867,7 @@ class ConvergenceLoop:
             "convergence_score": score,
             "adaptive_terminated": tick + 1 < max_ticks,
             "drift": drift,
+            "watch": watch,
         }
 
     def _phase_to_dict(self, r: PhaseResult) -> Dict[str, Any]:
@@ -1708,6 +1712,87 @@ class ConvergenceLoop:
             return {"status": "error", "drift": []}
 
 
+class ConvergenceWatch:
+    """Monitor filesystem + git state for changes that invalidate the last convergence receipt.
+
+    Design reference: Kubernetes controller pattern — observe → analyze → act (but only flag, never auto-repair).
+    """
+
+    def __init__(self, repo_root: Path) -> None:
+        self.repo_root = repo_root
+        self.manifest_dir = repo_root / "manifests"
+        self.receipt_path = repo_root / "manifests" / "evidence" / "convergence-latest.json"
+
+    def check(self) -> Dict[str, Any]:
+        """Return watch status without mutating any files."""
+        result: Dict[str, Any] = {
+            "stale": False,
+            "reasons": [],
+            "manifest_changes": [],
+            "git_dirty": False,
+            "receipt_age_seconds": None,
+        }
+
+        if not self.receipt_path.exists():
+            result["reasons"].append("no previous receipt")
+            return result
+
+        receipt_mtime = self.receipt_path.stat().st_mtime
+        result["receipt_age_seconds"] = round(time.time() - receipt_mtime, 1)
+
+        # Watch manifest/*.md files
+        if self.manifest_dir.exists():
+            for manifest_file in self.manifest_dir.rglob("*.md"):
+                try:
+                    if manifest_file.stat().st_mtime > receipt_mtime:
+                        rel = str(manifest_file.relative_to(self.repo_root))
+                        result["manifest_changes"].append(rel)
+                except OSError:
+                    pass
+
+        # Watch git dirty state
+        try:
+            git_status = subprocess.run(
+                ["git", "status", "--porcelain"],
+                cwd=self.repo_root,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            result["git_dirty"] = bool(git_status.stdout.strip())
+        except Exception:
+            pass
+
+        # Determine staleness
+        if result["manifest_changes"]:
+            result["stale"] = True
+            result["reasons"].append(
+                f"{len(result['manifest_changes'])} manifest file(s) changed since last receipt"
+            )
+        if result["git_dirty"]:
+            result["stale"] = True
+            result["reasons"].append("git working tree is dirty")
+
+        return result
+
+    def mark_stale(self, receipt_path: Optional[Path] = None) -> None:
+        """Write stale flag into the receipt without removing it."""
+        path = receipt_path or self.receipt_path
+        if not path.exists():
+            return
+        try:
+            receipt = json.loads(path.read_text(encoding="utf-8"))
+            watch = self.check()
+            receipt["stale"] = True
+            receipt["stale_at"] = _now()
+            receipt["stale_reasons"] = watch.get("reasons", [])
+            receipt["watch"] = watch
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(receipt, f, indent=2)
+        except Exception:
+            pass
+
+
 class TesseractEngine:
     """
     Routes work through the 4 tesseract layers.
@@ -2186,6 +2271,9 @@ if __name__ == "__main__":
     p_ring.add_argument("--max-jobs", type=int, default=10)
     p_ring.add_argument("--max-seconds", type=float, default=15.0)
 
+    p_watch = sub.add_parser("watch")
+    p_watch.add_argument("--mark-stale", action="store_true", help="Write stale flag into receipt if drift detected")
+
     args = parser.parse_args()
 
     if args.command == "converge":
@@ -2207,5 +2295,12 @@ if __name__ == "__main__":
     elif args.command == "validate-ring":
         ring = ValidationRing(max_jobs=args.max_jobs, max_seconds=args.max_seconds)
         print(json.dumps(ring.run(), indent=2))
+    elif args.command == "watch":
+        watch = ConvergenceWatch(REPO_ROOT)
+        result = watch.check()
+        if args.mark_stale and result["stale"]:
+            watch.mark_stale()
+            result["marked_stale"] = True
+        print(json.dumps(result, indent=2))
     else:
         parser.print_help()
