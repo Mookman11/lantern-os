@@ -320,7 +320,7 @@
     conversationHistory.push({ role: "user", text });
     const row = document.createElement("div");
     row.className = "msg-row user";
-    row.innerHTML = `<div class="msg-label">You</div><div class="bubble">${escapeHtml(text)}</div>`;
+    row.innerHTML = `<div class="msg-label">You · ${fmtTime(new Date())}</div><div class="bubble">${escapeHtml(text)}</div>`;
     messagesEl.appendChild(row);
     scrollToBottom();
   }
@@ -333,12 +333,13 @@
     setThinking(true);
 
     const agentName = directModeEnabled ? "Model" : (agents.find((a) => a.id === detectAgent(message))?.name || "Lantern");
+    const msgTime = new Date();
     const row = document.createElement("div");
     row.className = "msg-row agent";
 
     const label = document.createElement("div");
     label.className = "msg-label";
-    label.textContent = agentName;
+    label.textContent = `${agentName} · ${fmtTime(msgTime)}`;
 
     const bubble = document.createElement("div");
     bubble.className = "bubble";
@@ -461,17 +462,20 @@
     if (isFallback) analytics.fallbacks++;
     analytics.record(isFallback ? "fallback" : "done", `${source}${latency ? " @ " + latency + "ms" : ""}`);
 
-    if (source === "failed" || source === "unavailable" || source === "error" || error) {
-      const badge = document.createElement("div");
-      badge.className = "source-badge offline";
-      badge.textContent = error ? error : source;
-      row.appendChild(badge);
-    } else if (source) {
-      const badge = document.createElement("div");
-      badge.className = `source-badge ${source}`;
-      const names = { anthropic: "Claude", openai: "ChatGPT", gemini: "Gemini", grok: "Grok", ollama: "Ollama" };
-      badge.textContent = `❆ ${names[source] || source}`;
-      row.appendChild(badge);
+    {
+      const provNames = { anthropic: "Claude", openai: "ChatGPT", gemini: "Gemini", grok: "Grok", ollama: "Ollama" };
+      const turn = conversationHistory.filter(m => m.role === "assistant").length;
+      const latStr = latency ? `${(latency / 1000).toFixed(1)}s` : null;
+      const isErr = source === "failed" || source === "unavailable" || source === "error" || !!error;
+      const footer = document.createElement("div");
+      footer.className = `msg-footer${isErr ? " offline" : source ? ` ${source}` : ""}`;
+      const parts = [];
+      if (isErr) parts.push(error || source || "error");
+      else if (source) parts.push(`❆ ${provNames[source] || source}`);
+      if (latStr) parts.push(latStr);
+      if (turn) parts.push(`turn ${turn}`);
+      footer.textContent = parts.join(" · ");
+      row.appendChild(footer);
     }
 
     // Render contextual suggestion chips from dream memory
@@ -601,6 +605,10 @@
 
   function escapeHtml(s) {
     return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  function fmtTime(d) {
+    return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   }
 
   // ── Settings drawer ─────────────────────────────────────────────────────
