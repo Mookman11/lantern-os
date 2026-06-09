@@ -12,6 +12,7 @@ const { parseStreamChatRequest } = require("./stream-chat/request");
 const { formatCSFContextForPrompt, saveDoorChoice } = require("./csf-memory");
 const { route: converganceRoute, buildBehaviorPreamble } = require("./convergance-os/model-router");
 const { THREE_DOORS_PREAMBLE } = require("./convergance-os/profiles");
+const { generateDoorSceneImage } = require("./image-generation");
 
 const repoRoot = path.resolve(__dirname, "../../../");
 
@@ -86,6 +87,22 @@ function doorsOrFallback(text, isKeystoneDebug = false) {
     try { saveDoorChoice(null, finalDoors); } catch {}
   }
   return { cleanText, suggestions: finalDoors };
+}
+
+// Non-blocking image generation sidecar for Three Doors mode
+function triggerImageGeneration({ cleanText, suggestions, surfaceMode, symbolMesh }) {
+  if (surfaceMode !== "three-doors") return null;
+  
+  const entryId = Date.now().toString();
+  generateDoorSceneImage({ cleanText, doors: suggestions, symbolMesh, entryId })
+    .then(result => {
+      // Image generation completes asynchronously; failure is non-blocking
+    })
+    .catch(err => {
+      // Image generation errors are non-blocking
+    });
+  
+  return entryId;
 }
 
 async function handleStreamChat(req, url, res) {
@@ -649,6 +666,7 @@ Interpret this convergence result and provide:
         
         if (fullReply) {
           const { cleanText, suggestions } = doorsOrFallback(fullReply, isKeystoneDebug);
+          const imageEntryId = triggerImageGeneration({ cleanText, suggestions, surfaceMode, symbolMesh });
           await appendConversationEntry({
             recordedAt: new Date().toISOString(),
             surface: "dream-chat-stream",
@@ -656,7 +674,9 @@ Interpret this convergence result and provide:
             text: cleanText.slice(0, maxConversationTextLength),
           }).catch(() => {});
           recordProviderSuccess("ollama");
-          sendDone("ollama", { agent: agent.name, online: true, cleanText, suggestions, model: ollamaModel });
+          const meta = { agent: agent.name, online: true, cleanText, suggestions, model: ollamaModel };
+          if (imageEntryId) meta.image = { entryId: imageEntryId, status: "generating" };
+          sendDone("ollama", meta);
           return;
         }
       } catch (err) {
