@@ -25,17 +25,20 @@ except Exception as exc:
     print(f"[FATAL] Missing dependency 'discord.py': {exc}")
     sys.exit(1)
 
-# -- Load .env.local fallback (shared with web UI settings) --
-_env_local = Path(__file__).resolve().parents[2] / ".env.local"
-if _env_local.exists():
-    for _line in _env_local.read_text("utf-8").splitlines():
-        _line = _line.strip()
-        if not _line or _line.startswith("#") or "=" not in _line:
-            continue
-        _k, _v = _line.split("=", 1)
-        _k = _k.strip()
-        if _k and _k not in os.environ:
-            os.environ[_k] = _v.strip()
+# -- Load .env and .env.local (canonical env first, then local overrides) --
+for _env_candidate in [
+    Path(__file__).resolve().parents[2] / ".env",
+    Path(__file__).resolve().parents[2] / ".env.local",
+]:
+    if _env_candidate.exists():
+        for _line in _env_candidate.read_text("utf-8").splitlines():
+            _line = _line.strip()
+            if not _line or _line.startswith("#") or "=" not in _line:
+                continue
+            _k, _v = _line.split("=", 1)
+            _k = _k.strip()
+            if _k and _k not in os.environ:
+                os.environ[_k] = _v.strip()
 
 # -- Configuration --
 TOKEN = os.getenv("DISCORD_BOT_TOKEN", os.getenv("DISCORD_TOKEN", "")).strip()
@@ -47,11 +50,21 @@ SUBSCRIBER_DATA_PATH = Path(os.getenv("SUBSCRIBER_DATA_PATH", REPO_ROOT / "data"
 MAX_NOTEBOOK_TEXT_LENGTH = 2000
 THREE_DOORS_DATA_DIR = REPO_ROOT / "data" / "discord" / "three-doors"
 
-# Role name constants (case-insensitive matching)
+# Role name constants — matched case-insensitively against member.roles
+# Server uses: Wanderer (free) / Deep Dreamer (paid) / Synthesasia Guild (pilot) / founder / admin
 ROLE_PUBLIC = "@everyone"
-ROLE_SUPPORTER = "supporter"
-ROLE_PILOT = "pilot"
-ROLE_FOUNDER = "founder"
+ROLE_SUPPORTER = "supporter"       # canonical bot name
+ROLE_PILOT = "pilot"               # canonical bot name
+ROLE_FOUNDER = "founder"           # matches server role exactly
+
+# Aliases: server's actual role names map to canonical tiers
+_ROLE_ALIASES: dict[str, str] = {
+    "wanderer":           ROLE_PUBLIC,
+    "deep dreamer":       ROLE_SUPPORTER,
+    "synthesasia guild":  ROLE_PILOT,
+    "patreon":            ROLE_PILOT,    # treat Patreon supporters as pilot tier
+    "admin":              ROLE_FOUNDER,  # admins get founder-level access
+}
 
 TIER_ORDER = {ROLE_PUBLIC: 0, ROLE_SUPPORTER: 1, ROLE_PILOT: 2, ROLE_FOUNDER: 3}
 
@@ -310,16 +323,31 @@ def _format_three_doors_embed(state: dict) -> discord.Embed:
     return embed
 
 
-def get_user_tier(member: discord.Member) -> str:
-    """Return the highest tier role the user has."""
-    role_names = {r.name.lower() for r in member.roles}
-    if ROLE_FOUNDER in role_names:
-        return ROLE_FOUNDER
-    if ROLE_PILOT in role_names:
-        return ROLE_PILOT
-    if ROLE_SUPPORTER in role_names:
-        return ROLE_SUPPORTER
-    return ROLE_PUBLIC
+_TIER_LABELS = {
+    ROLE_PUBLIC: "Wanderer",
+    ROLE_SUPPORTER: "Deep Dreamer",
+    ROLE_PILOT: "Synthesasia Guild",
+    ROLE_FOUNDER: "Founder",
+}
+
+
+def _tier_display(tier: str) -> str:
+    return _TIER_LABELS.get(tier, tier.title())
+
+
+def get_user_tier(member: discord.Member | discord.User) -> str:
+    """Return the highest tier role the user has (checks aliases too)."""
+    if not isinstance(member, discord.Member):
+        return ROLE_PUBLIC
+    role_names_lower = {r.name.lower() for r in member.roles}
+    # Resolve each role name to its canonical tier, then take the highest
+    best = TIER_ORDER[ROLE_PUBLIC]
+    for rn in role_names_lower:
+        canonical = _ROLE_ALIASES.get(rn, rn)  # alias lookup, else use as-is
+        level = TIER_ORDER.get(canonical, 0)
+        if level > best:
+            best = level
+    return next(t for t, v in TIER_ORDER.items() if v == best)
 
 
 def require_tier(minimum: str):
@@ -328,15 +356,18 @@ def require_tier(minimum: str):
 
     async def predicate(interaction: discord.Interaction) -> bool:
         if not isinstance(interaction.user, discord.Member):
-            await interaction.response.send_message("This command must be used in a server.", ephemeral=True)
+            if not interaction.response.is_done():
+                await interaction.response.send_message("This command must be used in a server.", ephemeral=True)
             return False
         tier = get_user_tier(interaction.user)
         level = TIER_ORDER.get(tier, 0)
         if level < min_level:
-            await interaction.response.send_message(
-                f"This command requires `{minimum}` tier or higher. Use `/subscribe` to upgrade.",
-                ephemeral=True,
-            )
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    f"This command requires **{_tier_display(minimum)}** tier or higher. "
+                    "Use `/subscribe` to upgrade.",
+                    ephemeral=True,
+                )
             return False
         return True
 
@@ -359,14 +390,14 @@ async def cmd_status(interaction: discord.Interaction):
 async def cmd_help(interaction: discord.Interaction):
     tier = get_user_tier(interaction.user)
     embed = discord.Embed(title="Lantern OS Commands", color=0x2563EB)
-    embed.add_field(name="Public", value="`/status`, `/help`, `/subscribe`, `/threedoors`", inline=False)
+    embed.add_field(name="🌿 Wanderer (free)", value="`/status`, `/help`, `/subscribe`, `/threedoors`", inline=False)
     if tier in (ROLE_SUPPORTER, ROLE_PILOT, ROLE_FOUNDER):
-        embed.add_field(name="Supporter+", value="`/dream`, `/note`, `/wish`, `/recall`, `/mirror`, `/wallet`", inline=False)
+        embed.add_field(name="🌙 Deep Dreamer+", value="`/dream`, `/note`, `/wish`, `/recall`, `/mirror`, `/wallet`", inline=False)
     if tier in (ROLE_PILOT, ROLE_FOUNDER):
-        embed.add_field(name="Pilot+", value="`/converge`, `/rag-status`, `/queue`, `/place`, `/character`, `/symbol`", inline=False)
+        embed.add_field(name="✨ Synthesasia Guild+", value="`/converge`, `/rag-status`, `/queue`, `/place`, `/character`, `/symbol`", inline=False)
     if tier == ROLE_FOUNDER:
-        embed.add_field(name="Founder", value="`/dispatch`, `/controls`, `/boot-check`, `/release-gate`", inline=False)
-    embed.set_footer(text=f"Your tier: {tier.title()}")
+        embed.add_field(name="🔐 Founder", value="`/dispatch`, `/controls`, `/boot-check`, `/release-gate`", inline=False)
+    embed.set_footer(text=f"Your tier: {_tier_display(tier)}")
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
@@ -553,15 +584,15 @@ async def cmd_threedoors_choose(interaction: discord.Interaction, door: str):
 
 @client.event
 async def on_ready():
-    print(f"[READY] Logged in as {client.user} at {now_utc()}")
+    print(f"[READY] Logged in as {client.user} (id={client.user.id}) at {now_utc()}")
+    guild_list = [f"{g.name} ({g.id})" for g in client.guilds]
+    print(f"[GUILDS] In {len(guild_list)} guild(s): {guild_list}")
     sys.stdout.flush()
-    # Explicit presence so Discord shows the bot as online
     await client.change_presence(
         status=discord.Status.online,
         activity=discord.Activity(type=discord.ActivityType.watching, name="dreams | /help")
     )
     print("[PRESENCE] Set status to online: watching dreams | /help")
-    sys.stdout.flush()
     if GUILD_ID_INT:
         guild = discord.Object(id=GUILD_ID_INT)
         tree.copy_global_to(guild=guild)
@@ -569,12 +600,37 @@ async def on_ready():
             synced = await tree.sync(guild=guild)
             print(f"[SYNC] Synced {len(synced)} slash commands to guild {GUILD_ID_INT}")
         except discord.errors.Forbidden:
-            print(f"[WARN] Slash command sync failed (403 Forbidden). "
-                  f"The bot is missing the 'applications.commands' scope in guild {GUILD_ID_INT}. "
-                  f"Re-invite the bot with that scope: https://discord.com/developers/applications")
-            print("[INFO] Bot is online; events still work. Restart after fixing the invite to sync slash commands.")
+            print(f"[WARN] Slash sync 403 Forbidden — bot needs 'applications.commands' scope in guild {GUILD_ID_INT}")
+            print("[INFO] Bot is online; prefix commands work. Re-invite with correct scope to enable slash.")
+        except Exception as exc:
+            print(f"[WARN] Slash sync skipped ({type(exc).__name__}: {exc}) — bot may not be in guild yet.")
+            print("[INFO] Add bot to server via invite URL, then restart to sync slash commands.")
     else:
         print("[WARN] No GUILD_ID set; slash commands will not sync. Set LANTERN_DISCORD_GUILD_ID.")
+    sys.stdout.flush()
+
+
+@tree.error
+async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    """Global slash command error handler — suppress stale-interaction noise, surface real errors."""
+    orig = getattr(error, "original", error)
+    # 10062 = Unknown Interaction (expired >3s window) — transient, nothing to do
+    if isinstance(orig, discord.NotFound) and orig.code == 10062:
+        return
+    # 40060 = Interaction already acknowledged — race condition, safe to ignore
+    if isinstance(orig, discord.HTTPException) and orig.code == 40060:
+        return
+    # CheckFailure means require_tier already sent a response — ignore
+    if isinstance(error, app_commands.errors.CheckFailure):
+        return
+    print(f"[SLASH ERROR] {type(orig).__name__}: {orig}")
+    try:
+        if not interaction.response.is_done():
+            await interaction.response.send_message("Something went wrong. Try again.", ephemeral=True)
+        else:
+            await interaction.followup.send("Something went wrong. Try again.", ephemeral=True)
+    except Exception:
+        pass
 
 
 @client.event
@@ -599,8 +655,21 @@ async def on_message(message: discord.Message):
     if message.author.bot:
         return
 
-    content = message.content.strip()
+    content = (message.content or "").strip()
+    if not content:
+        return
     lower = content.lower()
+
+    async def reply(text: str = None, **kwargs):
+        try:
+            await message.channel.send(text, **kwargs)
+        except discord.Forbidden:
+            try:
+                await message.author.send(
+                    f"I can't send messages in that channel. Here's your reply:\n\n{text or ''}"
+                )
+            except discord.Forbidden:
+                pass
 
     # -- Three Doors prefix commands --
     if lower.startswith("!threedoors") or lower.startswith("!three-doors"):
@@ -615,27 +684,27 @@ async def on_message(message: discord.Message):
                 "history": ["Entered The Moss Door"],
             }
             save_three_doors_state(message.author, state)
-            await message.channel.send(
+            await reply(
                 "The game begins. Three doors await.", embed=_format_three_doors_embed(state)
             )
         else:
-            await message.channel.send(embed=_format_three_doors_embed(state))
+            await reply(embed=_format_three_doors_embed(state))
         return
 
     if lower.startswith("!choose ") or lower.startswith("!pick ") or lower.startswith("!door "):
         door_arg = content.split(None, 1)[1].strip()
         state = load_three_doors_state(message.author)
         if not state:
-            await message.channel.send("No active game. Start with `!threedoors`.")
+            await reply("No active game. Start with `!threedoors`.")
             return
         new_state = _advance_three_doors(state, door_arg)
         if new_state is None:
-            await message.channel.send(
+            await reply(
                 f'"{door_arg}" does not match any door. Try A, B, C, or the door name.'
             )
             return
         save_three_doors_state(message.author, new_state)
-        await message.channel.send(
+        await reply(
             "You chose the door. The path opens...", embed=_format_three_doors_embed(new_state)
         )
         return
@@ -645,18 +714,100 @@ async def on_message(message: discord.Message):
         text = content[7:].strip()
         if text:
             record = append_notebook_entry(message.author, "dream", text)
-            await message.channel.send(f"Dream saved. ID: `{record['id']}`")
+            await reply(f"Dream saved. ID: `{record['id']}`")
         else:
-            await message.channel.send("Usage: `!dream <text>`")
+            await reply("Usage: `!dream <text>`")
         return
 
     if lower.startswith("!note "):
         text = content[6:].strip()
         if text:
             record = append_notebook_entry(message.author, "note", text)
-            await message.channel.send(f"Note saved. ID: `{record['id']}`")
+            await reply(f"Note saved. ID: `{record['id']}`")
         else:
-            await message.channel.send("Usage: `!note <text>`")
+            await reply("Usage: `!note <text>`")
+        return
+
+    if lower.startswith("!wish ") or lower == "!wish":
+        text = content[6:].strip() if lower.startswith("!wish ") else ""
+        if text:
+            record = append_notebook_entry(message.author, "wish", text)
+            await reply(f"Wish saved behind the door. ID: `{record['id']}`")
+        else:
+            await reply("Usage: `!wish <text>`")
+        return
+
+    if lower.startswith("!recall"):
+        query = content[7:].strip() if len(content) > 7 else ""
+        entries = recall_notebook_entries(message.author, query, limit=5)
+        result = format_recall(entries)
+        if len(result) > 1900:
+            result = result[:1897] + "..."
+        await reply(f"```{result}```")
+        return
+
+    if lower == "!status":
+        tier = get_user_tier(message.author) if isinstance(message.author, discord.Member) else "public"
+        await reply(
+            f"**Lantern OS Status**\n"
+            f"Time: {now_utc()}\n"
+            f"Service: lantern-garage\n"
+            f"Tier: {tier.title()}"
+        )
+        return
+
+    if lower == "!help":
+        tier = get_user_tier(message.author) if isinstance(message.author, discord.Member) else ROLE_PUBLIC
+        lines = [
+            "**Lantern OS — Text Commands**",
+            "```",
+            "!threedoors        — Enter the Three Doors dream game",
+            "!choose A|B|C      — Choose a door (also !pick, !door)",
+            "!dream  <text>     — Save a dream to your notebook",
+            "!note   <text>     — Save a note",
+            "!wish   <text>     — Save a wish",
+            "!recall [query]    — Search your notebook",
+            "!mirror            — Mirror all notebook facets",
+            "!wallet            — Check your tier and notebook",
+            "!status            — Lantern OS health check",
+            "!subscribe         — Subscription info",
+            "!help              — This message",
+            "```",
+            "**Slash commands:** `/status` `/help` `/dream` `/note` `/wish` `/recall` `/threedoors` `/threedoors-choose` `/subscribe` `/wallet` `/mirror`",
+            f"*Your tier: {_tier_display(tier)}*",
+        ]
+        await reply("\n".join(lines))
+        return
+
+    if lower == "!subscribe":
+        await reply(
+            "**Lantern OS Subscriptions**\n"
+            "🌿 **Supporter — $20/month:** Weekly digest, report packs, Discord priority.\n"
+            "🚀 **Pilot — $200/month:** Guided cleanup sprint, 1:1 review, custom integration.\n"
+            "🔓 **Public — Free:** Status, docs, Three Doors game.\n\n"
+            "Use `/subscribe` for secure checkout links."
+        )
+        return
+
+    if lower == "!mirror":
+        entries = recall_notebook_entries(message.author, "", limit=500)
+        ids = [e.get("id") for e in entries if e.get("kind") != "mirror" and e.get("id")]
+        if not ids:
+            await reply("No facets to mirror yet. Drop something in the well first.")
+            return
+        mirror_text = f"Mirror of {len(ids)} facets"
+        record = append_notebook_entry(message.author, "mirror", mirror_text)
+        await reply(f"Mirrored {len(ids)} facets. ID: `{record['id']}`")
+        return
+
+    if lower == "!wallet":
+        tier = get_user_tier(message.author) if isinstance(message.author, discord.Member) else ROLE_PUBLIC
+        await reply(
+            f"**Lantern Wallet**\n"
+            f"User: {message.author}\n"
+            f"Tier: {tier.title()}\n"
+            f"Notebook: `{notebook_path(notebook_user_id(message.author)).name}`"
+        )
         return
 
 
@@ -666,7 +817,7 @@ def main():
     _validate_config()
     print("[INFO] Starting Lantern OS Discord Bot v2...")
     print("[INFO] Slash commands + role gating + notebook integration + Three Doors.")
-    print("[INFO] Prefix commands remembered: !threedoors, !dream, !note")
+    print("[INFO] Prefix commands: !threedoors !choose !pick !door !dream !note !wish !recall !mirror !wallet !status !help !subscribe")
     print("[INFO] No secrets are printed. Stop with Ctrl+C.")
     client.run(TOKEN)
 
