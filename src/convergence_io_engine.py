@@ -777,7 +777,7 @@ class ConvergenceLoop:
         score = round(pass_count / max(len(all_statuses), 1), 3) if total_ms < 5000 else round(pass_count / max(len(all_statuses), 1) * 0.9, 3)
 
         status = "clean" if promotion_ready else "needs_review"
-        return {
+        result = {
             "timestamp": _now(),
             "status": status,
             "total_ms": total_ms,
@@ -789,6 +789,8 @@ class ConvergenceLoop:
             "convergence_score": score,
             "adaptive_terminated": tick + 1 < max_ticks,
         }
+        result["drift"] = self._detect_drift(result)
+        return result
 
     def _phase_to_dict(self, r: PhaseResult) -> Dict[str, Any]:
         return {
@@ -826,15 +828,57 @@ class ConvergenceLoop:
         manifests = list((self.repo_root / "manifests").glob("*.md")) if (self.repo_root / "manifests").exists() else []
         return PhaseResult(3, "read_manifests", "pass", evidence={"manifests": len(manifests)})
 
-    def _phase_state_objective(self) -> PhaseResult:
+    def _read_objective(self) -> str:
+        """Read objective from manifest if present, fall back to README."""
+        manifest = self.repo_root / "manifests" / "objective-current.json"
+        if manifest.exists():
+            data = _load_json(manifest)
+            if data and data.get("objective"):
+                return data["objective"]
         readme = self.repo_root / "README.md"
-        objective = "unknown"
         if readme.exists():
             text = readme.read_text(encoding="utf-8")
             for line in text.splitlines()[:20]:
                 if "Current Focus" in line or "Focus" in line:
-                    objective = line.strip()
-                    break
+                    return line.strip()
+        return "unknown"
+
+    def _detect_drift(self, current: Dict[str, Any]) -> Dict[str, Any]:
+        """Compare current convergence receipt with previous run."""
+        evidence_dir = self.repo_root / "manifests" / "evidence"
+        if not evidence_dir.exists():
+            return {"status": "first_run", "drift": []}
+        # Find most recent receipt
+        receipts = sorted(
+            [p for p in evidence_dir.glob("convergence-*.json") if p.is_file()],
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        if not receipts:
+            return {"status": "first_run", "drift": []}
+        prev = _load_json(receipts[0])
+        if not prev:
+            return {"status": "unreadable", "drift": []}
+        prev_phases = {p["name"]: p for p in prev.get("phases", [])}
+        curr_phases = {p["name"]: p for p in current.get("phases", [])}
+        drift = []
+        for name, curr_p in curr_phases.items():
+            prev_p = prev_phases.get(name)
+            if prev_p and prev_p.get("status") != curr_p.get("status"):
+                drift.append({
+                    "id": name,
+                    "from": prev_p.get("status"),
+                    "to": curr_p.get("status"),
+                })
+            elif prev_p is None:
+                drift.append({"id": name, "from": "missing", "to": curr_p.get("status")})
+        for name in prev_phases:
+            if name not in curr_phases:
+                drift.append({"id": name, "from": prev_phases[name].get("status"), "to": "missing"})
+        return {"status": "drift_detected" if drift else "stable", "drift": drift}
+
+    def _phase_state_objective(self) -> PhaseResult:
+        objective = self._read_objective()
         return PhaseResult(4, "state_objective", "pass", evidence={"objective": objective})
 
     def _phase_retire_old(self) -> PhaseResult:
