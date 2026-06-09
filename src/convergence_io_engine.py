@@ -1187,6 +1187,7 @@ class ConvergenceLoop:
         
         for category, benchmarks in benchmark_categories.items():
             available = []
+            with_results = []
             for name, path in benchmarks:
                 if path.exists():
                     available.append(name)
@@ -1195,15 +1196,37 @@ class ConvergenceLoop:
                         data = _load_json(path)
                         if data:
                             evidence[f"{name.replace(' ', '_').replace('/', '_').lower()}_last_updated"] = data.get("last_updated", "unknown")
+                            # Check if lantern_os has actual benchmark results (not 0.0)
+                            if "scores" in data and "lantern_os" in data["scores"]:
+                                lantern_scores = data["scores"]["lantern_os"]
+                                has_result = False
+                                for key, value in lantern_scores.items():
+                                    if isinstance(value, (int, float)) and value > 0:
+                                        has_result = True
+                                        break
+                                if has_result:
+                                    with_results.append(name)
+                            elif "metrics" in data and "lantern_os" in data["metrics"]:
+                                lantern_metrics = data["metrics"]["lantern_os"]
+                                has_result = False
+                                for key, value in lantern_metrics.items():
+                                    if isinstance(value, (int, float)) and value > 0:
+                                        has_result = True
+                                        break
+                                if has_result:
+                                    with_results.append(name)
                     except Exception:
                         pass
             evidence["redundant_categories"][category] = {
                 "available": available,
+                "with_results": with_results,
                 "required": 2,
                 "satisfied": len(available) >= 2
             }
             if len(available) < 2:
                 issues.append(f"Insufficient redundancy in {category}: {len(available)}/2 benchmarks available")
+            if len(with_results) == 0 and len(available) >= 2:
+                issues.append(f"Benchmark files exist but no actual results in {category}: 0/{len(available)} have scores > 0")
         
         # Check for jagged frontier indicators (already included in categories above)
         evidence["jagged_frontier_indicators"] = evidence["redundant_categories"]["jagged_frontier"]["available"]
