@@ -15,7 +15,7 @@ narrative ingest lives at `rag/seeds/xenon-wedding-king-of-nowhere-lore-2026-06-
 
 ### The King of Nowhere
 Keeper of thresholds, possibility, imagination, convergence, and becoming. Not a conqueror or
-owner — he creates by opening doors. His kingdom "Nowhere" is where things exist before they
+owner — he creates by opening doors. His kingdome "Nowhere" is where things exist before they
 fully exist.
 
 - **Themes:** thresholds, imagination, convergence, possibility, transformation,
