@@ -113,7 +113,13 @@ module.exports = async function dreamRoutes(req, res, url, deps) {
       if (!fs.existsSync(dreamDir)) fs.mkdirSync(dreamDir, { recursive: true });
       const monthFile = path.join(dreamDir, `dreams_${new Date().toISOString().substring(0, 7)}.jsonl`);
       await appendJsonlQueued(monthFile, entry);
-      
+
+      // CSF delta ingest — non-blocking, non-fatal
+      try {
+        const { ingestEntry: csfIngest } = require("../lib/csf-delta-store");
+        setImmediate(() => { try { csfIngest(entry); } catch {} });
+      } catch {}
+
       // Dream Journal enrichment using Convergance OS models
       const enrichment = await enrichDreamEntry(entry);
       entry.models = enrichment.models;
