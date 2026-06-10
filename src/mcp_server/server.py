@@ -437,6 +437,73 @@ def _tool_update_lantern_os(restart: bool = True) -> Dict[str, Any]:
     return {"ok": all_ok, "steps": steps, "version": new_version, "restart_scheduled": restart_scheduled}
 
 
+def _tool_web_search(query: str, max_results: int = 5) -> Dict[str, Any]:
+    """Search the web via DuckDuckGo (no API key required). Returns title, URL, and snippet for each result."""
+    import urllib.request
+    import urllib.parse
+    import re
+
+    try:
+        url = "https://lite.duckduckgo.com/lite/"
+        data = urllib.parse.urlencode({"q": query, "kl": "us-en"}).encode("utf-8")
+        req = urllib.request.Request(
+            url,
+            data=data,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Accept": "text/html",
+                "Accept-Language": "en-US,en;q=0.9",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            html = resp.read().decode("utf-8", errors="replace")
+
+        results = []
+        link_pattern = re.compile(
+            r'<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>(.*?)</a>',
+            re.IGNORECASE | re.DOTALL,
+        )
+        snippet_pattern = re.compile(
+            r'<td[^>]+class="result__snippet"[^>]*>(.*?)</td>',
+            re.IGNORECASE | re.DOTALL,
+        )
+
+        links = link_pattern.findall(html)
+        snippets = snippet_pattern.findall(html)
+
+        for i, (href, title_raw) in enumerate(links[:max_results]):
+            title = re.sub(r"<[^>]+>", "", title_raw).strip()
+            if href.startswith("//"):
+                href = "https:" + href
+            elif href.startswith("/"):
+                href = "https://duckduckgo.com" + href
+            snippet = re.sub(r"<[^>]+>", "", snippets[i]).strip() if i < len(snippets) else ""
+            results.append({
+                "rank": i + 1,
+                "title": title,
+                "url": href,
+                "snippet": snippet,
+            })
+
+        return {
+            "success": True,
+            "query": query,
+            "results": results,
+            "result_count": len(results),
+            "source": "duckduckgo-lite",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+    except Exception as exc:
+        logger.exception("Web search failed")
+        return {
+            "success": False,
+            "query": query,
+            "error": str(exc),
+            "hint": "DuckDuckGo lite search failed. Check network connectivity.",
+        }
+
+
 # ── JSON-RPC Dispatch ──
 
 TOOLS_REGISTRY = {
@@ -452,6 +519,7 @@ TOOLS_REGISTRY = {
     "mesh_donate": _tool_mesh_donate,
     "mesh_prune": _tool_mesh_prune,
     "update_lantern_os": _tool_update_lantern_os,
+    "web_search": _tool_web_search,
 }
 
 
