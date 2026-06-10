@@ -71,12 +71,19 @@ def search(query: str, archive_paths: list[Path], top_n: int = 3) -> list[dict]:
     return results[:top_n]
 
 
-def main() -> int:
-    try:
-        req = json.loads(sys.stdin.read())
-    except json.JSONDecodeError as e:
-        print(json.dumps({"error": f"invalid JSON input: {e}"}))
-        return 1
+def main(argv: list[str] | None = None) -> int:
+    if argv:
+        # CLI form: csf_search.py <archive.csf> [<archive.csf> ...] <query>
+        if len(argv) < 2:
+            print(json.dumps({"error": "usage: csf_search <archive.csf>... <query>"}))
+            return 1
+        req = {"archives": argv[:-1], "query": argv[-1]}
+    else:
+        try:
+            req = json.loads(sys.stdin.read())
+        except json.JSONDecodeError as e:
+            print(json.dumps({"error": f"invalid JSON input: {e}"}))
+            return 1
 
     query = str(req.get("query", "")).strip()
     if not query:
@@ -97,4 +104,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(sys.argv[1:]))

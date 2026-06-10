@@ -245,6 +245,7 @@ module.exports = async function dreamRoutes(req, res, url, deps) {
       const userId = String(body.userId || "web-anon").slice(0, 256);
       const action = String(body.action || "start");
       const choice = String(body.choice || "");
+      const agent = String(body.agent || "").slice(0, 32);
 
       const { spawn } = require("child_process");
       const py = process.platform === "win32" ? "python" : "python3";
@@ -253,6 +254,7 @@ module.exports = async function dreamRoutes(req, res, url, deps) {
 from three_doors_engine import ThreeDoorsEngine
 req = json.loads(sys.stdin.read())
 e = ThreeDoorsEngine(req['userId'])
+e.agent = req.get('agent', '')
 result = e.to_api_response()
 if req['action'] in ['start','reset']:
     result = e.to_api_response(e.reset() if req['action']=='reset' else e.start_game())
@@ -271,7 +273,7 @@ print(json.dumps(result))`;
           else resolve(out.trim());
         });
         proc.on("error", reject);
-        proc.stdin.write(JSON.stringify({ userId, action, choice }));
+        proc.stdin.write(JSON.stringify({ userId, action, choice, agent }));
         proc.stdin.end();
       });
 
@@ -289,7 +291,26 @@ print(json.dumps(result))`;
       if (!body || typeof body !== "object" || Array.isArray(body)) body = {};
       const userId = String(body.userId || "web-anon").slice(0, 256);
       const prompt = String(body.prompt || "").trim();
-      
+      const sceneKey = String(body.scene_key || "").replace(/[^a-z0-9-]/gi, "").slice(0, 64);
+      const loopCount = Math.max(0, parseInt(body.loop_count, 10) || 0);
+      const agentName = String(body.agent || "").slice(0, 32);
+
+      // Contextualized cache: {scene_key}-{loop_count}-{agent_hash}.png
+      const crypto = require("crypto");
+      const agentHash = crypto.createHash("sha1").update(agentName || "none").digest("hex").slice(0, 8);
+      const cacheDir = path.join(repoRoot, "apps", "lantern-garage", "public", "data", "images", "three-doors", "cache");
+      const cacheName = sceneKey ? `${sceneKey}-${loopCount}-${agentHash}.png` : "";
+      const cachePath = cacheName ? path.join(cacheDir, cacheName) : "";
+      if (cachePath && fs.existsSync(cachePath)) {
+        sendJson(res, {
+          image_available: true,
+          image_url: `data/images/three-doors/cache/${cacheName}`,
+          cached: true,
+          generatedAt: new Date().toISOString(),
+        });
+        return true;
+      }
+
       if (!prompt) {
         // Get prompt from game state if not provided
         const { spawn } = require("child_process");
@@ -325,6 +346,20 @@ print(e.sd_prompt_for_state())`;
       });
 
       if (!sdReachable) {
+        // Fallback: generic pre-rendered scene image if one exists
+        const genericPath = sceneKey
+          ? path.join(repoRoot, "apps", "lantern-garage", "public", "data", "images", "three-doors", `${sceneKey}.png`)
+          : "";
+        if (genericPath && fs.existsSync(genericPath)) {
+          sendJson(res, {
+            image_available: true,
+            image_url: `data/images/three-doors/${sceneKey}.png`,
+            cached: true,
+            fallback: "generic",
+            generatedAt: new Date().toISOString(),
+          });
+          return true;
+        }
         sendJson(res, {
           image_available: false,
           image_prompt: body.prompt || "",
@@ -366,10 +401,19 @@ print(e.sd_prompt_for_state())`;
         reqSD.end();
       });
 
+      // Persist into the contextualized cache for replay
+      if (cachePath && imageResult.image) {
+        try {
+          fs.mkdirSync(cacheDir, { recursive: true });
+          fs.writeFileSync(cachePath, Buffer.from(imageResult.image, "base64"));
+        } catch { /* cache write is best-effort */ }
+      }
+
       sendJson(res, {
         image_available: true,
         image: imageResult.image,
         image_prompt: imageResult.prompt || body.prompt,
+        image_url: cacheName ? `data/images/three-doors/cache/${cacheName}` : undefined,
         generatedAt: new Date().toISOString(),
       });
       return true;
