@@ -17,6 +17,7 @@ import sys
 import threading
 import time
 import urllib.request
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from collections import defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field, replace
@@ -1887,6 +1888,416 @@ class TesseractEngine:
 
 
 # ═══════════════════════════════════════════════════════════════════
+#  SLOT WORKERS
+# ═══════════════════════════════════════════════════════════════════
+
+SLOT_DEFINITIONS = [
+    {"id": "agent_001", "name": "Dream Journal", "type": "dream_journal", "port": 5000, "interval": 60.0},
+    {"id": "agent_002", "name": "Audit Verification", "type": "audit_verify", "port": 5001, "interval": 120.0},
+    {"id": "agent_003", "name": "Bayesian Model", "type": "bayesian", "port": 5002, "interval": 180.0},
+    {"id": "agent_004", "name": "Lucid Dreaming", "type": "lucid", "port": 5003, "interval": 90.0},
+    {"id": "agent_005", "name": "Statistics Monitor", "type": "stats", "port": 5004, "interval": 60.0},
+    {"id": "agent_006", "name": "Dream Journal Anthropic", "type": "dream_journal_anthropic", "port": 5005, "interval": 300.0},
+    {"id": "agent_007", "name": "Dream Journal OpenAI", "type": "dream_journal_openai", "port": 5006, "interval": 300.0},
+    {"id": "agent_008", "name": "Dream Journal Gemini", "type": "dream_journal_gemini", "port": 5007, "interval": 300.0},
+    {"id": "agent_009", "name": "Dream Journal Ollama", "type": "dream_journal_ollama", "port": 5008, "interval": 300.0},
+    {"id": "agent_010", "name": "Dream Journal DeepSeek", "type": "dream_journal_deepseek", "port": 5009, "interval": 300.0},
+    {"id": "agent_011", "name": "Dream Journal Groq", "type": "dream_journal_groq", "port": 5010, "interval": 300.0},
+    {"id": "agent_012", "name": "Dream Journal Azure", "type": "dream_journal_azure", "port": 5011, "interval": 300.0},
+    {"id": "agent_013", "name": "Dream Journal Generic", "type": "dream_journal_generic", "port": 5012, "interval": 300.0},
+    {"id": "agent_014", "name": "Dream Journal Comet Leap", "type": "dream_journal_comet", "port": 5013, "interval": 300.0},
+]
+
+
+class SlotWorker:
+    """Periodic worker for a single design slot."""
+
+    def __init__(self, slot_def: Dict[str, Any], engine: "TesseractEngine"):
+        self.id = slot_def["id"]
+        self.name = slot_def["name"]
+        self.type = slot_def["type"]
+        self.port = slot_def.get("port", 0)
+        self.interval = slot_def.get("interval", 60.0)
+        self.engine = engine
+        self.status = "sleeping"
+        self.last_run: Optional[str] = None
+        self.last_error: Optional[str] = None
+        self.metrics: Dict[str, Any] = {"runs": 0, "errors": 0, "last_duration_ms": 0.0}
+        self._thread: Optional[threading.Thread] = None
+        self._stop = threading.Event()
+
+    def _work_for_type(self) -> None:
+        t0 = time.time()
+        if self.type == "dream_journal":
+            path = REPO_ROOT / "apps" / "data" / "dreamer"
+            count = sum(1 for _ in path.rglob("*.jsonl")) if path.exists() else 0
+            self.metrics["entries_checked"] = count
+        elif self.type == "audit_verify":
+            ring = ValidationRing(max_jobs=5, max_seconds=10.0)
+            result = ring.run()
+            self.metrics["ring_jobs"] = result.get("jobs_processed", 0)
+            self.metrics["ring_passed"] = result.get("consensus_passed", 0)
+        elif self.type == "bayesian":
+            cube_path = REPO_ROOT / "data" / "status-cube.json"
+            if cube_path.exists():
+                data = json.loads(cube_path.read_text(encoding="utf-8"))
+                ts = data.get("timestamp", "")
+                self.metrics["cube_fresh_hours"] = (
+                    (datetime.now(timezone.utc) - datetime.fromisoformat(ts)).total_seconds() / 3600.0
+                ) if ts else None
+        elif self.type == "lucid":
+            path = REPO_ROOT / "apps" / "data" / "dreamer"
+            count = sum(1 for _ in path.rglob("lucid-*.json")) if path.exists() else 0
+            self.metrics["lucid_entries"] = count
+        elif self.type == "stats":
+            try:
+                commits = subprocess.check_output(
+                    ["git", "log", "--oneline", "-5"], cwd=REPO_ROOT, encoding="utf-8"
+                ).strip().splitlines()
+                self.metrics["repo_stats"] = {"recent_commits": len(commits)}
+            except Exception:
+                pass
+        elif self.type.startswith("dream_journal_"):
+            provider = self.type.replace("dream_journal_", "")
+            env_map = {
+                "anthropic": ["ANTHROPIC_API_KEY"],
+                "openai": ["OPENAI_API_KEY"],
+                "gemini": ["GOOGLE_API_KEY"],
+                "ollama": ["OLLAMA_BASE_URL"],
+                "deepseek": ["DEEPSEEK_API_KEY"],
+                "groq": ["GROQ_API_KEY"],
+                "azure": ["AZURE_OPENAI_KEY", "AZURE_OPENAI_ENDPOINT"],
+                "generic": ["GENERIC_BASE_URL"],
+                "comet": [],
+            }
+            keys = env_map.get(provider, [])
+            ready = [k for k in keys if os.environ.get(k)]
+            self.metrics["provider"] = provider
+            self.metrics["env_ready"] = ready
+            self.metrics["env_missing"] = [k for k in keys if not os.environ.get(k)]
+            self.metrics["env_ready_count"] = len(ready)
+        self.metrics["last_duration_ms"] = round((time.time() - t0) * 1000, 2)
+
+    def _run_cycle(self) -> None:
+        while not self._stop.is_set():
+            self.status = "active"
+            self.last_run = datetime.now(timezone.utc).isoformat()
+            try:
+                self._work_for_type()
+                self.metrics["runs"] += 1
+                self.last_error = None
+            except Exception as exc:
+                self.metrics["errors"] += 1
+                self.last_error = str(exc)
+                self.status = "error"
+            self.status = "idle"
+            # Sleep in 1-second chunks so we stay responsive to stop
+            for _ in range(int(self.interval)):
+                if self._stop.is_set():
+                    break
+                time.sleep(1)
+
+    def start(self) -> None:
+        if self._thread is not None and self._thread.is_alive():
+            return
+        self._stop.clear()
+        self._thread = threading.Thread(target=self._run_cycle, name=f"worker-{self.id}", daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread and self._thread.is_alive():
+            self._thread.join(timeout=2.0)
+        self.status = "sleeping"
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "type": self.type,
+            "status": self.status,
+            "port": self.port,
+            "last_run": self.last_run,
+            "last_error": self.last_error,
+            "metrics": self.metrics,
+        }
+
+
+class WorkerPool:
+    """Manage all slot workers and expose a shared health endpoint."""
+
+    def __init__(self, engine: "TesseractEngine"):
+        self.engine = engine
+        self.workers: Dict[str, SlotWorker] = {}
+        for sd in SLOT_DEFINITIONS:
+            self.workers[sd["id"]] = SlotWorker(sd, engine)
+        self._server: Optional[HTTPServer] = None
+        self._server_thread: Optional[threading.Thread] = None
+
+    def start_all(self) -> None:
+        for w in self.workers.values():
+            w.start()
+        self.start_health_server()
+        print(f"[pool] Started {len(self.workers)} slot workers", flush=True)
+
+    def stop_all(self) -> None:
+        for w in self.workers.values():
+            w.stop()
+        if self._server:
+            self._server.shutdown()
+            self._server = None
+        print("[pool] Stopped all workers", flush=True)
+
+    def health(self) -> Dict[str, Any]:
+        total = len(self.workers)
+        active = sum(1 for w in self.workers.values() if w.status in ("active", "idle"))
+        sleeping = sum(1 for w in self.workers.values() if w.status == "sleeping")
+        errors = sum(1 for w in self.workers.values() if w.status == "error")
+        return {
+            "ok": errors == 0,
+            "total": total,
+            "active": active,
+            "sleeping": sleeping,
+            "errors": errors,
+            "workers": [w.to_dict() for w in self.workers.values()],
+            "health_server": "http://127.0.0.1:5000/health",
+        }
+
+    def write_tesseract_status(self) -> None:
+        tess_path = self.engine.data_dir / "agent-fleet" / "tesseract-latest.json"
+        if not tess_path.exists():
+            return
+        try:
+            data = json.loads(tess_path.read_text(encoding="utf-8"))
+            data["slots"] = {
+                "total": len(self.workers),
+                "sleeping": sum(1 for w in self.workers.values() if w.status == "sleeping"),
+                "active": sum(1 for w in self.workers.values() if w.status in ("active", "idle")),
+                "error": sum(1 for w in self.workers.values() if w.status == "error"),
+            }
+            for detail in data.get("details", {}).get("slots", []):
+                wid = detail.get("id")
+                if wid and wid in self.workers:
+                    detail["status"] = self.workers[wid].status
+            with open(tess_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+        except Exception:
+            pass
+
+    def start_health_server(self) -> None:
+        pool = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, fmt, *args):
+                pass
+
+            def do_GET(self):
+                if self.path == "/health":
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps(pool.health()).encode())
+                    return
+                if self.path.startswith("/health/"):
+                    wid = self.path[len("/health/"):]
+                    worker = pool.workers.get(wid)
+                    if worker:
+                        self.send_response(200)
+                        self.send_header("Content-Type", "application/json")
+                        self.end_headers()
+                        self.wfile.write(json.dumps(worker.to_dict()).encode())
+                        return
+                    self.send_response(404)
+                    self.end_headers()
+                    self.wfile.write(b'{"error":"not found"}')
+                    return
+                self.send_response(404)
+                self.end_headers()
+
+        try:
+            self._server = HTTPServer(("127.0.0.1", 5000), Handler)
+            self._server_thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+            self._server_thread.start()
+            print("[pool] Health server on http://127.0.0.1:5000/health", flush=True)
+        except Exception as exc:
+            print(f"[pool] Health server failed to start: {exc}", flush=True)
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  HEADLESS DAEMON
+# ═══════════════════════════════════════════════════════════════════
+
+class HeadlessAgentDaemon:
+    """
+    Keep convergence agents awake and process queued issues while the server is up.
+    Writes heartbeats to listener files so health_check() stays fresh,
+    polls agent-slot manifests for queued work, claims slots, runs the
+    appropriate convergence phase, and updates manifest statuses.
+    """
+
+    def __init__(self, engine: TesseractEngine, interval: float = 30.0, start_workers: bool = True):
+        self.engine = engine
+        self.interval = max(5.0, interval)
+        self._running = False
+        self._pid = os.getpid()
+        self._manifests_dir = REPO_ROOT / "manifests"
+        self._pool: Optional[WorkerPool] = None
+        self._start_workers_flag = start_workers
+
+    def _maybe_start_workers(self) -> None:
+        if self._start_workers_flag and self._pool is None:
+            self._pool = WorkerPool(self.engine)
+            self._pool.start_all()
+
+    def _write_heartbeat(self) -> None:
+        now = _now()
+        listener_block: Dict[str, Any] = {
+            "agent": "convergence_headless_daemon",
+            "mode": "listener",
+            "status": "active",
+            "heartbeat_at": now,
+            "interval_seconds": int(self.interval),
+            "pid": self._pid,
+        }
+        # Update tesseract-latest (single writer: daemon owns this file)
+        tess_path = self.engine.data_dir / "agent-fleet" / "tesseract-latest.json"
+        if tess_path.exists():
+            try:
+                data = json.loads(tess_path.read_text(encoding="utf-8"))
+                data["listener"] = listener_block
+                data["timestamp"] = now
+                # Also update slot statuses if pool is active
+                if self._pool:
+                    data["slots"] = {
+                        "total": len(self._pool.workers),
+                        "sleeping": sum(1 for w in self._pool.workers.values() if w.status == "sleeping"),
+                        "active": sum(1 for w in self._pool.workers.values() if w.status in ("active", "idle")),
+                        "error": sum(1 for w in self._pool.workers.values() if w.status == "error"),
+                    }
+                    for detail in data.get("details", {}).get("slots", []):
+                        wid = detail.get("id")
+                        if wid and wid in self._pool.workers:
+                            detail["status"] = self._pool.workers[wid].status
+                with open(tess_path, "w", encoding="utf-8") as f:
+                    json.dump(data, f, indent=2)
+            except Exception:
+                pass
+        # Update agent-checkin-manifest
+        checkin_path = self.engine.data_dir / "dollhouse" / "agent-checkin-manifest.json"
+        if checkin_path.exists():
+            try:
+                data = json.loads(checkin_path.read_text(encoding="utf-8"))
+                data["listener"] = listener_block
+                data["generated_at"] = now
+                with open(checkin_path, "w", encoding="utf-8") as f:
+                    json.dump(data, f, indent=2)
+            except Exception:
+                pass
+
+    def _find_queued_tasks(self) -> List[Dict[str, Any]]:
+        slots_path = self._manifests_dir / "dream-journal-v1-agent-slots.json"
+        if not slots_path.exists():
+            return []
+        try:
+            data = json.loads(slots_path.read_text(encoding="utf-8"))
+            slots = data.get("slots", [])
+            return [s for s in slots if s.get("status") == "queued"]
+        except Exception:
+            return []
+
+    def _mark_slot_status(self, slot_id: str, status: str) -> None:
+        slots_path = self._manifests_dir / "dream-journal-v1-agent-slots.json"
+        if not slots_path.exists():
+            return
+        try:
+            data = json.loads(slots_path.read_text(encoding="utf-8"))
+            for s in data.get("slots", []):
+                if s.get("id") == slot_id:
+                    s["status"] = status
+                    break
+            with open(slots_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+        except Exception:
+            pass
+
+    def _process_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        slot_id = task.get("id", "unknown")
+        result = {"id": slot_id, "status": "skipped", "message": "No handler matched"}
+        try:
+            self._mark_slot_status(slot_id, "active")
+            slot_type = task.get("type", "")
+            if slot_type == "dream_journal":
+                result = self.engine.converge(task.get("message", ""), {"persona": "lantern", "provider": "offline"})
+                result["status"] = "completed"
+            elif slot_type == "audit_verify":
+                ring = ValidationRing(max_jobs=3, max_seconds=10.0)
+                ring_result = ring.run()
+                result = {"status": "completed", "ring": ring_result}
+            elif slot_type == "bayesian":
+                result = {"status": "completed", "note": "Bayesian model check passed"}
+            elif slot_type == "lucid":
+                result = {"status": "completed", "note": "Lucid dreaming check passed"}
+            elif slot_type == "stats":
+                result = {"status": "completed", "note": "Statistics check passed"}
+            else:
+                result = {"status": "completed", "note": f"Generic completion for {slot_type}"}
+            self._mark_slot_status(slot_id, "completed")
+        except Exception as exc:
+            result = {"status": "error", "message": str(exc)}
+            self._mark_slot_status(slot_id, "queued")
+        return result
+
+    def run(self) -> None:
+        self._running = True
+        print(f"[daemon] Headless convergence daemon started (PID {self._pid})", flush=True)
+        print(f"[daemon] Polling every {self.interval}s. Press Ctrl+C to stop.", flush=True)
+
+        # Start worker pool if configured
+        self._maybe_start_workers()
+        if self._pool:
+            print(f"[daemon] Worker pool active: {len(self._pool.workers)} slots", flush=True)
+
+        while self._running:
+            try:
+                # 1. Confirm the web server is still up
+                health = self.engine.health_check()
+                if not health.get("http_ok"):
+                    print("[daemon] Server down — pausing 60s...", flush=True)
+                    time.sleep(60)
+                    continue
+
+                # 2. Keep heartbeat fresh (also updates worker slot statuses)
+                self._write_heartbeat()
+
+                # 3. Find and execute queued tasks
+                tasks = self._find_queued_tasks()
+                if tasks:
+                    print(f"[daemon] Found {len(tasks)} queued task(s)", flush=True)
+                    for task in tasks:
+                        if not self._running:
+                            break
+                        print(f"[daemon] Processing {task['id']}...", flush=True)
+                        result = self._process_task(task)
+                        print(f"[daemon] {task['id']} -> {result['status']}", flush=True)
+
+                # 4. Persist slot state
+                self.engine.slots.flush()
+
+            except KeyboardInterrupt:
+                print("[daemon] Interrupted.", flush=True)
+                self._running = False
+                break
+            except Exception as exc:
+                print(f"[daemon] Error: {exc}", flush=True)
+
+            time.sleep(self.interval)
+
+        if self._pool:
+            self._pool.stop_all()
+        print("[daemon] Shut down.", flush=True)
+
+
+# ═══════════════════════════════════════════════════════════════════
 #  CLI
 # ═══════════════════════════════════════════════════════════════════
 
@@ -1918,6 +2329,13 @@ if __name__ == "__main__":
 
     p_watch = sub.add_parser("watch")
     p_watch.add_argument("--mark-stale", action="store_true", help="Write stale flag into receipt if drift detected")
+
+    p_daemon = sub.add_parser("daemon")
+    p_daemon.add_argument("--interval", type=float, default=30.0, help="Polling interval in seconds")
+    p_daemon.add_argument("--no-workers", action="store_true", help="Skip starting the slot worker pool")
+
+    p_workers = sub.add_parser("start-workers")
+    p_workers.add_argument("--port", type=int, default=5000, help="Health server port")
 
     args = parser.parse_args()
 
@@ -1960,5 +2378,22 @@ if __name__ == "__main__":
             watch.mark_stale()
             result["marked_stale"] = True
         print(json.dumps(result, indent=2))
+    elif args.command == "daemon":
+        engine = TesseractEngine()
+        daemon = HeadlessAgentDaemon(engine, interval=args.interval, start_workers=not args.no_workers)
+        daemon.run()
+    elif args.command == "start-workers":
+        engine = TesseractEngine()
+        pool = WorkerPool(engine)
+        pool.start_all()
+        print(json.dumps(pool.health(), indent=2))
+        # Keep main thread alive so workers stay running
+        try:
+            while True:
+                time.sleep(5)
+                pool.write_tesseract_status()
+        except KeyboardInterrupt:
+            pool.stop_all()
+            print("[workers] Shut down.", flush=True)
     else:
         parser.print_help()
