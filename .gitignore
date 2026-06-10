@@ -153,6 +153,9 @@ data/training_logs/
 *.pth
 *.ckpt
 
+# Claim packets — runtime data (local only)
+data/claims/
+
 # Discord event data (local only)
 data/discord/**/*.json
 !data/discord/README.md
