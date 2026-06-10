@@ -440,7 +440,15 @@ function addLog(intent, ratio) {
   const ts = now.toTimeString().slice(0, 8);
   const el = document.createElement("div");
   el.className = "log-entry";
-  el.innerHTML = `<span class="log-time">${ts}</span><strong>${intent}</strong> · ratio <span style="color:#34d399">${ratio.toFixed(2)}</span>`;
+  const timeSpan = document.createElement("span");
+  timeSpan.className = "log-time";
+  timeSpan.textContent = ts;
+  const intentEl = document.createElement("strong");
+  intentEl.textContent = intent;
+  const ratioSpan = document.createElement("span");
+  ratioSpan.style.color = "#34d399";
+  ratioSpan.textContent = ratio.toFixed(2);
+  el.append(timeSpan, intentEl, document.createTextNode(" · ratio "), ratioSpan);
   log.insertBefore(el, log.firstChild);
   while (log.children.length > 20) log.removeChild(log.lastChild);
 }
