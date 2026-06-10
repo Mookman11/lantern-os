@@ -6,6 +6,8 @@
 
 **Canon spelling:** *Kingdome* — with the dome. The realm is a garden under a dome of old light.
 
+> "Kingdome of Hearts" is the canonical spelling for the Dream Journal / Three Doors game concept. "Kingdom of Hearts" is legacy wording unless quoting historical source material.
+
 ## Lore
 
 Here, love is the law, and every living thing beats a verse of it true.
