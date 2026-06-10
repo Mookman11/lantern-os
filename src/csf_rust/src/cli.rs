@@ -90,7 +90,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             let segments = archive.segment_count();
             let mut out = std::fs::OpenOptions::new()
-                .create(true).write(true).read(true).truncate(true)
+                .create(true)
+                .write(true)
+                .read(true)
+                .truncate(true)
                 .open(&output)?;
             archive.write(&mut out, &sec)?;
 
