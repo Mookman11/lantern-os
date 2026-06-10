@@ -138,4 +138,15 @@ module.exports = async function statusRoutes(req, res, url, deps) {
     sendJson(res, { ok: true, metrics: enriched, generatedAt: new Date().toISOString() });
     return true;
   }
+  if (url.pathname === "/api/agents/status") {
+    const tessPath = path.join(deps.repoRoot, "data", "agent-fleet", "tesseract-latest.json");
+    let tessData = {};
+    try {
+      if (fs.existsSync(tessPath)) {
+        tessData = JSON.parse(fs.readFileSync(tessPath, "utf8"));
+      }
+    } catch { /* ignore parse errors */ }
+    sendJson(res, { ok: true, data: tessData, generatedAt: new Date().toISOString() });
+    return true;
+  }
 };
