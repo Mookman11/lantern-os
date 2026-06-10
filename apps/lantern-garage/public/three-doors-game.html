@@ -755,52 +755,6 @@ function checkChallenges(sceneKey, turnCount) {
   }
 }
 
-function submitPoem() {
-  const input = document.getElementById("poem-answer");
-  if (!input) return;
-  const val = input.value.trim().toLowerCase();
-  const accepted = ["yourself","myself","i am","the one","silence","love","the fox","convergence","me","i"];
-  if (accepted.some(a => val.includes(a))) {
-    playerProgress.poemSolved = true;
-    saveProgress();
-    awardPrize("kingdome-crown");
-    // Refresh scene to show doors
-    appendUserMsg("Answer: \"" + input.value.trim() + "\"");
-    const scene = SCENES["kingdome-garden"];
-    const data = { scene_key: "kingdome-garden", text: scene.text, doors: scene.doors, fox_present: scene.fox, history: gameState?.history || [] };
-    appendSceneMsg("kingdome-garden", data, "", "offline");
-  } else {
-    const chat = document.getElementById("chat");
-    const el = document.createElement("div");
-    el.className = "message agent";
-    el.innerHTML = `<div class="agent-avatar">🦊</div><div class="message-content" style="font-size:13px;color:var(--muted)">The King waits. The garden holds its breath. Try again.</div>`;
-    chat.appendChild(el);
-    chat.scrollTop = chat.scrollHeight;
-  }
-}
-
-function checkChallenges(sceneKey, turnCount) {
-  // Speedwalker: reach kingdome-garden in <= 4 turns
-  if (sceneKey === "kingdome-garden" && turnCount <= 4 && !playerProgress.speedwalker) {
-    playerProgress.speedwalker = true;
-    saveProgress();
-    awardPrize("speedwalker-badge");
-  }
-  // Lorekeeper: visit all sub-doors
-  const required = ["storybook","cloverfield","kingdome-garden"];
-  if (required.every(s => playerProgress.visited?.includes(s)) && !playerProgress.lorekeeper) {
-    playerProgress.lorekeeper = true;
-    saveProgress();
-    awardPrize("lorekeeper-badge");
-  }
-  // Xenon Navigator
-  if (playerProgress.visited?.includes("xenon-convergence") && playerProgress.visited?.includes("end-of-time") && !playerProgress.xenonNavigator) {
-    playerProgress.xenonNavigator = true;
-    saveProgress();
-    awardPrize("xenon-navigator-badge");
-  }
-}
-
 function updateQuickChips(doors) {
   const bar = document.getElementById("choice-bar");
   const btns = document.getElementById("choice-buttons");
