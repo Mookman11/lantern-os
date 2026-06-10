@@ -746,21 +746,18 @@ function engineChoose(label) {
 
 // ── Game actions ─────────────────────────────────────────────────
 async function getSceneData(action, label) {
-  // Step 1: game state — server Python engine or inline JS fallback
+  // Step 1: always try the live server first
   let data;
   let usedServer = false;
   try {
-    if (serverAvailable) {
-      data = await apiDoors(action, label);
-      // Validate server response: must have scene_key and doors array
-      if (!data || data.error || !data.scene_key || !Array.isArray(data.doors)) {
-        console.warn("[Three Doors] Server returned invalid data, falling back to inline:", data);
-        throw new Error("invalid server response");
-      }
-      usedServer = true;
-    } else throw new Error("offline");
+    data = await apiDoors(action, label);
+    // Light validation: just need a scene_key
+    if (!data || data.error || !data.scene_key) {
+      throw new Error("invalid server response");
+    }
+    usedServer = true;
   } catch (e) {
-    console.warn("[Three Doors] Using inline fallback:", e.message);
+    console.warn("[Three Doors] Server unavailable, using inline fallback:", e.message);
     data = action === "start" ? engineStart() : engineChoose(label);
   }
   if (!data) return null;
