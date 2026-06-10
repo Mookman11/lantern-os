@@ -2,30 +2,14 @@
   "pcsf_type": "settings",
   "pcsf_version": "1.0.0",
   "component": "settings",
-  "description": "Runtime configuration layer. Stores user preferences, feature flags, and system defaults for the Lantern OS cockpit.",
+  "description": "Runtime configuration layer. Tracks env-var presence for Lantern OS features.",
   "generated_at": "2026-06-05T00:00:00Z",
   "state": "available",
-  "settings": {
-    "ui": {
-      "theme": "dark",
-      "font_size": "medium",
-      "chat_fullwidth": true,
-      "observer_panel_enabled": true
-    },
-    "llm": {
-      "default_provider": "anthropic",
-      "fallback_chain": ["anthropic", "openai", "gemini"],
-      "stream_enabled": true,
-      "timeout_seconds": 60
-    },
-    "journal": {
-      "autosave": true,
-      "max_entries_per_page": 50,
-      "default_entry_type": "dream"
-    },
-    "security": {
-      "local_only_default": true,
-      "mcp_loopback_only": true
-    }
-  }
+  "settings": [
+    { "key": "ANTHROPIC_API_KEY", "state": "absent" },
+    { "key": "OPENAI_API_KEY", "state": "absent" },
+    { "key": "GEMINI_API_KEY", "state": "absent" },
+    { "key": "DISCORD_TOKEN", "state": "absent" },
+    { "key": "KALSHI_API_KEY_ID", "state": "absent" }
+  ]
 }
