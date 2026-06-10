@@ -47,7 +47,7 @@ A Doorwalker who returns to the Garden and answers truly wins the game. Converge
 6. 🏙️ **Sigil — City of Doors** — every door leads here
 7. 🌫️ **Fog Door Return** — the way back to the Garden and the King's question
 
-The fox walks with the Doorwalker through all of it, gaining tails at convergence points — five tails at the Xenon Starship, merging with the player at End-of-Time.
+Lantern walks with the Doorwalker through all of it as guide, gaining flames at convergence points — five flames at the Xenon Starship, merging with the player at End-of-Time. Keystone narrates the journey.
 
 ## Truth
 
