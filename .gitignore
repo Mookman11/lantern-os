@@ -22,6 +22,15 @@ data/dream_journal/*.jsonl
 # Discord subscriber data
 data/discord/subscribers.json
 
+# Legacy three-doors JSON state (replaced by CSF v07 — see data/csf/)
+data/discord/three-doors/*.json
+
+# Player CSF files — private ImagniVerse state (local only)
+data/csf/*.csf
+
+# Large local media (archived in D:\tmp / Google Drive)
+apps/lantern-garage/public/data/video/*.mp4
+
 # ─── Training outputs (review locally before promotion) ───────────────────────
 data/training/**/*.jsonl
 data/training/**/*.json
@@ -117,6 +126,12 @@ data/provenance/
 manifests/evidence/convergence-*.json
 convergence-output.json
 data/pcsf/convergance-receipts.jsonl
+
+# ─── Large model weights (never commit binary model files to git) ───────
+models/csf-image/merged/
+models/**/*.safetensors
+models/**/*.bin
+models/**/*.pt
 
 # ─── Machine Learning Models & Training (2026-06-08) ───────────────────
 # Generated door images from LoRA training

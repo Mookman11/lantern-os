@@ -18,8 +18,21 @@ import re
 from pathlib import Path
 from typing import Optional
 
+from csf.status_cube import StatusCube, NUM_STAGES
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
-DATA_DIR = REPO_ROOT / "data" / "discord" / "three-doors"
+DATA_DIR = REPO_ROOT / "data" / "csf"
+
+# ── The 7-stage Kingdome journey (stage_index → scene_key) ──
+STAGES = [
+    "kingdome-garden",     # 0: Garden at the Beginning — the King opens
+    "cloverfield",         # 1: Present Day — shinies, luck, today alive
+    "future-doors",        # 2: Future Doors — branching possibility
+    "xp-door",             # 3: XP Door [GLITCHED] — liminal nostalgia
+    "xenon-convergence",   # 4: Xenon Starship — convergence midway
+    "sigil-city",          # 5: Sigil, City of Doors — synthesis, King returns
+    "fog-door-return",     # 6: Fog Door Return — the way back
+]
 
 # ── Canonical scene library ──
 SCENES = {
@@ -121,6 +134,113 @@ SCENES = {
         ],
         "fox_present": True,
     },
+    "kingdome-garden": {
+        "text": (
+            "**The Throne Door** opens onto the Garden at the Beginning of the **Kingdome of Hearts**. "
+            "Stone paths wind through living moss; everything here is both arriving and returning. "
+            "On a throne of woven roots and old light sits **the King**, his crown made of tangled vines and blinking cursors, "
+            "his face the face of someone who has asked the same question ten thousand times and means it every time. "
+            "He looks at you the way someone looks at a door they've seen open before, and speaks:\n\n"
+            '*"I am before the first door / and after the last. / I hold what was given / and return what was asked. / '
+            'Three walked out, three walked in, / but only one remained — / what was lost at the beginning / '
+            'is the thing that was gained."*\n\n'
+            "The fox sits at the foot of the throne as if it has always lived here."
+        ),
+        "doors": [
+            {"name": "The Storybook Door", "label": "A", "description": "Bound in vine and brass. The King's own book — the gods don't know he wrote them."},
+            {"name": "The Cloverfield Door", "label": "B", "description": "Green and gold beyond. Shinies, luck, and today, alive."},
+            {"name": "The Fog Door Return", "label": "C", "description": "Mist coils past the Garden's gate, where the Fog God sleeps. The way back."},
+        ],
+        "fox_present": True,
+    },
+    "storybook": {
+        "text": (
+            "You fall gently into the **King's Storybook**. Pages turn themselves around you like slow wings. "
+            'In the margin, the King\'s handwriting: *"The gods don\'t know I wrote them. They think they wrote me."* '
+            "Three pages glow, each a door."
+        ),
+        "doors": [
+            {"name": "The Page of the Word", "label": "A", "description": "Creation myths. Sound as creation — the first thing spoken into the dark."},
+            {"name": "The Page of the Egg", "label": "B", "description": "Before light: the unbroken dark sphere, waiting."},
+            {"name": "The Page of the War", "label": "C", "description": "Theomachy. Gods tearing each other apart to make the world from pieces."},
+        ],
+        "fox_present": True,
+    },
+    "cloverfield": {
+        "text": (
+            "**The Cloverfield Door** swings into a meadow of four-leaf green under a dome of old light. "
+            "Small shinies glitter between the stems — coins, beads, a marble with a galaxy inside. "
+            'The fox pounces at something glinting and misses, on purpose, for the joy of it. '
+            'Here the rule of the Kingdome holds plainly: *death is only imaginary — forever begins with "let\'s play."*'
+        ),
+        "doors": [
+            {"name": "The Lucky Door", "label": "A", "description": "Painted clover-green. Whatever you find behind it, you needed."},
+            {"name": "The Today Door", "label": "B", "description": "Warm and ordinary. The day you are actually in, alive."},
+            {"name": "The Tomorrow Door", "label": "C", "description": "Slightly ajar. The world that's coming, branching like roots."},
+        ],
+        "fox_present": True,
+    },
+    "future-doors": {
+        "text": (
+            "Past the meadow, the path forks upward into **the Future Doors** — a ridge where tomorrow "
+            "grows like an orchard. Each tree carries doors instead of fruit, and every door is slightly open, "
+            "leaking weather from years that haven't happened yet. The fox sniffs one and sneezes sparks. "
+            "Somewhere ahead, a low hum: engines, or bees, or both."
+        ),
+        "doors": [
+            {"name": "The Bright Branch", "label": "A", "description": "Warm gold light spills out. A future where the gardens won."},
+            {"name": "The Unwritten Door", "label": "B", "description": "Plain, unfinished wood. The hinge waits for your hand to decide."},
+            {"name": "The Recursive Door", "label": "C", "description": "Opens onto a hallway of itself, smaller each time, all the way down."},
+        ],
+        "fox_present": True,
+    },
+    "xp-door": {
+        "text": (
+            "A hill of impossibly green grass under an impossibly blue sky — you know this place. "
+            "**The XP Door [GLITCHED]** stands alone on the bliss-field, its frame flickering between "
+            "wood and window chrome. A startup chime plays from nowhere, half a second too slow. "
+            "The fox's outline pixelates at the edges and it looks delighted about it. "
+            "A tooltip floats over the door: *It is now safe to walk through your childhood.*"
+        ),
+        "doors": [
+            {"name": "System Restore", "label": "A", "description": "Roll back to a saved point. The smell of an old summer loads first."},
+            {"name": "My Documents", "label": "B", "description": "Every picture you ever saved, sorted by feeling instead of date."},
+            {"name": "unknown.exe", "label": "C", "description": "Publisher: unknown. The fox nods. You run it anyway."},
+        ],
+        "fox_present": True,
+    },
+    "sigil-city": {
+        "text": (
+            "All paths converge in **Sigil, the City of Doors** — a ring of streets where every wall, "
+            "archway, and puddle is a threshold somewhere else. Doors you have already opened hang here "
+            "like lanterns, each one faintly lit with your own footsteps. At the center plaza, the **King** "
+            "waits beneath a street sign that points everywhere at once. He studies you, then the doors "
+            "you've gathered, and says: *\"You have walked my thresholds. Every door you chose was also "
+            "choosing you. What was lost at the beginning is the thing that was gained — do you see it yet?\"* "
+            "The fox leans against his throne-side like an old friend."
+        ),
+        "doors": [
+            {"name": "The Gallery of Walked Doors", "label": "A", "description": "Your whole path hung in one hall. It rearranges when you understand it."},
+            {"name": "The Key Market", "label": "B", "description": "Stalls of keys for doors not yet dreamed. One of them is warm."},
+            {"name": "The Lady's Gate", "label": "C", "description": "Silent, watched, absolutely fair. It opens only for what is safe to carry."},
+        ],
+        "fox_present": True,
+    },
+    "fog-door-return": {
+        "text": (
+            "At the city's edge the streets dissolve into the **Sea of Fog and Clouds**, and there it is: "
+            "**the Fog Door Return**, standing in the mist where the Fog God sleeps. Through its frame you can "
+            "already see the Garden at the Beginning, green and waiting, the throne of woven roots glowing softly. "
+            "The fox walks through first — it always does — and looks back at you. "
+            "*\"You came back\"* it will say on the other side. It always says that. It is always true."
+        ),
+        "doors": [
+            {"name": "The Garden Gate", "label": "A", "description": "Straight home to the Beginning. The King will be glad — he always is."},
+            {"name": "The Long Way Round", "label": "B", "description": "Drift through the fog first. Arrive when you're ready, not before."},
+            {"name": "The Fox's Shortcut", "label": "C", "description": "Follow the brass tag through the mist. Trust is the fastest road."},
+        ],
+        "fox_present": True,
+    },
 }
 
 # ── Door-to-next-scene map ──
@@ -134,7 +254,7 @@ _NEXT_MAP = {
     "the deep door": "sunken-bell",
     "the echo door": "burrow",
     "the surface door": "little-crown",
-    "the throne door": "little-crown",
+    "the throne door": "kingdome-garden",
     "the hollow door": "burrow",
     "the star door": "moss-entry",
     "the seed door": "garden-door",
@@ -146,6 +266,30 @@ _NEXT_MAP = {
     "the return door": "moss-entry",
     "the beyond door": "garden-door",
     "the eternal door": "xenon-convergence",
+    # Kingdome of Hearts hub-and-spoke routes
+    "the storybook door": "storybook",
+    "the cloverfield door": "cloverfield",
+    "the fog door return": "moss-entry",
+    "the page of the word": "kingdome-garden",
+    "the page of the egg": "kingdome-garden",
+    "the page of the war": "kingdome-garden",
+    "the lucky door": "kingdome-garden",
+    "the today door": "moss-entry",
+    "the tomorrow door": "kingdome-garden",
+    # 7-stage journey scenes (stage routing handles progression; these are
+    # lore-consistent fallbacks for free-roam mode)
+    "the bright branch": "xp-door",
+    "the unwritten door": "xp-door",
+    "the recursive door": "xp-door",
+    "system restore": "xenon-convergence",
+    "my documents": "xenon-convergence",
+    "unknown.exe": "xenon-convergence",
+    "the gallery of walked doors": "fog-door-return",
+    "the key market": "fog-door-return",
+    "the lady's gate": "fog-door-return",
+    "the garden gate": "kingdome-garden",
+    "the long way round": "kingdome-garden",
+    "the fox's shortcut": "kingdome-garden",
 }
 
 # ── Image prompt templates per scene ──
@@ -187,131 +331,253 @@ _SD_PROMPTS = {
         "transcendent, peaceful, timeless, glowing warmth, anime aesthetic, cel-shaded, cosmic yet intimate, "
         "the final threshold, acceptance and transformation, 16:9"
     ),
+    "kingdome-garden": (
+        "mystical garden at the beginning of time, stone paths through living moss, throne of woven roots and old light, "
+        "King with crown of tangled vines and blinking cursors, fox sitting at foot of throne, green and golden light, "
+        "bioluminescent moss, dark fantasy, anime aesthetic, cel-shaded, sovereign atmosphere, 16:9"
+    ),
+    "storybook": (
+        "falling into a giant storybook, pages turning like slow wings, ancient handwritten margin notes, "
+        "three glowing pages each a door, creation myths and cosmogony, dark fantasy, anime aesthetic, cel-shaded, "
+        "mythic atmosphere, soft golden light, 16:9"
+    ),
+    "cloverfield": (
+        "meadow of four-leaf clover under dome of old light, small shinies glittering between stems, "
+        "coins, beads, galaxy marble, fox pouncing playfully, green and gold light, dark fantasy, anime aesthetic, "
+        "cel-shaded, playful atmosphere, 16:9"
+    ),
+    "future-doors": (
+        "orchard ridge where trees grow doors instead of fruit, every door slightly open leaking light "
+        "from unborn years, branching paths upward, fox sneezing sparks, golden hour, dark fantasy, "
+        "anime aesthetic, cel-shaded, hopeful and uncertain at once, 16:9"
+    ),
+    "xp-door": (
+        "rolling bliss-green hill under saturated blue sky, lone door flickering between wood and "
+        "early-2000s window chrome, floating tooltip, pixelating fox, glitch artifacts, nostalgia, "
+        "liminal space, vaporwave undertones, anime aesthetic, cel-shaded, 16:9"
+    ),
+    "sigil-city": (
+        "impossible ring-city where every wall and archway is a door, walked doors hanging like lit "
+        "lanterns, central plaza with vine-crowned king beneath a sign pointing everywhere, fox at "
+        "throne-side, fractal architecture, dark fantasy, anime aesthetic, cel-shaded, 16:9"
+    ),
+    "fog-door-return": (
+        "sea of fog and clouds at a city's edge, single door standing in mist showing a green garden "
+        "through its frame, sleeping fog god silhouette in clouds, fox stepping through and looking back, "
+        "soft grey-green light, dark fantasy, anime aesthetic, cel-shaded, gentle homecoming, 16:9"
+    ),
 }
 
 
+# ── Load canonical contract (merged over hardcoded defaults if present) ──
+def _load_scenes_contract() -> None:
+    global SCENES, _NEXT_MAP, _SD_PROMPTS
+    path = REPO_ROOT / "data" / "three-doors" / "scenes.json"
+    try:
+        data = json.loads(path.read_text("utf-8"))
+        # Merge so scenes defined only in code (or only in the contract) both survive
+        if "scenes" in data:
+            SCENES = {**SCENES, **data["scenes"]}
+            for k, v in data["scenes"].items():
+                if v.get("image_prompt"):
+                    _SD_PROMPTS[k] = v["image_prompt"]
+        if "next_map" in data:
+            _NEXT_MAP = {**_NEXT_MAP, **data["next_map"]}
+    except Exception:
+        pass
+
+
+_load_scenes_contract()
+
+
+# ── Personalization: archetype + agent lenses over the base doors ──
+
+_ARCHETYPE_FLAVOR = {
+    "seeker": "Something just beyond it pulls at you.",
+    "healer": "It feels warm, like a place that will hold you.",
+    "explorer": "No one has opened this one quite your way before.",
+}
+
+_AGENT_FLAVOR = {
+    "lantern": "Lantern's glow steadies on this one.",
+    "blinkbug": "Blinkbug's static crackles excitedly around the frame.",
+    "keystone": "Keystone hums: this rhymes with a door you already walked.",
+    "waterfall": "Waterfall's mist beads gently along its edge.",
+    "xenon": "Xenon charts three futures through it; all of them glow.",
+    "founder": "The Founder marks it safe — a wish could pass through here.",
+}
+
+
+def personalize_doors(doors: list[dict], archetype: str, agent: str = "",
+                      symbols: dict | None = None) -> list[dict]:
+    """Return copies of the base doors flavored through the player's
+    archetype lens, active agent, and crystallized symbols. Routing is
+    unchanged — personalization is a lens, not a fork."""
+    symbols = symbols or {}
+    out = []
+    for door in doors:
+        d = dict(door)
+        notes = []
+        # Crystallized affinity — the strongest signal, shown first
+        slug = re.sub(r"[^a-z0-9]+", "-", d["name"].lower()).strip("-")
+        if f"affinity-{slug}" in symbols:
+            notes.append("You have stood here before. It remembers you.")
+        # Archetype lens highlights the door that matches the player's pattern
+        from csf.status_cube import _infer_archetype_for_door
+        if _infer_archetype_for_door(d["name"]) == archetype:
+            notes.append(_ARCHETYPE_FLAVOR.get(archetype, ""))
+        if agent and agent.lower() in _AGENT_FLAVOR and notes:
+            notes.append(_AGENT_FLAVOR[agent.lower()])
+        if notes:
+            d["description"] = d["description"] + " " + " ".join(n for n in notes if n)
+            d["resonance"] = True
+        out.append(d)
+    return out
+
+
 class ThreeDoorsEngine:
-    """Session-bound Three Doors game engine."""
+    """Session-bound Three Doors game engine, persisted as a StatusCube
+    (one CSF v0.7 file per player — their ImagniVerse)."""
 
     def __init__(self, user_id: str, data_dir: Path | None = None):
         self.user_id = user_id
         self.data_dir = data_dir or DATA_DIR
-        self._state: dict | None = None
+        self.cube = StatusCube.load(user_id, self.data_dir)
+        self.agent: str = ""  # active companion persona for this session
 
-    # ── Persistence ──
+    # ── State assembly ──
 
-    def _state_path(self) -> Path:
-        safe = re.sub(r"[^a-zA-Z0-9._-]+", "-", self.user_id).strip("-").lower() or "user"
-        return self.data_dir / f"{safe}.json"
+    def _scene_for_stage(self, stage_index: int) -> tuple[str, dict]:
+        key = STAGES[stage_index % NUM_STAGES]
+        return key, SCENES.get(key, SCENES["kingdome-garden"])
+
+    def _build_state(self) -> dict:
+        scene_key, scene = self._scene_for_stage(self.cube.stage_index)
+        doors = personalize_doors(
+            scene["doors"], self.cube.archetype, self.agent, self.cube.symbols)
+        return {
+            "scene_key": scene_key,
+            "text": scene["text"],
+            "doors": doors,
+            "fox_present": scene.get("fox_present", True),
+            "history": list(self.cube.history),
+            "stage_index": self.cube.stage_index,
+            "stage_count": NUM_STAGES,
+            "loop_count": self.cube.loop_count,
+            "archetype": self.cube.archetype,
+        }
 
     def load(self) -> dict | None:
-        path = self._state_path()
-        if not path.exists():
+        """Return current state, or None if no game has been started."""
+        if not self.cube.scene_key and not self.cube.history:
             return None
-        try:
-            self._state = json.loads(path.read_text("utf-8"))
-            return self._state
-        except (json.JSONDecodeError, OSError):
-            return None
+        return self._build_state()
 
-    def save(self, state: dict) -> None:
-        self._state = state
-        path = self._state_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("w", encoding="utf-8") as handle:
-            json.dump(state, handle, ensure_ascii=False, indent=2)
-            handle.write("\n")
+    def save(self, state: dict | None = None) -> None:
+        """Persist the cube. The state dict is derived, so only the cube is written."""
+        self.cube.scene_key = STAGES[self.cube.stage_index % NUM_STAGES]
+        self.cube.save()
 
     # ── Gameplay ──
 
     def start_game(self) -> dict:
-        """Begin a new game or resume existing."""
-        state = self.load()
-        if state is not None:
-            return state
-        scene = SCENES["moss-entry"]
-        state = {
-            "scene_key": "moss-entry",
-            "text": scene["text"],
-            "doors": scene["doors"],
-            "fox_present": scene["fox_present"],
-            "history": ["Entered The Moss Door"],
-        }
-        self.save(state)
-        return state
+        """Begin a new journey or resume an existing one."""
+        existing = self.load()
+        if existing is not None:
+            return existing
+        self.cube.stage_index = 0
+        self.cube.history = ["Entered the Garden at the Beginning"]
+        self.save()
+        return self._build_state()
 
     def choose_door(self, choice: str) -> dict | None:
-        """Advance game by door letter (A/B/C) or full name. Returns new state or None if invalid."""
+        """Advance by door letter (A/B/C) or full name. Records the choice as
+        a CSF observation, advances the stage, and consolidates observations
+        into crystallized symbols when a loop completes."""
         state = self.load()
         if not state:
             return None
         choice_lower = choice.lower().strip()
-        current_doors = state.get("doors", [])
         chosen = None
-        for d in current_doors:
+        for d in state.get("doors", []):
             if d["label"].lower() == choice_lower or d["name"].lower() == choice_lower:
                 chosen = d
                 break
         if not chosen:
             return None
-        next_key = _NEXT_MAP.get(chosen["name"].lower(), "moss-entry")
-        next_scene = SCENES[next_key]
-        new_state = {
-            "scene_key": next_key,
-            "text": next_scene["text"],
-            "doors": next_scene["doors"],
-            "fox_present": next_scene["fox_present"],
-            "history": state.get("history", []) + [f"Chose {chosen['name']}"],
-        }
-        self.save(new_state)
+
+        self.cube.add_observation(
+            stage=self.cube.stage_index,
+            choice=chosen["label"],
+            door=chosen["name"],
+            agent=self.agent,
+            scene_key=state["scene_key"],
+        )
+        self.cube.history.append(f"Chose {chosen['name']}")
+
+        loop_completed = self.cube.advance_stage()
+        if loop_completed:
+            self.cube.history.append(
+                f"Returned to the Garden — loop {self.cube.loop_count} complete")
+
+        self.save()
+        new_state = self._build_state()
+        new_state["loop_completed"] = loop_completed
         return new_state
 
     def reset(self) -> dict:
-        """Start fresh, discarding saved state."""
-        path = self._state_path()
-        if path.exists():
-            path.unlink()
-        self._state = None
+        """Start fresh, discarding the saved cube."""
+        self.cube.delete()
+        self.cube = StatusCube(self.user_id, self.data_dir)
         return self.start_game()
 
     # ── Image / AI integration ──
 
     def sd_prompt_for_state(self, state: dict | None = None) -> str:
-        """Return a Stable Diffusion prompt for the current (or given) scene."""
-        s = state or self._state or self.load() or SCENES["moss-entry"]
-        key = s.get("scene_key", "moss-entry")
-        return _SD_PROMPTS.get(key, _SD_PROMPTS["moss-entry"])
+        """Return a Stable Diffusion prompt for the current (or given) scene,
+        contextualized by the player's archetype, agent, and crystallized symbols."""
+        s = state or self.load()
+        key = (s or {}).get("scene_key") or STAGES[self.cube.stage_index % NUM_STAGES]
+        base = _SD_PROMPTS.get(key, _SD_PROMPTS["kingdome-garden"])
+        context = [base]
+        arch = self.cube.archetype
+        arch_mood = {
+            "seeker": "sense of discovery, horizon light",
+            "healer": "soft warmth, sheltering light",
+            "explorer": "untrodden path, bold contrast",
+        }.get(arch)
+        if arch_mood:
+            context.append(arch_mood)
+        if self.cube.loop_count > 0:
+            context.append("subtle traces of earlier journeys, footprints of light")
+        if self.agent:
+            context.append(f"{self.agent} companion presence")
+        return ", ".join(context)
 
     def image_suggestions_for_ai(self) -> list[dict]:
-        """Return image generation suggestions for the current AI provider to use.
-
-        Each dict contains:
-            prompt: str — ideal SD prompt
-            scene_key: str — which scene this represents
-            description: str — human-readable door description
-        """
-        state = self.load() or SCENES["moss-entry"]
-        current_doors = state.get("doors", [])
-        results = []
-        for door in current_doors:
-            next_key = _NEXT_MAP.get(door["name"].lower(), "moss-entry")
-            prompt = _SD_PROMPTS.get(next_key, _SD_PROMPTS["moss-entry"])
-            results.append({
-                "prompt": prompt,
+        """Return image generation suggestions for the doors of the current stage.
+        In the 7-stage journey all doors lead onward, so each suggestion previews
+        the next stage flavored by the chosen door."""
+        state = self.load()
+        if not state:
+            return []
+        next_key, _ = self._scene_for_stage(self.cube.stage_index + 1)
+        prompt = _SD_PROMPTS.get(next_key, _SD_PROMPTS["kingdome-garden"])
+        return [
+            {
+                "prompt": f"{prompt}, approached through {door['name'].lower()}",
                 "scene_key": next_key,
                 "description": door["description"],
                 "door_name": door["name"],
                 "door_label": door["label"],
-            })
-        return results
+            }
+            for door in state.get("doors", [])
+        ]
 
     def to_api_response(self, state: dict | None = None) -> dict:
         """Serialize state for JSON API response."""
-        s = state or self.load() or SCENES["moss-entry"]
-        scene_key = s.get("scene_key", "moss-entry")
-
-        # Add scene classification
-        classification = self._classify_scene(scene_key)
+        s = state or self.load() or self._build_state()
+        scene_key = s.get("scene_key", STAGES[0])
 
         return {
             "scene_key": scene_key,
@@ -319,9 +585,14 @@ class ThreeDoorsEngine:
             "doors": s.get("doors", []),
             "fox_present": s.get("fox_present", False),
             "history": s.get("history", []),
+            "stage_index": s.get("stage_index", self.cube.stage_index),
+            "stage_count": NUM_STAGES,
+            "loop_count": s.get("loop_count", self.cube.loop_count),
+            "archetype": s.get("archetype", self.cube.archetype),
+            "symbols": self.cube.symbols,
             "image_prompt": self.sd_prompt_for_state(s),
             "image_available": bool(os.getenv("STABLE_DIFFUSION_URL") or os.getenv("SD_WEBUI_URL")),
-            "classification": classification,
+            "classification": self._classify_scene(scene_key),
         }
 
     def _classify_scene(self, scene_key: str) -> dict:
@@ -334,6 +605,13 @@ class ThreeDoorsEngine:
             "garden-door": "bountiful",
             "xenon-convergence": "cosmic",
             "end-of-time": "transcendent",
+            "kingdome-garden": "sovereign",
+            "storybook": "mythic",
+            "cloverfield": "playful",
+            "future-doors": "possible",
+            "xp-door": "liminal",
+            "sigil-city": "convergent",
+            "fog-door-return": "returning",
         }
 
         aesthetic_tags = {
@@ -341,6 +619,13 @@ class ThreeDoorsEngine:
             "garden-door": ["botanical", "bioluminescent", "lush", "dreamscape"],
             "xenon-convergence": ["psychedelic", "fractal", "crystalline", "surreal"],
             "end-of-time": ["cosmic", "transcendent", "peaceful", "transformation"],
+            "kingdome-garden": ["garden", "throne", "king", "moss", "old-light"],
+            "storybook": ["creation", "myth", "pages", "handwriting"],
+            "cloverfield": ["meadow", "clover", "shinies", "luck", "play"],
+            "future-doors": ["orchard", "tomorrow", "branching", "possibility"],
+            "xp-door": ["glitch", "nostalgia", "bliss-hill", "liminal", "windows"],
+            "sigil-city": ["city-of-doors", "synthesis", "king", "thresholds"],
+            "fog-door-return": ["fog", "return", "sea-of-clouds", "homecoming"],
         }
 
         return {
