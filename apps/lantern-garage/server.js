@@ -79,6 +79,7 @@ const routes = [
   require("./routes/keystone"),
   require("./routes/image"),
   require("./routes/flourishing"),
+  require("./routes/claims"),
   require("./routes/surfaces"),
 ];
 
