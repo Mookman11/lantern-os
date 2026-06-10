@@ -303,7 +303,8 @@ class UnifiedAgentConnector:
                     req.add_header(k, v)
         return urllib.request.urlopen(req, timeout=timeout)
 
-    def stream(self, message: str, persona_id: Optional[str] = None, provider: Optional[str] = None, context: Optional[str] = None, temperature: Optional[float] = None, max_tokens: Optional[int] = None):
+    def stream(self, message: str, persona_id: Optional[str] = None, provider: Optional[str] = None, context: Optional[str] = None, temperature: Optional[float] = None, max_tokens: Optional[int] = None, fallback: bool = True):
+        """Stream a single response. If fallback=False, only tries the requested provider once."""
         persona = self._personas.get(persona_id or random.choice(list(self._personas.keys())), PERSONAS[0])
         system = self._build_system(persona, context)
         providers = self._rank_providers(provider)
@@ -316,8 +317,6 @@ class UnifiedAgentConnector:
             if isinstance(health, str) and health.startswith("unhealthy"):
                 continue
             try:
-                # Hooks are not used for streaming — caching/retry logic is incompatible
-                # with generators. The hook system is reserved for discrete tool calls.
                 result = self._stream_provider(prov_name, cfg, system, message, temperature, max_tokens)
                 if result is not None:
                     yield from result
@@ -325,11 +324,51 @@ class UnifiedAgentConnector:
             except Exception as exc:
                 last_error = f"{prov_name}: {exc}"
                 self._health[prov_name] = {"status": f"unhealthy: {exc}", "at": datetime.now(timezone.utc).isoformat()}
+                if not fallback:
+                    raise  # singular stream — no retry chain
                 continue
         offline_reply = self._offline_reply(persona, message)
         for word in offline_reply.split():
             yield word + " "
         return {"source": "offline", "provider": "offline", "persona": persona.id, "error": last_error or "all_providers_failed"}
+
+    def batch_stream(self, tasks: List[Dict[str, Any]]) -> Generator[Dict[str, Any], None, None]:
+        """Run multiple (message, persona, provider) units in parallel. Each yields one result dict."""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        def _run_one(task: Dict[str, Any]) -> Dict[str, Any]:
+            tid = task.get("id", "unknown")
+            try:
+                out = []
+                meta = {}
+                gen = self.stream(
+                    message=task["message"],
+                    persona_id=task.get("persona"),
+                    provider=task.get("provider"),
+                    context=task.get("context"),
+                    temperature=task.get("temperature"),
+                    max_tokens=task.get("max_tokens"),
+                    fallback=False,
+                )
+                for token in gen:
+                    if isinstance(token, str):
+                        out.append(token)
+                    elif isinstance(token, dict):
+                        meta = token
+                return {
+                    "id": tid,
+                    "text": "".join(out).strip(),
+                    "provider": meta.get("provider", task.get("provider", "unknown")),
+                    "source": meta.get("source", "stream"),
+                    "persona": task.get("persona", "lantern"),
+                    "ok": True,
+                }
+            except Exception as exc:
+                return {"id": tid, "text": str(exc), "provider": task.get("provider", "unknown"), "source": "error", "ok": False, "error": str(exc)}
+
+        with ThreadPoolExecutor(max_workers=min(len(tasks), 6), thread_name_prefix="batch") as ex:
+            futures = {ex.submit(_run_one, t): t for t in tasks}
+            for future in as_completed(futures):
+                yield future.result(timeout=20)
 
     def _rank_providers(self, preferred: Optional[str]) -> List[str]:
         names = list(self._providers.keys())

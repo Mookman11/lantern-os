@@ -1547,6 +1547,26 @@ class TesseractEngine:
             with self._queue_lock:
                 self._queue_depth = max(0, self._queue_depth - 1)
 
+    def batch_converge(self, tasks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Run multiple convergence tasks in parallel. Each task gets one provider, one stream."""
+        from unified_agent_connector import get_connector
+        connector = get_connector()
+        batch_tasks = []
+        for i, t in enumerate(tasks):
+            batch_tasks.append({
+                "id": t.get("id", f"task-{i}"),
+                "message": t["message"],
+                "persona": t.get("persona", "lantern"),
+                "provider": t.get("provider"),
+                "context": t.get("context"),
+                "temperature": t.get("temperature"),
+                "max_tokens": t.get("max_tokens"),
+            })
+        results = []
+        for r in connector.batch_stream(batch_tasks):
+            results.append(r)
+        return results
+
     def _surface(self, ctx: ConvergenceContext, message: str) -> ConvergenceContext:
         # Fast-path persona cache using first 64 chars hash
         preview = message[:64].lower()
@@ -1690,7 +1710,7 @@ class TesseractEngine:
             out = []
             meta = {}
             context = self._build_core_context(ctx)
-            gen = connector.stream(message, persona_id=ctx.persona, provider=ctx.provider, context=context)
+            gen = connector.stream(message, persona_id=ctx.persona, provider=ctx.provider, context=context, fallback=False)
             while True:
                 try:
                     token = next(gen)
@@ -1702,6 +1722,8 @@ class TesseractEngine:
                     if exc.value and isinstance(exc.value, dict):
                         meta = exc.value
                     break
+                except Exception as exc:
+                    raise RuntimeError(f"Provider {ctx.provider or 'default'} failed: {exc}") from exc
             return {
                 "text": "".join(out),
                 "provider": meta.get("provider", "unknown"),
@@ -1878,6 +1900,9 @@ if __name__ == "__main__":
     p_converge.add_argument("--persona", default="lantern")
     p_converge.add_argument("--provider", default=None)
 
+    p_batch = sub.add_parser("batch")
+    p_batch.add_argument("--tasks", default=None, help="JSON file with list of {id,message,persona,provider}")
+
     p_inspect = sub.add_parser("inspect")
 
     p_loop = sub.add_parser("loop")
@@ -1900,6 +1925,19 @@ if __name__ == "__main__":
         engine = TesseractEngine()
         result = engine.converge(args.message, {"persona": args.persona, "provider": args.provider})
         print(json.dumps(result, indent=2))
+    elif args.command == "batch":
+        engine = TesseractEngine()
+        tasks = []
+        if args.tasks:
+            tasks = json.loads(Path(args.tasks).read_text(encoding="utf-8"))
+        else:
+            tasks = [
+                {"id": "a", "message": "Summarize Three Doors Kingdome integration", "persona": "lantern", "provider": "gemini"},
+                {"id": "b", "message": "List open issues for convergence engine", "persona": "keystone", "provider": "openai"},
+                {"id": "c", "message": "Check repository health metrics", "persona": "lantern", "provider": "anthropic"},
+            ]
+        results = engine.batch_converge(tasks)
+        print(json.dumps(results, indent=2))
     elif args.command == "inspect":
         engine = TesseractEngine()
         print(json.dumps(engine.inspect(), indent=2))
