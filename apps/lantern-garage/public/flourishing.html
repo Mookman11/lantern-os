@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#06b6d4">
   <link rel="manifest" href="/manifest.json">
-  <title>World Flourishing — Lantern OS</title>
+  <title>Dashboard</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -311,9 +311,9 @@
     Lantern OS
   </a>
   <div class="nav-links">
-    <a href="/dream-chat.html">Dream Journal</a>
-    <a href="/three-doors-game.html">Three Doors</a>
-    <a href="/flourishing" class="active">World Status</a>
+    <a href="/dream-chat.html">Journal</a>
+    <a href="/three-doors-game.html">Explore</a>
+    <a href="/flourishing" class="active">Dashboard</a>
     <a href="/knowledgecenter.html">Help</a>
   </div>
   <div class="nav-actions">
@@ -325,13 +325,46 @@
 
   <!-- ── Hero ── -->
   <div class="hero">
-    <span class="hero-icon">🌍</span>
-    <h1>Is the <span>world</span> flourishing?</h1>
-    <p class="tagline">Real data on human wellbeing, animal welfare, and ecosystem health. Updated with peer-reviewed research. Some trends are improving. Others need action.</p>
+    <span class="hero-icon">📊</span>
+    <h1>Your <span>Dashboard</span></h1>
+    <p class="tagline">Personal space, shared community, and reference data — all in one place. Private by default. Shared only when you choose.</p>
+  </div>
+
+  <!-- ── Cube Network ── -->
+  <p class="section-label" id="cubes">Your Spaces</p>
+  <div class="panels" id="cube-panels">
+    <div class="panel" onclick="location.href='/dream-chat.html'">
+      <span class="panel-icon">🔒</span>
+      <span class="panel-label">Private</span>
+      <h2>Personal Journal</h2>
+      <p>Your private space. Thoughts, reflections, and conversations. Never shared by default.</p>
+      <span class="panel-arrow" id="private-cube-status">Loading…</span>
+    </div>
+    <div class="panel" onclick="location.href='/flourishing'">
+      <span class="panel-icon">🌐</span>
+      <span class="panel-label">Shared</span>
+      <h2>Community Hub</h2>
+      <p>Shared with invited allies. Contains only approved claims and community-safe patterns.</p>
+      <span class="panel-arrow" id="shared-cube-status">Loading…</span>
+    </div>
+    <div class="panel">
+      <span class="panel-icon">👥</span>
+      <span class="panel-label">Network</span>
+      <h2>Allies</h2>
+      <p>People connected to your community hub. Each has their own private space.</p>
+      <span class="panel-arrow" id="allies-status">Loading…</span>
+    </div>
+    <div class="panel" onclick="location.href='/agent-status.html'">
+      <span class="panel-icon">📦</span>
+      <span class="panel-label">System</span>
+      <h2>Claim Packets</h2>
+      <p>Consented, signed packets ready for the shared hub. Review and approve before sharing.</p>
+      <span class="panel-arrow">Manage claims →</span>
+    </div>
   </div>
 
   <!-- ── World News (live) ── -->
-  <p class="section-label" id="news">World News — Live</p>
+  <p class="section-label" id="news">Reference Data — Live</p>
   <div class="info-section">
     <h3>Latest from primary sources <span id="newsUpdated" style="font-weight:400;font-size:0.75rem;color:var(--muted)"></span></h3>
     <div class="feature-list" id="newsList">
@@ -456,7 +489,7 @@
 <!-- ── Footer ── -->
 <footer class="site-footer">
   <div class="footer-inner">
-    <span><strong>Lantern OS</strong> · <a href="/">Home</a> · <a href="/dream-chat.html">Journal</a></span>
+    <span><strong>Lantern OS</strong> · <a href="/">Home</a> · <a href="/dream-chat.html">Journal</a> · <a href="/three-doors-game.html">Explore</a></span>
     <span style="margin-left: auto;">All sources linked. <a href="/knowledgecenter.html">Learn more</a></span>
   </div>
 </footer>
@@ -525,6 +558,40 @@
   function escapeHtml(s) { const div = document.createElement('div'); div.textContent = s; return div.innerHTML; }
   loadWorldNews();
   setInterval(loadWorldNews, 10 * 60 * 1000);
+
+  // ── Cube network status ──────────────────────────────────────────
+  async function loadCubeStatus() {
+    try {
+      const [localR, sharedR, alliesR] = await Promise.all([
+        fetch('/api/cubes/local').catch(() => null),
+        fetch('/api/cubes/shared').catch(() => null),
+        fetch('/api/cubes/allies').catch(() => null),
+      ]);
+      const local = localR?.ok ? await localR.json() : null;
+      const shared = sharedR?.ok ? await sharedR.json() : null;
+      const allies = alliesR?.ok ? await alliesR.json() : null;
+
+      const privateStatus = document.getElementById('private-cube-status');
+      const sharedStatus = document.getElementById('shared-cube-status');
+      const alliesStatus = document.getElementById('allies-status');
+
+      if (privateStatus) {
+        privateStatus.textContent = local
+          ? `${local.total_deltas || 0} entries · ${(local.recent_events || []).length} recent`
+          : 'Local only';
+      }
+      if (sharedStatus) {
+        sharedStatus.textContent = shared
+          ? `${shared.total_claims || 0} claims · ${shared.member_count || 1} member${(shared.member_count || 1) !== 1 ? 's' : ''}`
+          : 'Manual sync';
+      }
+      if (alliesStatus) {
+        const count = (allies?.allies || []).length;
+        alliesStatus.textContent = count > 0 ? `${count} connected` : 'Invite allies →';
+      }
+    } catch (e) { /* silent */ }
+  }
+  loadCubeStatus();
 
   // Smooth scroll for anchor links
   document.querySelectorAll('a[href^="#"]').forEach(link => {

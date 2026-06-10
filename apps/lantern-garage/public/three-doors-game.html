@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#06b6d4">
-<title>Three Doors — Lantern OS</title>
+<title>Explore</title>
 <link rel="stylesheet" href="css/dream-chat.css">
 <style>
   /* ── Override dream-chat.css scroll lock for this page ── */
@@ -163,10 +163,10 @@
   <!-- Header — matches dream-chat.html -->
   <header>
     <a class="back-link" href="/" title="Home">←</a>
-    <div class="agent-avatar">🚪</div>
+    <div class="agent-avatar">🧭</div>
     <div style="flex:1">
-      <div style="font-size:15px;font-weight:600;line-height:1.2">Three Doors</div>
-      <div id="status-line" style="font-size:11px;color:var(--muted)">Lantern will guide you through the dream world</div>
+      <div style="font-size:15px;font-weight:600;line-height:1.2">Explore</div>
+      <div id="status-line" style="font-size:11px;color:var(--muted)">An interactive story — make choices and see where they lead</div>
     </div>
     <button onclick="resetGame()" title="New game" style="background:none;border:1px solid var(--border);border-radius:7px;padding:5px 10px;color:var(--muted);cursor:pointer;font-size:12px;font-family:inherit">↺ New</button>
     <button id="theme-toggle" onclick="toggleTheme()" style="background:none;border:1px solid var(--border);border-radius:7px;padding:5px 10px;color:var(--muted);cursor:pointer;font-size:12px;font-family:inherit" title="Toggle theme">🌙</button>
@@ -175,10 +175,10 @@
   <!-- Chat area -->
   <div class="chat-container" id="chat">
     <div class="welcome-doors" id="welcome">
-      <div class="big-door">🚪</div>
-      <h2>Three Doors</h2>
-      <p>The Kingdome of Hearts. Lantern guides you from the Garden at the Beginning, through today and tomorrow, to the City of Doors — and back, while Keystone tells the tale. Seven stages, infinite returns.</p>
-      <button class="start-btn" onclick="startGame()">Enter the Garden</button>
+      <div class="big-door">🧭</div>
+      <h2>Explore</h2>
+      <p>An interactive story where your choices shape the path. Journey through seven stages, discover different worlds, and see where your decisions lead. Each playthrough is unique.</p>
+      <button class="start-btn" onclick="startGame()">Start Adventure</button>
     </div>
   </div>
 
@@ -461,7 +461,7 @@ async function checkServer() {
     clearTimeout(t);
   }
   document.getElementById("status-line").textContent = serverAvailable
-    ? "Lantern guides · Keystone narrates (local)"
+    ? "Local AI narrating · engine ready"
     : "Offline — inline engine active";
   return serverAvailable;
 }
@@ -891,15 +891,33 @@ async function startGame() {
   doorsLocked = false;
 }
 
+// ── Cube delta writer ────────────────────────────────────────────
+async function writeCubeDelta(eventType, symbols, payloadRef, extra) {
+  try {
+    await fetch('/api/cubes/alex/delta', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        source_surface: 'explore',
+        event_type: eventType,
+        symbols: symbols || [],
+        payload_ref: payloadRef || '',
+        coordinate: extra?.coordinate || '',
+      }),
+    });
+  } catch (e) { /* silent — cube is best-effort */ }
+}
+
 async function chooseDoor(label, name) {
   if (doorsLocked) return;
   doorsLocked = true;
 
   logThreeDoorsEvent("door_choice", { label, name, sceneKey: gameState?.scene_key });
+  writeCubeDelta('story_choice', [name.toLowerCase().replace(/\s+/g, '-')], 'explore:' + (gameState?.scene_key || ''), { coordinate: `explore:${gameState?.scene_key || ''}:${label}` });
 
   document.querySelectorAll(".door-chip, #choice-buttons button").forEach(b => b.disabled = true);
   document.getElementById("choice-bar").style.opacity = "0.4";
-  appendUserMsg(`Door ${label} — ${name}`);
+  appendUserMsg(`Choice ${label} — ${name}`);
   appendTyping();
 
   const result = await getSceneData("choose", label);
