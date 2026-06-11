@@ -282,9 +282,75 @@
   </div>
   <div class="nav-actions">
     <button class="nav-btn" id="theme-toggle" onclick="toggleTheme()" title="Toggle light / dark mode">☀</button>
+    <button class="nav-btn" id="settings-btn" onclick="openSettings()" title="API key settings">⚙️</button>
     <a class="nav-cta" href="/dream-chat.html">Open Journal</a>
   </div>
 </nav>
+
+<!-- ── API Settings Modal ── -->
+<div id="settings-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1000;overflow:auto">
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;max-width:500px;margin:60px auto;padding:24px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+      <h2 style="margin:0;font-size:1.3rem">API Key Settings</h2>
+      <button onclick="closeSettings()" style="background:none;border:none;color:var(--text);font-size:20px;cursor:pointer">✕</button>
+    </div>
+
+    <form id="settings-form" onsubmit="saveSettings(event)" style="display:flex;flex-direction:column;gap:16px">
+      <div style="padding:12px;background:var(--surface2);border-radius:8px;border-left:3px solid var(--accent);font-size:0.82rem;color:var(--muted)">
+        ℹ️ Keys are stored <strong>in memory only</strong> for this session. Add to <code>.env</code> file in repo root to persist.
+      </div>
+
+      <div>
+        <label style="display:block;font-size:0.75rem;font-weight:600;text-transform:uppercase;color:var(--muted);margin-bottom:6px">Anthropic API Key</label>
+        <input type="password" name="anthropic" placeholder="sk-ant-..." style="width:100%;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:0.9rem;box-sizing:border-box">
+        <div style="font-size:0.72rem;color:var(--muted);margin-top:4px" id="status-anthropic">Not configured</div>
+      </div>
+
+      <div>
+        <label style="display:block;font-size:0.75rem;font-weight:600;text-transform:uppercase;color:var(--muted);margin-bottom:6px">OpenAI API Key</label>
+        <input type="password" name="openai" placeholder="sk-..." style="width:100%;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:0.9rem;box-sizing:border-box">
+        <div style="font-size:0.72rem;color:var(--muted);margin-top:4px" id="status-openai">Not configured</div>
+      </div>
+
+      <div>
+        <label style="display:block;font-size:0.75rem;font-weight:600;text-transform:uppercase;color:var(--muted);margin-bottom:6px">Google Gemini API Key</label>
+        <input type="password" name="gemini" placeholder="AIza..." style="width:100%;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:0.9rem;box-sizing:border-box">
+        <div style="font-size:0.72rem;color:var(--muted);margin-top:4px" id="status-gemini">Not configured</div>
+      </div>
+
+      <div style="border-top:1px solid var(--border);padding-top:16px;margin-top:12px">
+        <h3 style="margin:0 0 12px;font-size:0.95rem;color:var(--text)">Broker Integrations</h3>
+
+        <div>
+          <label style="display:block;font-size:0.75rem;font-weight:600;text-transform:uppercase;color:var(--muted);margin-bottom:6px">Alpaca API Key</label>
+          <input type="password" name="alpaca" placeholder="PK..." style="width:100%;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:0.9rem;box-sizing:border-box;margin-bottom:8px">
+          <div style="font-size:0.72rem;color:var(--muted)" id="status-alpaca">Not configured</div>
+        </div>
+
+        <div style="margin-top:12px">
+          <label style="display:block;font-size:0.75rem;font-weight:600;text-transform:uppercase;color:var(--muted);margin-bottom:6px">KALSHI API Key</label>
+          <input type="password" name="kalshi" placeholder="kt_live_..." style="width:100%;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:0.9rem;box-sizing:border-box;margin-bottom:8px">
+          <div style="font-size:0.72rem;color:var(--muted)" id="status-kalshi">Not configured</div>
+        </div>
+
+        <div style="margin-top:12px">
+          <label style="display:block;font-size:0.75rem;font-weight:600;text-transform:uppercase;color:var(--muted);margin-bottom:6px">IBKR Account ID</label>
+          <input type="text" name="ibkr_account" placeholder="Your IBKR account ID" style="width:100%;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:0.9rem;box-sizing:border-box;margin-bottom:8px">
+          <label style="display:block;font-size:0.75rem;font-weight:600;text-transform:uppercase;color:var(--muted);margin-bottom:6px">IBKR Password</label>
+          <input type="password" name="ibkr_password" placeholder="Your IBKR password" style="width:100%;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:0.9rem;box-sizing:border-box;margin-bottom:8px">
+          <div style="font-size:0.72rem;color:var(--muted)" id="status-ibkr">Not configured</div>
+        </div>
+      </div>
+
+      <div id="settings-message" style="display:none;padding:10px;border-radius:6px;font-size:0.82rem"></div>
+
+      <div style="display:flex;gap:12px;margin-top:16px">
+        <button type="submit" style="flex:1;padding:12px;background:var(--accent);color:var(--bg);border:none;border-radius:6px;font-weight:600;cursor:pointer">Save Keys</button>
+        <button type="button" onclick="closeSettings()" style="flex:1;padding:12px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;font-weight:600;cursor:pointer">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
 
 <div class="page">
   <header style="margin-bottom: 28px;">
@@ -802,6 +868,97 @@ function startDashboard(){
 document.addEventListener('DOMContentLoaded', () => {
   new TradingDashboard().init();
   startDashboard();
+  loadSettingsStatus();
+});
+
+// ── API Settings Modal Functions ──────────────────────────────────────────
+function openSettings() {
+  document.getElementById('settings-modal').style.display = 'flex';
+  document.getElementById('settings-modal').style.alignItems = 'flex-start';
+}
+
+function closeSettings() {
+  document.getElementById('settings-modal').style.display = 'none';
+  document.getElementById('settings-message').style.display = 'none';
+}
+
+async function loadSettingsStatus() {
+  try {
+    const res = await fetch('/api/trading/settings');
+    const data = await res.json();
+    if (data.configured) {
+      const { anthropic, openai, gemini, alpaca, kalshi, ibkr } = data.configured;
+      const setStatus = (id, val) => {
+        const el = document.getElementById(`status-${id}`);
+        if (el) el.textContent = val ? '✓ Configured' : 'Not configured';
+        if (el) el.style.color = val ? 'var(--green)' : 'var(--muted)';
+      };
+      setStatus('anthropic', anthropic);
+      setStatus('openai', openai);
+      setStatus('gemini', gemini);
+      setStatus('alpaca', alpaca);
+      setStatus('kalshi', kalshi);
+      setStatus('ibkr', ibkr);
+    }
+  } catch (e) {
+    console.warn('Failed to load settings status:', e);
+  }
+}
+
+async function saveSettings(event) {
+  event.preventDefault();
+  const form = document.getElementById('settings-form');
+  const msg = document.getElementById('settings-message');
+
+  const formData = new FormData(form);
+  const payload = {};
+  for (const [key, val] of formData) {
+    if (val.trim()) payload[key] = val.trim();
+  }
+
+  if (Object.keys(payload).length === 0) {
+    msg.style.display = 'block';
+    msg.style.background = 'rgba(255,95,109,0.1)';
+    msg.style.color = 'var(--danger)';
+    msg.textContent = 'Please fill in at least one API key';
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/trading/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+
+    msg.style.display = 'block';
+    if (res.ok) {
+      msg.style.background = 'rgba(0,212,170,0.1)';
+      msg.style.color = 'var(--green)';
+      msg.textContent = '✓ ' + data.message;
+      form.reset();
+      setTimeout(() => {
+        loadSettingsStatus();
+        closeSettings();
+      }, 1500);
+    } else {
+      msg.style.background = 'rgba(255,95,109,0.1)';
+      msg.style.color = 'var(--danger)';
+      msg.textContent = '✗ ' + (data.error || 'Failed to save settings');
+    }
+  } catch (e) {
+    msg.style.display = 'block';
+    msg.style.background = 'rgba(255,95,109,0.1)';
+    msg.style.color = 'var(--danger)';
+    msg.textContent = '✗ Network error: ' + e.message;
+  }
+}
+
+// Close modal when clicking outside
+document.addEventListener('click', (e) => {
+  const modal = document.getElementById('settings-modal');
+  if (e.target === modal) closeSettings();
 });
 </script>
 <script src="/js/theme-toggle.js"></script>
