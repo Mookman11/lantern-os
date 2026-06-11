@@ -88,6 +88,95 @@ function parseBangCommand(input) {
   return { name: m[1].toLowerCase(), args: (m[2] || "").trim() };
 }
 
+async function handleConvergenceCommand(recentDreams, agent) {
+  // !convergence: Local synthesis of recent dreams using LLM
+  if (!recentDreams || recentDreams.length === 0) {
+    return {
+      reply: "No dreams to converge yet. Start by recording some dreams first.",
+      agent: agent.name,
+      suggestions: [],
+      online: true,
+      source: "convergence",
+    };
+  }
+
+  const dreamSummaries = recentDreams
+    .slice(0, 5)
+    .map((d, i) => `[${i + 1}] ${String(d.text || "").slice(0, 100)}... (${d.kind || "dream"})`)
+    .join("\n");
+
+  const convergencePrompt = `You are ${agent.name}. Synthesize these recent dream/note entries into ONE coherent insight about patterns, themes, or directions this dreamer is moving toward:
+
+${dreamSummaries}
+
+Respond with a single, profound observation (2-3 sentences). Focus on:
+1. Recurring symbols or emotions
+2. Direction of travel (what is emerging?)
+3. What the dreamer might do next
+
+Be honest. If there's not enough data, say so.`;
+
+  const ollamaBase = process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434";
+  const ollamaModel = process.env.OLLAMA_MODEL || "lantern-csf-dream";
+
+  try {
+    const payload = JSON.stringify({
+      model: ollamaModel,
+      stream: false,
+      messages: [{ role: "user", content: convergencePrompt }],
+    });
+
+    const ollamaUrl = new URL(ollamaBase);
+    const reply = await new Promise((resolve, reject) => {
+      const req = http.request({
+        hostname: ollamaUrl.hostname,
+        port: ollamaUrl.port || 11434,
+        path: "/api/chat",
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(payload),
+        },
+      }, (upstream) => {
+        let data = "";
+        upstream.on("data", (c) => (data += c));
+        upstream.on("end", () => {
+          try {
+            const json = JSON.parse(data);
+            resolve(String(json.message?.content || "").trim());
+          } catch { resolve(""); }
+        });
+        upstream.on("error", reject);
+      });
+      req.on("error", reject);
+      const ollamaTimeout = parseInt(process.env.OLLAMA_TIMEOUT_MS, 10) || 120000;
+      req.setTimeout(ollamaTimeout, () => { req.destroy(); reject(new Error("timeout")); });
+      req.write(payload);
+      req.end();
+    });
+
+    if (reply) {
+      return {
+        reply: `✦ Convergence:\n\n${reply}`,
+        agent: agent.name,
+        suggestions: ["Record more dreams", "Start a door", "View patterns"],
+        online: true,
+        source: "convergence",
+      };
+    }
+  } catch (err) {
+    console.error("Convergence synthesis error:", err.message);
+  }
+
+  return {
+    reply: "Convergence synthesis failed. Ensure Ollama is running.",
+    agent: agent.name,
+    suggestions: [],
+    online: false,
+    source: "convergence",
+  };
+}
+
 // Door-series canon — loaded from MCP resource (data/contexts/doors.json)
 // Previously hardcoded inline blob; now URI-addressable via context://doors
 const _doorsData = readMcpResourceSync("context://doors", { doors: {} });
@@ -232,21 +321,25 @@ async function dreamChatReply(message, recentDreams, requestedAgent = "", reques
 
   const rp = String(requestedProvider || "").toLowerCase().trim();
 
-  // Provider 1: Anthropic Claude
-  // Provider 1: Gemini (non-streaming) — checked first for Auto mode
-  const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-  if (geminiKey && (!rp || rp === "gemini" || rp === "google" || rp.startsWith("gemini-"))) {
+  // PRIORITY 1: Ollama (Local-first — no API keys, full privacy, control)
+  const ollamaBase = process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434";
+  const ollamaModel = process.env.OLLAMA_MODEL || "lantern-csf-dream";
+  if (!rp || rp === "ollama" || rp === "local") {
     try {
-      const geminiModel = rp.startsWith("gemini-") ? rp : (process.env.GEMINI_MODEL || "gemini-2.5-flash");
       const payload = JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: `${agent.systemPrompt}\n\n${userPrompt}` }] }],
-        generationConfig: { maxOutputTokens: 256, temperature: 0.7 },
-        tools: [{ google_search_retrieval: {} }],
+        model: ollamaModel,
+        stream: false,
+        messages: [
+          { role: "system", content: agent.systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
       });
+      const ollamaUrl = new URL(ollamaBase);
       const reply = await new Promise((resolve, reject) => {
-        const req2 = https.request({
-          hostname: "generativelanguage.googleapis.com",
-          path: `/v1beta/models/${geminiModel}:generateContent?key=${geminiKey}`,
+        const req2 = http.request({
+          hostname: ollamaUrl.hostname,
+          port: ollamaUrl.port || 11434,
+          path: "/api/chat",
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -258,25 +351,35 @@ async function dreamChatReply(message, recentDreams, requestedAgent = "", reques
           upstream.on("end", () => {
             try {
               const json = JSON.parse(data);
-              resolve(String(json.candidates?.[0]?.content?.parts?.[0]?.text || "").trim());
-            } catch { resolve(""); }
+              const content = String(json.message?.content || "").trim();
+              const doorsMatch = content.match(/\[DOORS:\s*([^\]]+)\]/i);
+              const ollamaDoors = doorsMatch
+                ? doorsMatch[1].split("|").map(s => s.trim().replace(/^[ABC]\s+/i, "").trim()).filter(Boolean)
+                : [];
+              resolve({ content, doors: ollamaDoors });
+            } catch { resolve({ content: "", doors: [] }); }
           });
           upstream.on("error", reject);
         });
         req2.on("error", reject);
-        req2.setTimeout(15000, () => { req2.destroy(); reject(new Error("timeout")); });
+        const ollamaTimeout = parseInt(process.env.OLLAMA_TIMEOUT_MS, 10) || 120000;
+        req2.setTimeout(ollamaTimeout, () => { req2.destroy(); reject(new Error("timeout")); });
         req2.write(payload);
         req2.end();
       });
-      if (reply) {
-        return { reply, agent: agent.name, suggestions, online: true };
+      if (reply && reply.content) {
+        const ollamaSuggestions = reply.doors && reply.doors.length > 0 ? reply.doors : suggestions;
+        return { reply: reply.content, agent: agent.name, suggestions: ollamaSuggestions, online: true, source: "ollama" };
       }
-    } catch (err) { console.error("Gemini API error:", err.message); /* fall through */ }
+    } catch (err) {
+      console.error("Ollama API error:", err.message);
+      // If Ollama fails, try cloud fallbacks below
+    }
   }
 
-  // Provider 2: Anthropic Claude
+  // PRIORITY 2: Anthropic Claude (if explicitly requested or Ollama unavailable)
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
-  if (anthropicKey && (!rp || rp === "claude" || rp === "anthropic")) {
+  if ((anthropicKey && (!rp || rp === "claude" || rp === "anthropic")) || (!rp && !ollamaModel)) {
     try {
       const payload = JSON.stringify({
         model: process.env.ANTHROPIC_MODEL || "claude-haiku-4-5-20251001",
@@ -313,12 +416,53 @@ async function dreamChatReply(message, recentDreams, requestedAgent = "", reques
         req2.end();
       });
       if (reply) {
-        return { reply, agent: agent.name, suggestions, online: true };
+        return { reply, agent: agent.name, suggestions, online: true, source: "claude" };
       }
-    } catch (err) { console.error("Anthropic API error:", err.message); /* fall through */ }
+    } catch (err) { console.error("Claude API error:", err.message); }
   }
 
-  // Provider 2: OpenAI
+  // PRIORITY 3: Google Gemini (if explicitly requested)
+  const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+  if (geminiKey && (!rp || rp === "gemini" || rp === "google" || rp.startsWith("gemini-"))) {
+    try {
+      const geminiModel = rp.startsWith("gemini-") ? rp : (process.env.GEMINI_MODEL || "gemini-2.5-flash");
+      const payload = JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: `${agent.systemPrompt}\n\n${userPrompt}` }] }],
+        generationConfig: { maxOutputTokens: 256, temperature: 0.7 },
+        tools: [{ google_search_retrieval: {} }],
+      });
+      const reply = await new Promise((resolve, reject) => {
+        const req2 = https.request({
+          hostname: "generativelanguage.googleapis.com",
+          path: `/v1beta/models/${geminiModel}:generateContent?key=${geminiKey}`,
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Content-Length": Buffer.byteLength(payload),
+          },
+        }, (upstream) => {
+          let data = "";
+          upstream.on("data", (c) => (data += c));
+          upstream.on("end", () => {
+            try {
+              const json = JSON.parse(data);
+              resolve(String(json.candidates?.[0]?.content?.parts?.[0]?.text || "").trim());
+            } catch { resolve(""); }
+          });
+          upstream.on("error", reject);
+        });
+        req2.on("error", reject);
+        req2.setTimeout(15000, () => { req2.destroy(); reject(new Error("timeout")); });
+        req2.write(payload);
+        req2.end();
+      });
+      if (reply) {
+        return { reply, agent: agent.name, suggestions, online: true, source: "gemini" };
+      }
+    } catch (err) { console.error("Gemini API error:", err.message); }
+  }
+
+  // PRIORITY 4: OpenAI (if explicitly requested)
   const openaiKey = process.env.OPENAI_API_KEY;
   if (openaiKey && (!rp || rp === "openai" || rp === "gpt")) {
     try {
@@ -356,71 +500,20 @@ async function dreamChatReply(message, recentDreams, requestedAgent = "", reques
         req2.end();
       });
       if (reply) {
-        return { reply, agent: agent.name, suggestions, online: true };
+        return { reply, agent: agent.name, suggestions, online: true, source: "openai" };
       }
-    } catch (err) { console.error("OpenAI API error:", err.message); /* fall through */ }
+    } catch (err) { console.error("OpenAI API error:", err.message); }
   }
 
-  // Provider 3: Ollama
-  const ollamaBase = process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434";
-  const ollamaModel = process.env.OLLAMA_MODEL || "lantern-csf-dream";
-  if (!rp || rp === "ollama" || rp === "local") { try {
-    const payload = JSON.stringify({
-      model: ollamaModel,
-      stream: false,
-      messages: [
-        { role: "system", content: agent.systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-    });
-    const ollamaUrl = new URL(ollamaBase);
-    const reply = await new Promise((resolve, reject) => {
-      const req2 = http.request({
-        hostname: ollamaUrl.hostname,
-        port: ollamaUrl.port || 11434,
-        path: "/api/chat",
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Content-Length": Buffer.byteLength(payload),
-        },
-      }, (upstream) => {
-        let data = "";
-        upstream.on("data", (c) => (data += c));
-        upstream.on("end", () => {
-          try {
-            const json = JSON.parse(data);
-            const content = String(json.message?.content || "").trim();
-            const doorsMatch = content.match(/\[DOORS:\s*([^\]]+)\]/i);
-            const ollamaDoors = doorsMatch
-              ? doorsMatch[1].split("|").map(s => s.trim().replace(/^[ABC]\s+/i, "").trim()).filter(Boolean)
-              : [];
-            resolve({ content, doors: ollamaDoors });
-          } catch { resolve({ content: "", doors: [] }); }
-        });
-        upstream.on("error", reject);
-      });
-      req2.on("error", reject);
-      const ollamaTimeout = parseInt(process.env.OLLAMA_TIMEOUT_MS, 10) || 120000;
-      req2.setTimeout(ollamaTimeout, () => { req2.destroy(); reject(new Error("timeout")); });
-      req2.write(payload);
-      req2.end();
-    });
-    if (reply && reply.content) {
-      const ollamaSuggestions = reply.doors && reply.doors.length > 0 ? reply.doors : suggestions;
-      return { reply: reply.content, agent: agent.name, suggestions: ollamaSuggestions, online: true, source: "ollama" };
-    }
-  } catch (err) { console.error("Ollama API error:", err.message); /* fall through */ }
-  }
-
-  // No provider available — return a clear error with setup instructions
+  // No provider available — return clear error with setup instructions
   return {
     reply: null,
     error: "no_provider_configured",
     agent: agent.name,
     suggestions,
     online: false,
-    help: "Configure GEMINI_API_KEY for Gemini with Google Search grounding, ANTHROPIC_API_KEY for Claude, OPENAI_API_KEY for GPT, or install Ollama (http://127.0.0.1:11434) for offline AI.",
+    source: "none",
+    help: "Ollama (local): install at http://127.0.0.1:11434 for offline AI. Cloud options: ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY.",
   };
 }
 
@@ -429,5 +522,6 @@ module.exports = {
   DREAM_DOORS,
   selectAgent,
   parseBangCommand,
+  handleConvergenceCommand,
   dreamChatReply,
 };
