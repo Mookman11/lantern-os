@@ -310,15 +310,16 @@
 
   async function loadData() {
     const taskType = document.getElementById('taskTypeSelect').value;
+    const origin = window.location.origin;
 
     try {
       const leaderboardRes = await fetch(
-        `/api/agent-performance/leaderboard?taskType=${taskType || 'default'}&topN=5`
+        `${origin}/api/agent-performance/leaderboard?taskType=${taskType || 'default'}&topN=5`
       );
       const leaderboardData = await leaderboardRes.json();
       renderLeaderboard(leaderboardData.agents || []);
 
-      const statusRes = await fetch('/api/status');
+      const statusRes = await fetch(`${origin}/api/status`);
       const statusData = await statusRes.json();
       renderProviderStatus(statusData);
 
