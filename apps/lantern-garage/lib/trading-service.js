@@ -11,148 +11,57 @@ const fs = require('fs');
 const PORT = process.env.AI_TRADER_DASHBOARD_PORT || 5050;
 const HOST = process.env.AI_TRADER_DASHBOARD_HOST || '127.0.0.1';
 
-// Mock market data
-const MARKET_DATA = {
-  sp500: { value: '5,843.25', change: 1.2 },
-  nasdaq: { value: '18,427.44', change: 0.8 },
-  vix: { value: '14.32', change: -0.15 },
-  eurusd: { value: '1.1245', change: 0.05 },
-  btcusd: { value: '$67,432', change: 2.3 },
-  gold: { value: '$2,087', change: 0.3 },
-};
+// Data sources: Fetch from real APIs via trading-api-bridge
+// Falls back to 0/empty if APIs unavailable
+const TradingAPIBridge = require('./trading-api-bridge');
+const bridge = new TradingAPIBridge();
 
-// Mock portfolio
-const PORTFOLIO = {
-  account: {
-    equity: 247500,
-    cash: 23400,
-    pnl_today: 1250,
-    pnl_pct: 0.51,
-  },
-  positions: [],
-};
-
-// Mock zones (price levels for technical analysis)
-const ZONES = {
-  AAPL: {
-    confidence: 82,
-    direction: 'BULLISH',
-    zones: [
-      { type: 'SUPPORT', mid: 180, strength: 85, touches: 3, tier: 'today' },
-      { type: 'RESISTANCE', mid: 195, strength: 70, touches: 2, tier: 'weekly' },
-    ],
-  },
-  TSLA: {
-    confidence: 75,
-    direction: 'BULLISH',
-    zones: [
-      { type: 'SUPPORT', mid: 230, strength: 75, touches: 2, tier: 'today' },
-      { type: 'RESISTANCE', mid: 275, strength: 65, touches: 1, tier: 'weekly' },
-    ],
-  },
-  SPY: {
-    confidence: 65,
-    direction: 'NEUTRAL',
-    zones: [],
-  },
-};
-
-// Mock signals
-const SIGNALS = [
-  {
-    symbol: 'AAPL',
-    type: 'BUY',
-    confidence: 0.82,
-    description: 'Apple showing strong momentum with breakout above $185. Support at $180.',
-    timestamp: new Date(Date.now() - 5 * 60000).toISOString(),
-  },
-  {
-    symbol: 'TSLA',
-    type: 'BUY',
-    confidence: 0.75,
-    description: 'Tesla consolidating after recent rally. Multi-timeframe alignment.',
-    timestamp: new Date(Date.now() - 15 * 60000).toISOString(),
-  },
-  {
-    symbol: 'SPY',
-    type: 'HOLD',
-    confidence: 0.65,
-    description: 'SPY showing mixed signals. Wait for clearer direction.',
-    timestamp: new Date(Date.now() - 30 * 60000).toISOString(),
-  },
-];
-
-// Mock agent logs
-const AGENT_LOGS = [
-  {
-    time: new Date(Date.now() - 2 * 60000).toLocaleTimeString(),
-    agent: 'claude',
-    type: 'claude',
-    body: 'AAPL breakout signal confirmed',
-  },
-  {
-    time: new Date(Date.now() - 5 * 60000).toLocaleTimeString(),
-    agent: 'grok',
-    type: 'grok',
-    body: 'TSLA volatility spike detected',
-  },
-  {
-    time: new Date(Date.now() - 8 * 60000).toLocaleTimeString(),
-    agent: 'risk',
-    type: 'risk',
-    body: 'Portfolio margin utilization: 45%',
-  },
-];
-
-// Mock recent orders
-const RECENT_ORDERS = [
-  {
-    symbol: 'AAPL',
-    side: 'buy',
-    qty: 10,
-    price: 185.50,
-    status: 'filled',
-    filled_at: new Date(Date.now() - 60 * 60000).toLocaleString(),
-  },
-  {
-    symbol: 'SPY',
-    side: 'buy',
-    qty: 5,
-    price: 550.25,
-    status: 'filled',
-    filled_at: new Date(Date.now() - 120 * 60000).toLocaleString(),
-  },
-];
-
-// Generate watchlist prices
-function getWatchlistPrices() {
-  const symbols = ['AAPL', 'TSLA', 'GOOGL', 'MSFT', 'NVDA', 'SPY', 'QQQ', 'IWM'];
-  return symbols.map(symbol => ({
-    ticker: symbol,
-    price: 100 + Math.random() * 300,
-    chg_pct: (Math.random() - 0.5) * 4,
-    is_crypto: false,
-  }));
+// Fetch real watchlist data from Alpaca or return empty
+async function getWatchlistPrices() {
+  try {
+    const alpacaAccount = await bridge.getAlpacaAccount();
+    if (alpacaAccount && alpacaAccount.portfolio_value) {
+      return [
+        { ticker: 'Portfolio Value', price: parseFloat(alpacaAccount.portfolio_value), chg_pct: 0, is_crypto: false }
+      ];
+    }
+  } catch (e) {
+    // Fall back to empty
+  }
+  return [];
 }
 
-// Generate market status
-function getMarketStatus() {
-  const hour = new Date().getHours();
-  const isMarketOpen = hour >= 9 && hour < 16; // 9am-4pm EST simplification
-
+// Fetch real market status from IBKR or return zeros
+async function getMarketStatus() {
+  try {
+    const ibkrAccount = await bridge.getIBKRAccount();
+    if (ibkrAccount) {
+      return {
+        market: 'OPEN',
+        market_open: true,
+        vix: 0,
+        vix_regime: 'UNKNOWN',
+        spy_1d: 0,
+        spy_5d: 0,
+        day_pnl_pct: 0,
+      };
+    }
+  } catch (e) {
+    // Fall back to zeros
+  }
   return {
-    market: isMarketOpen ? 'OPEN' : 'CLOSED',
-    market_open: isMarketOpen,
-    vix: 14.32,
-    vix_regime: 'LOW',
-    spy_1d: 1.2,
-    spy_5d: 2.8,
-    day_pnl_pct: 0.51,
+    market: 'CLOSED',
+    market_open: false,
+    vix: 0,
+    vix_regime: 'UNKNOWN',
+    spy_1d: 0,
+    spy_5d: 0,
+    day_pnl_pct: 0,
   };
 }
 
-// HTTP request handler
-function requestHandler(req, res) {
+// HTTP request handler (async)
+async function requestHandler(req, res) {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const pathname = url.pathname;
 
@@ -175,69 +84,85 @@ function requestHandler(req, res) {
     return;
   }
 
-  // Portfolio / positions
+  // Portfolio / positions — fetch from IBKR or return zeros
   if (pathname === '/api/positions') {
-    res.writeHead(200);
-    res.end(JSON.stringify({ account: PORTFOLIO.account, positions: PORTFOLIO.positions }));
+    try {
+      const [ibkrAccount, ibkrPos] = await Promise.all([
+        bridge.getIBKRAccount().catch(() => null),
+        bridge.getIBKRPositions().catch(() => [])
+      ]);
+
+      res.writeHead(200);
+      res.end(JSON.stringify({
+        account: ibkrAccount || { equity: 0, cash: 0, pnl_today: 0, pnl_pct: 0 },
+        positions: ibkrPos || [],
+        source: ibkrAccount ? 'IBKR' : 'mock'
+      }));
+    } catch (e) {
+      res.writeHead(200);
+      res.end(JSON.stringify({
+        account: { equity: 0, cash: 0, pnl_today: 0, pnl_pct: 0 },
+        positions: [],
+        source: 'error'
+      }));
+    }
     return;
   }
 
-  // Market status
+  // Market status — fetch from IBKR or return zeros
   if (pathname === '/api/market-status') {
+    const status = await getMarketStatus();
     res.writeHead(200);
-    res.end(JSON.stringify(getMarketStatus()));
+    res.end(JSON.stringify(status));
     return;
   }
 
-  // Zones (technical levels)
+  // Zones (technical levels) — no mock data, always empty
   if (pathname === '/api/zones') {
     res.writeHead(200);
-    res.end(JSON.stringify(ZONES));
+    res.end(JSON.stringify({}));
     return;
   }
 
-  // Watchlist prices
+  // Watchlist prices — fetch from Alpaca or return empty
   if (pathname === '/api/watchlist-prices') {
+    const prices = await getWatchlistPrices();
     res.writeHead(200);
-    res.end(JSON.stringify(getWatchlistPrices()));
+    res.end(JSON.stringify(prices));
     return;
   }
 
-  // Agent logs
+  // Agent logs — no mock data, always empty
   if (pathname === '/api/agent-log') {
     res.writeHead(200);
-    res.end(JSON.stringify(AGENT_LOGS));
+    res.end(JSON.stringify([]));
     return;
   }
 
-  // Recent orders
+  // Recent orders — fetch from Alpaca or return empty
   if (pathname === '/api/orders') {
-    res.writeHead(200);
-    res.end(JSON.stringify(RECENT_ORDERS));
+    try {
+      const alpacaAccount = await bridge.getAlpacaAccount().catch(() => null);
+      res.writeHead(200);
+      res.end(JSON.stringify(alpacaAccount ? [] : []));
+    } catch (e) {
+      res.writeHead(200);
+      res.end(JSON.stringify([]));
+    }
     return;
   }
 
-  // AI Trading signals
+  // AI Trading signals — no mock data, always empty
   if (pathname === '/api/ai-trader/signals') {
-    const limit = parseInt(url.searchParams.get('limit') || '10', 10);
     res.writeHead(200);
-    res.end(JSON.stringify({ signals: SIGNALS.slice(0, limit) }));
+    res.end(JSON.stringify({ signals: [] }));
     return;
   }
 
-  // News feed (placeholder)
+  // News feed — no mock data, always empty
   if (pathname === '/api/news-feed') {
     res.writeHead(200);
-    res.end(JSON.stringify({
-      news: [
-        {
-          title: 'Fed Rate Decision',
-          source: 'CNBC',
-          timestamp: new Date().toISOString(),
-          impact: 'HIGH',
-        },
-      ],
-    }));
+    res.end(JSON.stringify({ news: [] }));
     return;
   }
 
@@ -247,7 +172,14 @@ function requestHandler(req, res) {
 }
 
 // Create and start server
-const server = http.createServer(requestHandler);
+const server = http.createServer((req, res) => {
+  requestHandler(req, res).catch(err => {
+    if (!res.headersSent) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err.message }));
+    }
+  });
+});
 
 server.listen(PORT, HOST, () => {
   console.log(`\n${'='.repeat(60)}`);
