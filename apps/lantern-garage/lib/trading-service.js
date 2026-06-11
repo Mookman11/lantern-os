@@ -166,6 +166,82 @@ async function requestHandler(req, res) {
     return;
   }
 
+  // Demo data endpoint (for testing/validation)
+  if (pathname === '/api/positions/demo') {
+    res.writeHead(200);
+    res.end(JSON.stringify({
+      account: {
+        equity: 247500,
+        cash: 23400,
+        pnl_today: 1250,
+        pnl_pct: 0.51
+      },
+      positions: [
+        { symbol: 'AAPL', qty: 50, avg_fill_price: 180.25, current_price: 185.50, unrealized_pl: 262.50 },
+        { symbol: 'TSLA', qty: 20, avg_fill_price: 240.00, current_price: 258.35, unrealized_pl: 367.00 }
+      ],
+      source: 'DEMO'
+    }));
+    return;
+  }
+
+  if (pathname === '/api/watchlist-prices/demo') {
+    res.writeHead(200);
+    res.end(JSON.stringify([
+      { ticker: 'AAPL', price: 185.50, chg_pct: 0.24, is_crypto: false },
+      { ticker: 'TSLA', price: 258.35, chg_pct: -1.58, is_crypto: false },
+      { ticker: 'GOOGL', price: 325.67, chg_pct: 0.44, is_crypto: false },
+      { ticker: 'MSFT', price: 368.37, chg_pct: -1.13, is_crypto: false },
+      { ticker: 'NVDA', price: 100.27, chg_pct: -1.50, is_crypto: false },
+      { ticker: 'SPY', price: 357.18, chg_pct: 0.10, is_crypto: false }
+    ]));
+    return;
+  }
+
+  if (pathname === '/api/market-status/demo') {
+    res.writeHead(200);
+    res.end(JSON.stringify({
+      market: 'OPEN',
+      market_open: true,
+      vix: 14.32,
+      vix_regime: 'LOW',
+      spy_1d: 1.2,
+      spy_5d: 2.8,
+      day_pnl_pct: 0.51
+    }));
+    return;
+  }
+
+  if (pathname === '/api/ai-trader/signals/demo') {
+    res.writeHead(200);
+    res.end(JSON.stringify({
+      signals: [
+        {
+          symbol: 'AAPL',
+          type: 'BUY',
+          confidence: 0.82,
+          description: 'Apple showing strong momentum with breakout above $185. Support at $180. Recommended entry at $185.50 with stop at $180.00, target $195.00. Risk/Reward ratio: 1:2.2',
+          timestamp: new Date(Date.now() - 5 * 60000).toISOString()
+        },
+        {
+          symbol: 'TSLA',
+          type: 'BUY',
+          confidence: 0.75,
+          description: 'Tesla consolidating after recent rally. Multi-timeframe alignment on 1H/4H charts. Position size: 1–2% due to high volatility. Entry $245, Stop Loss $230, Take Profit $275.',
+          timestamp: new Date(Date.now() - 15 * 60000).toISOString()
+        },
+        {
+          symbol: 'SPY',
+          type: 'HOLD',
+          confidence: 0.65,
+          description: 'SPY showing mixed signals across timeframes. Recommend waiting for clearer directional bias before entering new positions. Monitor key support/resistance levels.',
+          timestamp: new Date(Date.now() - 30 * 60000).toISOString()
+        }
+      ]
+    }));
+    return;
+  }
+
   // Default 404
   res.writeHead(404);
   res.end(JSON.stringify({ error: 'Not found' }));

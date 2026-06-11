@@ -413,10 +413,16 @@
           <div class="status-dot ready"></div>
           <span class="status-text"><strong>Trading Service</strong> • Live</span>
         </div>
-        <div class="status">
-          <div class="status-dot partial"></div>
-          <span class="status-text"><strong>IBKR</strong> • MCP Mode (read-only)</span>
+        <div class="status" id="ibkr-status">
+          <div class="status-dot offline"></div>
+          <span class="status-text"><strong>IBKR</strong> • Offline (awaiting connection)</span>
         </div>
+      </div>
+      <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border);">
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.9rem;">
+          <input type="checkbox" id="demo-mode" onchange="toggleDemoMode()" style="cursor: pointer;">
+          <span>📊 Demo Mode (realistic test data)</span>
+        </label>
       </div>
     </div>
 
@@ -693,6 +699,15 @@ document.addEventListener('click', (e) => {
   if (e.target === modal) closeSettings();
 });
 
+// ── Demo Mode ──
+let DEMO_MODE = false;
+
+function toggleDemoMode() {
+  DEMO_MODE = document.getElementById('demo-mode').checked;
+  localStorage.setItem('trading-demo-mode', DEMO_MODE);
+  loadAllData();
+}
+
 // ── Data Source Display ──
 const API_SOURCES = {
   portfolio: {
@@ -755,7 +770,8 @@ function showSource(key) {
 // ── Data Loading ──
 async function loadPortfolioData() {
   try {
-    const res = await fetch('/api/positions');
+    const endpoint = DEMO_MODE ? '/api/positions/demo' : '/api/positions';
+    const res = await fetch(endpoint);
     const data = await res.json();
     if (data.account) {
       document.getElementById('equity').textContent = `$${(data.account.equity || 0).toLocaleString()}`;
@@ -763,10 +779,13 @@ async function loadPortfolioData() {
       document.getElementById('positions').textContent = (data.positions || []).length;
 
       const pnlEl = document.getElementById('pnl');
-      pnlEl.className = (data.account.pnl_today || 0) >= 0 ? 'positive' : 'negative';
+      pnlEl.className = (data.account.pnl_today || 0) >= 0 ? 'metric-value positive' : 'metric-value negative';
 
       const sourceEl = document.getElementById('portfolio-source');
-      sourceEl.textContent = `Source: ${data.source === 'IBKR' ? '🔗 IBKR Gateway (real)' : '(no gateway)'}`;
+      const sourceText = DEMO_MODE ? '📋 Demo Data' :
+        data.source === 'IBKR' ? '🔗 IBKR Gateway (real)' :
+        data.source === 'Alpaca' ? '🟢 Alpaca API (real)' : '(no data source)';
+      sourceEl.textContent = `Source: ${sourceText}`;
       sourceEl.style.display = 'block';
     }
   } catch (e) {
@@ -776,14 +795,16 @@ async function loadPortfolioData() {
 
 async function loadMarketStatus() {
   try {
-    const res = await fetch('/api/market-status');
+    const endpoint = DEMO_MODE ? '/api/market-status/demo' : '/api/market-status';
+    const res = await fetch(endpoint);
     const data = await res.json();
     document.getElementById('market-status').textContent = data.market || 'CLOSED';
     document.getElementById('vix-regime').textContent = data.vix_regime || '—';
     document.getElementById('spy-1d').textContent = `${data.spy_1d || 0}%`;
 
     const sourceEl = document.getElementById('market-status-source');
-    sourceEl.textContent = 'Source: IBKR Gateway';
+    const sourceText = DEMO_MODE ? '📋 Demo Data' : '🔗 IBKR Gateway';
+    sourceEl.textContent = `Source: ${sourceText}`;
     sourceEl.style.display = 'block';
   } catch (e) {
     console.error('Failed to load market status:', e);
@@ -792,7 +813,8 @@ async function loadMarketStatus() {
 
 async function loadWatchlist() {
   try {
-    const res = await fetch('/api/watchlist-prices');
+    const endpoint = DEMO_MODE ? '/api/watchlist-prices/demo' : '/api/watchlist-prices';
+    const res = await fetch(endpoint);
     const items = await res.json();
     const container = document.getElementById('watchlist');
 
@@ -811,7 +833,8 @@ async function loadWatchlist() {
     }
 
     const sourceEl = document.getElementById('watchlist-source');
-    sourceEl.textContent = 'Source: Alpaca API';
+    const sourceText = DEMO_MODE ? '📋 Demo Data' : '🟢 Alpaca API';
+    sourceEl.textContent = `Source: ${sourceText}`;
     sourceEl.style.display = 'block';
   } catch (e) {
     console.error('Failed to load watchlist:', e);
@@ -820,7 +843,8 @@ async function loadWatchlist() {
 
 async function loadSignals() {
   try {
-    const res = await fetch('/api/ai-trader/signals');
+    const endpoint = DEMO_MODE ? '/api/ai-trader/signals/demo' : '/api/ai-trader/signals';
+    const res = await fetch(endpoint);
     const { signals } = await res.json();
     const container = document.getElementById('signals-container');
 
@@ -833,7 +857,7 @@ async function loadSignals() {
           </div>
           <p class="signal-body">${sig.description || 'No description available'}</p>
           <div class="signal-footer">
-            <span class="signal-source">AI Trader</span>
+            <span class="signal-source">${DEMO_MODE ? '📋 Demo Signal' : 'AI Trader'}</span>
             <span class="signal-timestamp">${new Date(sig.timestamp).toLocaleString()}</span>
           </div>
         </div>
@@ -841,7 +865,8 @@ async function loadSignals() {
     }
 
     const sourceEl = document.getElementById('signals-source');
-    sourceEl.textContent = 'Source: AI Trader Signals API';
+    const sourceText = DEMO_MODE ? '📋 Demo Data' : '🤖 AI Trader Signals';
+    sourceEl.textContent = `Source: ${sourceText}`;
     sourceEl.style.display = 'block';
   } catch (e) {
     console.error('Failed to load signals:', e);
@@ -859,6 +884,10 @@ async function loadAllData() {
 
 // ── Initialize ──
 document.addEventListener('DOMContentLoaded', () => {
+  // Restore demo mode from localStorage
+  DEMO_MODE = localStorage.getItem('trading-demo-mode') === 'true';
+  document.getElementById('demo-mode').checked = DEMO_MODE;
+
   loadSettingsStatus();
   loadAllData();
 
