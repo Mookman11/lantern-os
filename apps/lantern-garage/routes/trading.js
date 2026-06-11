@@ -352,5 +352,67 @@ module.exports = async function tradingRoutes(req, res, url, deps) {
     return true;
   }
 
+  // GET /api/trading/settings
+  // Get API key status (shows which are configured, no secrets exposed)
+  if (url.pathname === '/api/trading/settings' && req.method === 'GET') {
+    const providers = {
+      anthropic: !!process.env.ANTHROPIC_API_KEY,
+      openai: !!process.env.OPENAI_API_KEY,
+      gemini: !!process.env.GEMINI_API_KEY,
+      ibkr: !!process.env.IBKR_ACCOUNT_ID && !!process.env.IBKR_PASSWORD,
+      alpaca: !!process.env.ALPACA_API_KEY,
+      kalshi: !!process.env.KALSHI_API_KEY,
+    };
+    sendJson(res, { configured: providers }, 200);
+    return true;
+  }
+
+  // POST /api/trading/settings
+  // Update API keys (only in memory for this session, recommend setting via .env)
+  if (url.pathname === '/api/trading/settings' && req.method === 'POST') {
+    try {
+      const body = await deps.collectRequestBody(req);
+      const payload = body ? JSON.parse(body) : {};
+      const updated = [];
+
+      if (payload.anthropic) {
+        process.env.ANTHROPIC_API_KEY = payload.anthropic;
+        updated.push('anthropic');
+      }
+      if (payload.openai) {
+        process.env.OPENAI_API_KEY = payload.openai;
+        updated.push('openai');
+      }
+      if (payload.gemini) {
+        process.env.GEMINI_API_KEY = payload.gemini;
+        updated.push('gemini');
+      }
+      if (payload.alpaca) {
+        process.env.ALPACA_API_KEY = payload.alpaca;
+        updated.push('alpaca');
+      }
+      if (payload.kalshi) {
+        process.env.KALSHI_API_KEY = payload.kalshi;
+        updated.push('kalshi');
+      }
+      if (payload.ibkr_account && payload.ibkr_password) {
+        process.env.IBKR_ACCOUNT_ID = payload.ibkr_account;
+        process.env.IBKR_PASSWORD = payload.ibkr_password;
+        updated.push('ibkr');
+      }
+
+      sendJson(res, {
+        ok: true,
+        updated,
+        message: updated.length > 0
+          ? `Updated ${updated.join(', ')} (session only; add to .env to persist)`
+          : 'No keys updated'
+      }, 200);
+    } catch (error) {
+      sendJson(res, { error: 'Settings update failed', details: error.message }, 400);
+    }
+    return true;
+  }
+
   return false;
 };
