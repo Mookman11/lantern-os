@@ -1,5 +1,6 @@
 """
-Three Doors Game Engine — shared between Discord bot, web API, and chat
+Kingdome of Hearts Game Engine — shared between Discord bot, web API, and chat
+(formerly Three Doors; expanded to the 7-stage Kingdome journey)
 
 Usage:
     from three_doors_engine import ThreeDoorsEngine, SCENES
@@ -504,7 +505,11 @@ class ThreeDoorsEngine:
                 chosen = d
                 break
         if not chosen:
-            return None
+            # Custom door: player invented their own — still advance the stage
+            if len(choice.strip()) > 1:
+                chosen = {"label": "CUSTOM", "name": choice.strip()}
+            else:
+                return None
 
         self.cube.add_observation(
             stage=self.cube.stage_index,
