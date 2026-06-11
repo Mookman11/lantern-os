@@ -18,6 +18,7 @@ module.exports = async function dreamRoutes(req, res, url, deps) {
     readRecentDreams, dreamChatReply, appendConversationEntry,
     unifiedAgentGreet, unifiedAgentHealth, unifiedAgentInspect,
     handleStreamChat } = deps;
+  const { handleConvergenceCommand, selectAgent } = require("../lib/dream-chat");
 
   // ── CSF search endpoint ───────────────────────────────────────────────
   if (url.pathname === "/api/csf/search" && req.method === "GET") {
@@ -172,7 +173,19 @@ module.exports = async function dreamRoutes(req, res, url, deps) {
       const message = String(body.message || "").slice(0, maxDreamerTextLength);
       const recentDreams = readRecentDreams(5);
       const provStart = Date.now();
-      const result = await dreamChatReply(message, recentDreams, body.agent || "", body.provider || "");
+
+      // Check for !convergence command
+      let result;
+      if (message.toLowerCase().trim().startsWith("!convergence")) {
+        const requestedAgent = body.agent || "";
+        const agent = requestedAgent
+          ? require("../lib/dream-chat").AGENT_PERSONAS.find(a => a.id === requestedAgent) || selectAgent(message)
+          : selectAgent(message);
+        result = await handleConvergenceCommand(recentDreams, agent);
+      } else {
+        result = await dreamChatReply(message, recentDreams, body.agent || "", body.provider || "");
+      }
+
       const provLatency = Date.now() - provStart;
       try {
         await appendConversationEntry({ recordedAt: new Date().toISOString(), surface: "dream-journal", role: "operator", text: message.slice(0, maxConversationTextLength) });
@@ -189,7 +202,7 @@ module.exports = async function dreamRoutes(req, res, url, deps) {
           latencyMs: provLatency,
           status: result.reply ? "ok" : (result.error ? "error" : "offline"),
           errorMsg: result.error || "",
-          metadata: { source: result.source || "unknown", threeDoors: !!result.threeDoors },
+          metadata: { source: result.source || "unknown", threeDoors: !!result.threeDoors, isConvergence: result.source === "convergence" },
         });
       } catch { /* provenance non-critical */ }
       if (!result.reply) { sendJson(res, { error: result.error || "no_provider_configured", agent: result.agent, online: false, help: result.help || "", suggestions: result.suggestions || [] }, 503); return true; }
