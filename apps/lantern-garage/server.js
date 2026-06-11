@@ -77,6 +77,7 @@ const routes = [
   require("./routes/files-upload"),
   require("./routes/dreamer"),
   require("./routes/dream"),
+  require("./routes/dreams"),
   require("./routes/keystone"),
   require("./routes/image"),
   require("./routes/three-doors-image-pool"),
