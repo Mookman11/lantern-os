@@ -402,6 +402,11 @@ module.exports = async function tradingRoutes(req, res, url, deps) {
         process.env.KALSHI_API_KEY = payload.kalshi;
         updated.push('kalshi');
       }
+      if (payload.alpaca && payload.alpaca.key && payload.alpaca.secret) {
+        process.env.ALPACA_API_KEY = payload.alpaca.key;
+        process.env.ALPACA_SECRET_KEY = payload.alpaca.secret;
+        updated.push('alpaca');
+      }
       if (payload.ibkr_account && payload.ibkr_password) {
         process.env.IBKR_ACCOUNT_ID = payload.ibkr_account;
         process.env.IBKR_PASSWORD = payload.ibkr_password;
