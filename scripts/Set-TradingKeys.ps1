@@ -40,8 +40,9 @@ function Upsert-EnvKey {
     )
     $pattern = "^$([regex]::Escape($Key))\s*="
     $newLine  = "$Key=$Value"
-    $idx = ($Lines | Select-String -Pattern $pattern).LineNumber - 1  # 0-based
-    if ($null -ne $idx -and $idx -ge 0) {
+    $match = $Lines | Select-String -Pattern $pattern | Select-Object -First 1
+    if ($match) {
+        $idx = $match.LineNumber - 1  # LineNumber is 1-based
         $Lines[$idx] = $newLine
     } else {
         $Lines += $newLine
