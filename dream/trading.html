@@ -527,109 +527,70 @@
 </div>
 
 <script>
-// ── API Integration & Real-time Market Data ────────────────────────────────
+// ── API Integration — all calls route through /api/trading/* on this server ──
 class TradingDashboard {
-  constructor() {
-    this.ibkrStatus = 'offline';
-    this.kalshiStatus = 'offline';
-    this.alpacaStatus = 'offline';
-  }
-
-  // Initialize all API connections
   async init() {
-    await Promise.all([
-      this.checkIBKR(),
-      this.checkKALSHI(),
-      this.checkAlpaca(),
-      this.fetchMarketData(),
-    ]);
-
-    // Auto-refresh every 30 seconds
-    setInterval(() => this.fetchMarketData(), 30000);
-    setInterval(() => this.checkAPIs(), 60000);
+    await Promise.all([this.loadStatus(), this.loadSignals()]);
+    setInterval(() => this.loadStatus(), 30000);
+    setInterval(() => this.loadSignals(), 60000);
   }
 
-  // Check IBKR Connection (Interactive Brokers)
-  async checkIBKR() {
+  async loadStatus() {
     try {
-      // Attempt to reach IBKR Gateway (typically runs on localhost:4001)
-      const response = await fetch('http://localhost:4001/api/account', {
-        method: 'GET',
-        credentials: 'omit'
-      }).catch(() => null);
+      const res = await fetch('/api/trading/status');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const { apis, marketData } = await res.json();
 
-      if (response?.ok) {
-        this.ibkrStatus = 'online';
-        document.getElementById('ibkr-status').innerHTML = '🟢 Connected • Account data available';
-      } else {
-        this.ibkrStatus = 'offline';
-        document.getElementById('ibkr-status').innerHTML = '🔴 Offline • Gateway not running';
+      const set = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
+
+      set('ibkr-status', apis.ibkr.connected
+        ? '🟢 Connected • Account data available'
+        : '🔴 Offline • Gateway not running');
+      set('kalshi-status', apis.kalshi.connected
+        ? `🟢 Connected • ${apis.kalshi.events.length} events live`
+        : '🟡 Offline • No API key set');
+      set('alpaca-status', apis.alpaca.connected
+        ? '🟢 Connected • Paper trading active'
+        : '🟡 Offline • No API key set');
+
+      if (marketData) {
+        const setText = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val || '—'; };
+        setText('sp500',  marketData.sp500?.value);
+        setText('nasdaq', marketData.nasdaq?.value);
+        setText('vix',    marketData.vix?.value);
+        setText('eurusd', marketData.eurusd?.value);
+        setText('btc',    marketData.btcusd?.value);
+        setText('gold',   marketData.gold?.value);
       }
     } catch (e) {
-      document.getElementById('ibkr-status').innerHTML = '🟡 Offline • Gateway not detected';
-    }
-  }
-
-  // Check KALSHI Connection (Event Prediction Market)
-  async checkKALSHI() {
-    try {
-      const response = await fetch('https://api.kalshi.com/v1/events?status=open&limit=5', {
-        headers: { 'Accept': 'application/json' }
+      ['ibkr-status','kalshi-status','alpaca-status'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = '🔴 Server unreachable';
       });
-
-      if (response?.ok) {
-        this.kalshiStatus = 'online';
-        document.getElementById('kalshi-status').innerHTML = '🟢 Connected • Event data live';
-      }
-    } catch (e) {
-      document.getElementById('kalshi-status').innerHTML = '🟡 Offline • Check API key';
     }
   }
 
-  // Check Alpaca Connection (Paper Trading)
-  async checkAlpaca() {
+  async loadSignals() {
     try {
-      // This would check Alpaca paper trading API
-      // In real scenario, use your Alpaca API key
-      this.alpacaStatus = 'online';
-      document.getElementById('alpaca-status').innerHTML = '🟢 Connected • Paper trading active';
+      const res = await fetch('/api/trading/ai-trader/signals?limit=4');
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!data.signals || !data.signals.length) return;
+      const container = document.getElementById('ai-advice-container');
+      if (!container) return;
+      container.innerHTML = data.signals.map(s => `
+        <div class="alert-item${s.confidence < 0.7 ? ' warning' : ''}">
+          <p class="alert-title">${s.type === 'BUY' ? '📈' : s.type === 'SELL' ? '📉' : '📊'} ${s.symbol || ''} — ${s.type || 'SIGNAL'}</p>
+          <p class="alert-desc"><strong>Confidence: ${s.confidence ? Math.round(s.confidence * 100) + '%' : '—'}</strong>${s.description ? ' • ' + s.description : ''}</p>
+          <p class="alert-time">${s.timestamp ? new Date(s.timestamp).toLocaleTimeString() : 'AI signal'}</p>
+        </div>`).join('');
     } catch (e) {
-      document.getElementById('alpaca-status').innerHTML = '🟡 Offline • Paper mode unavailable';
+      // AI trader microservice offline — leave static placeholder content
     }
-  }
-
-  // Fetch real-time market data
-  async fetchMarketData() {
-    const data = {
-      sp500: { value: '5,843.25', change: '+0.8%', color: 'green' },
-      nasdaq: { value: '18,427.44', change: '+1.2%', color: 'green' },
-      vix: { value: '14.32', change: '-2.1%', color: 'green' },
-      eurusd: { value: '1.1245', change: '+0.3%', color: 'green' },
-      btc: { value: '$67,432', change: '+2.8%', color: 'green' },
-      gold: { value: '$2,087', change: '+0.2%', color: 'green' }
-    };
-
-    Object.keys(data).forEach(key => {
-      const elem = document.getElementById(key);
-      if (elem) {
-        elem.textContent = data[key].value;
-        elem.style.color = data[key].color === 'green' ? 'var(--green)' : 'var(--danger)';
-      }
-    });
-  }
-
-  async checkAPIs() {
-    await this.checkIBKR();
-    await this.checkKALSHI();
-    await this.checkAlpaca();
   }
 }
 
-// Initialize dashboard on page load
-document.addEventListener('DOMContentLoaded', () => {
-  const dashboard = new TradingDashboard();
-  dashboard.init();
-});
+document.addEventListener('DOMContentLoaded', () => new TradingDashboard().init());
 </script>
 </body>
 </html>
