@@ -137,15 +137,16 @@ class TradingAPIBridge {
    * Get Alpaca account data (paper trading)
    */
   async getAlpacaAccount() {
-    const auth = Buffer.from(`${this.alpacaApiKey}:${this.alpacaSecret}`).toString('base64');
+    if (!this.alpacaApiKey || !this.alpacaSecret) return null;
 
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       const options = {
         hostname: 'paper-api.alpaca.markets',
         path: '/v2/account',
         method: 'GET',
         headers: {
-          'Authorization': `Basic ${auth}`,
+          'APCA-API-KEY-ID': this.alpacaApiKey,
+          'APCA-API-SECRET-KEY': this.alpacaSecret,
           'Accept': 'application/json'
         },
         timeout: 5000
@@ -156,21 +157,20 @@ class TradingAPIBridge {
         res.on('data', chunk => data += chunk);
         res.on('end', () => {
           try {
-            resolve(JSON.parse(data));
+            const parsed = JSON.parse(data);
+            // Alpaca returns {message: "..."} on auth failure
+            resolve(parsed.account_number ? parsed : null);
           } catch (e) {
-            resolve({});
+            resolve(null);
           }
         });
       });
 
       req.on('error', err => {
         console.error('Alpaca error:', err.message);
-        resolve({});
+        resolve(null);
       });
-      req.on('timeout', () => {
-        req.destroy();
-        resolve({});
-      });
+      req.on('timeout', () => { req.destroy(); resolve(null); });
 
       req.end();
     });
