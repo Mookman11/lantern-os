@@ -955,7 +955,7 @@ let trainingImageCount = 0;
 function getSceneImageUrl(sceneKey) {
   // Priority 1: Local PNG
   if (LOCAL_PNG_SCENES.has(sceneKey)) {
-    return `/images/three-doors/${sceneKey}.png`;
+    return `/data/images/three-doors/${sceneKey}.png`;
   }
   // Priority 2 & 3: Server or Pollinations (handled in loadPollinationsImage)
   return null;
