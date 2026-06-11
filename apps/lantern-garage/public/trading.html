@@ -635,10 +635,19 @@
       </div>
 
       <div style="border-top: 1px solid var(--border); padding-top: 16px;">
-        <h3 style="margin: 0 0 12px; font-size: 0.95rem;">Broker Integrations</h3>
-        <div style="padding: 12px; background: var(--surface2); border-radius: 6px; border-left: 3px solid var(--success);">
-          <strong style="color: var(--success);">✓ IBKR (Claude Code MCP)</strong>
-          <p style="margin: 4px 0 0; font-size: 0.85rem; color: var(--muted-text);">Auto-configured • Read-only market data via MCP • No credentials needed</p>
+        <h3 style="margin: 0 0 12px; font-size: 0.95rem;">Broker Integrations (MCP)</h3>
+        <div style="display: grid; gap: 8px;">
+          <div style="padding: 12px; background: var(--surface2); border-radius: 6px; border-left: 3px solid var(--success);">
+            <strong style="color: var(--success);">✓ IBKR</strong>
+            <p style="margin: 4px 0 0; font-size: 0.85rem; color: var(--muted-text);">Live quotes, positions, orderbook, account risk • Read-only via Claude Code MCP</p>
+          </div>
+          <div style="padding: 12px; background: var(--surface2); border-radius: 6px; border-left: 3px solid var(--success);">
+            <strong style="color: var(--success);">✓ Alpaca</strong>
+            <p style="margin: 4px 0 0; font-size: 0.85rem; color: var(--muted-text);">Stocks, options, crypto, portfolio mgmt • Setup: Add API keys to Claude Desktop config</p>
+            <p style="margin: 8px 0 0; font-size: 0.75rem; color: var(--muted-text); font-family: monospace;">
+              github.com/alpacahq/alpaca-mcp-server
+            </p>
+          </div>
         </div>
       </div>
 
