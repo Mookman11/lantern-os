@@ -319,9 +319,9 @@
       const leaderboardData = await leaderboardRes.json();
       renderLeaderboard(leaderboardData.agents || []);
 
-      const statusRes = await fetch(`${origin}/api/status`);
-      const statusData = await statusRes.json();
-      renderProviderStatus(statusData);
+      const healthRes = await fetch(`${origin}/api/agent-performance/provider-health`);
+      const healthData = await healthRes.json();
+      renderProviderStatus(healthData);
 
       document.getElementById('lastUpdated').textContent = new Date().toLocaleTimeString();
       document.getElementById('errorContainer').innerHTML = '';
