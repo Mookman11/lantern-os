@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#06b6d4">
   <link rel="manifest" href="/manifest.json">
   <link rel="stylesheet" href="/css/site.css">
-  <title>Trading Dashboard — Lantern OS</title>
+  <title>Trading — Lantern OS</title>
   <style>
     :root {
       --success: #10b981;
@@ -36,6 +36,9 @@
     /* ── Main layout ── */
     header {
       margin-bottom: 32px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
     }
 
     header h1 {
@@ -46,9 +49,37 @@
     }
 
     header p {
-      font-size: 1rem;
+      font-size: 0.95rem;
       color: var(--muted-text);
       margin: 0;
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .demo-toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      background: rgba(59, 130, 246, 0.1);
+      border: 1px solid var(--info);
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      color: var(--info);
+      font-weight: 600;
+    }
+
+    .demo-toggle input {
+      cursor: pointer;
+    }
+
+    .demo-toggle:hover {
+      background: rgba(59, 130, 246, 0.2);
     }
 
     /* ── Card grid ── */
@@ -396,136 +427,144 @@
 
 <div class="page">
   <header>
-    <h1>📈 Trading Dashboard</h1>
-    <p>Real-time market data and AI trading signals</p>
+    <div>
+      <h1>📈 Trading</h1>
+      <p id="header-subtitle">Market data • Portfolio • Trading signals</p>
+    </div>
+    <div class="header-actions">
+      <label class="demo-toggle">
+        <input type="checkbox" id="demo-mode" onchange="toggleDemoMode()">
+        <span>📊 Demo Data</span>
+      </label>
+    </div>
   </header>
 
-  <!-- ── API Status ── -->
+  <!-- ── Quick Start Guide ── -->
   <div class="grid">
     <div class="card">
-      <h2>Service Status</h2>
-      <div style="display: grid; gap: 8px;">
-        <div class="status">
-          <div class="status-dot ready"></div>
-          <span class="status-text"><strong>Claude AI</strong> • Ready</span>
+      <h2>🚀 Getting Started</h2>
+      <div style="display: grid; gap: 12px; font-size: 0.95rem;">
+        <div style="padding: 12px; background: rgba(16, 185, 129, 0.1); border-radius: 6px; border-left: 3px solid var(--success);">
+          <strong style="color: var(--success);">✓ Demo Mode Ready</strong>
+          <p style="margin: 4px 0 0; color: var(--muted-text); font-size: 0.9rem;">Try the dashboard with realistic data. Toggle "📊 Demo Data" above.</p>
         </div>
-        <div class="status">
-          <div class="status-dot ready"></div>
-          <span class="status-text"><strong>Trading Service</strong> • Live</span>
+        <div style="padding: 12px; background: rgba(239, 68, 68, 0.1); border-radius: 6px; border-left: 3px solid var(--danger);">
+          <strong style="color: var(--danger);">⚙️ Connect Real Data</strong>
+          <p style="margin: 4px 0 0; color: var(--muted-text); font-size: 0.9rem;">Install IBKR Gateway or add Alpaca API keys to see live portfolio & prices.</p>
         </div>
-        <div class="status" id="ibkr-status">
-          <div class="status-dot offline"></div>
-          <span class="status-text"><strong>IBKR</strong> • Offline (awaiting connection)</span>
+        <div style="padding: 12px; background: rgba(59, 130, 246, 0.1); border-radius: 6px; border-left: 3px solid var(--info);">
+          <strong style="color: var(--info);">💡 Tip</strong>
+          <p style="margin: 4px 0 0; color: var(--muted-text); font-size: 0.9rem;">Click any panel title (S&P 500, Portfolio, etc.) to see its data source.</p>
         </div>
-      </div>
-      <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border);">
-        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.9rem;">
-          <input type="checkbox" id="demo-mode" onchange="toggleDemoMode()" style="cursor: pointer;">
-          <span>📊 Demo Mode (realistic test data)</span>
-        </label>
       </div>
     </div>
 
     <!-- ── Market Overview ── -->
     <div class="card">
-      <h2 style="cursor: pointer;" title="Click to see data source" onclick="showSource('market-snapshot')">📊 Market Snapshot</h2>
+      <h2 style="cursor: pointer; opacity: 0.8; transition: opacity 0.2s;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.8" title="Click for data source" onclick="showSource('market-snapshot')">📊 Markets</h2>
       <div class="metrics">
         <div class="metric">
           <span class="metric-label">S&P 500</span>
-          <span class="metric-value" id="sp500">0</span>
+          <span class="metric-value" id="sp500">—</span>
         </div>
         <div class="metric">
           <span class="metric-label">Nasdaq</span>
-          <span class="metric-value" id="nasdaq">0</span>
+          <span class="metric-value" id="nasdaq">—</span>
         </div>
         <div class="metric">
           <span class="metric-label">VIX</span>
-          <span class="metric-value" id="vix">0</span>
+          <span class="metric-value" id="vix">—</span>
         </div>
         <div class="metric">
           <span class="metric-label">EUR/USD</span>
-          <span class="metric-value" id="eurusd">0</span>
+          <span class="metric-value" id="eurusd">—</span>
         </div>
       </div>
-      <div id="market-snapshot-source" style="font-size: 0.75rem; color: var(--muted-text); margin-top: 8px; display: none;"></div>
+      <div id="market-snapshot-source" style="font-size: 0.75rem; color: var(--muted-text); margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); display: none;"></div>
     </div>
   </div>
 
   <!-- ── Portfolio ── -->
   <div class="grid">
     <div class="card">
-      <h2 style="cursor: pointer;" title="Click to see data source" onclick="showSource('portfolio')">💼 Your Portfolio</h2>
+      <h2 style="cursor: pointer; opacity: 0.8; transition: opacity 0.2s;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.8" title="Connect IBKR or Alpaca for real data" onclick="showSource('portfolio')">💼 Portfolio</h2>
       <div class="metrics">
         <div class="metric">
-          <span class="metric-label">Total Equity</span>
-          <span class="metric-value" id="equity">0</span>
+          <span class="metric-label">Total Value</span>
+          <span class="metric-value" id="equity" style="font-size: 1.4rem;">—</span>
         </div>
         <div class="metric">
           <span class="metric-label">Today's P&L</span>
-          <span class="metric-value" id="pnl">0</span>
+          <span class="metric-value" id="pnl">—</span>
         </div>
         <div class="metric">
-          <span class="metric-label">Open Positions</span>
-          <span class="metric-value" id="positions">0</span>
+          <span class="metric-label">Positions</span>
+          <span class="metric-value" id="positions">—</span>
         </div>
       </div>
-      <div id="portfolio-source" style="font-size: 0.75rem; color: var(--muted-text); margin-top: 8px; display: none;"></div>
+      <div id="portfolio-source" style="font-size: 0.75rem; color: var(--muted-text); margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); display: none;"></div>
     </div>
 
     <div class="card">
-      <h2 style="cursor: pointer;" title="Click to see data source" onclick="showSource('market-status')">📈 Market Status</h2>
+      <h2 style="cursor: pointer; opacity: 0.8; transition: opacity 0.2s;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.8" title="Click for data source" onclick="showSource('market-status')">🌍 Market Conditions</h2>
       <div class="metrics">
         <div class="metric">
-          <span class="metric-label">Session</span>
-          <span class="metric-value" id="market-status">CLOSED</span>
+          <span class="metric-label">Hours</span>
+          <span class="metric-value" id="market-status" style="font-size: 1.1rem;">—</span>
         </div>
         <div class="metric">
-          <span class="metric-label">VIX Regime</span>
+          <span class="metric-label">Volatility</span>
           <span class="metric-value" id="vix-regime">—</span>
         </div>
         <div class="metric">
-          <span class="metric-label">SPY 1D Return</span>
-          <span class="metric-value" id="spy-1d">0%</span>
+          <span class="metric-label">SPY Today</span>
+          <span class="metric-value" id="spy-1d">—</span>
         </div>
       </div>
-      <div id="market-status-source" style="font-size: 0.75rem; color: var(--muted-text); margin-top: 8px; display: none;"></div>
+      <div id="market-status-source" style="font-size: 0.75rem; color: var(--muted-text); margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); display: none;"></div>
     </div>
   </div>
 
   <!-- ── Trading Signals ── -->
   <div class="card full">
-    <h2 style="cursor: pointer;" title="Click to see data source" onclick="showSource('signals')">🤖 AI Trading Signals</h2>
-    <div id="signals-container" style="text-align: center; color: var(--muted-text); padding: 24px;">
-      No signals available. Connect to a trading API to load signals.
+    <h2 style="cursor: pointer; opacity: 0.8; transition: opacity 0.2s;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.8" title="AI trading recommendations" onclick="showSource('signals')">🤖 Trading Ideas</h2>
+    <div id="signals-container" style="text-align: center; color: var(--muted-text); padding: 48px 24px;">
+      <p style="margin: 0 0 8px; font-size: 1.05rem;">No signals yet</p>
+      <p style="margin: 0; font-size: 0.9rem;">Enable demo mode or connect Claude MCP to see AI trading recommendations</p>
     </div>
-    <div id="signals-source" style="font-size: 0.75rem; color: var(--muted-text); margin-top: 8px; display: none;"></div>
+    <div id="signals-source" style="font-size: 0.75rem; color: var(--muted-text); margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); display: none;"></div>
   </div>
 
   <!-- ── Watchlist ── -->
   <div class="card full">
-    <h2 style="cursor: pointer;" title="Click to see data source" onclick="showSource('watchlist')">📊 Watchlist</h2>
-    <div class="watchlist" id="watchlist" style="text-align: center; color: var(--muted-text); padding: 24px; grid-template-columns: 1fr;">
-      No watchlist data available. Connect to Alpaca or IBKR to load prices.
+    <h2 style="cursor: pointer; opacity: 0.8; transition: opacity 0.2s;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.8" title="Click for data source" onclick="showSource('watchlist')">📊 Stock Prices</h2>
+    <div class="watchlist" id="watchlist" style="text-align: center; color: var(--muted-text); padding: 48px 24px; grid-template-columns: 1fr;">
+      <div>
+        <p style="margin: 0 0 8px; font-size: 1.05rem;">No prices available</p>
+        <p style="margin: 0; font-size: 0.9rem;">Enable demo mode or add Alpaca API keys to see live stock prices</p>
+      </div>
     </div>
-    <div id="watchlist-source" style="font-size: 0.75rem; color: var(--muted-text); margin-top: 8px; display: none;"></div>
+    <div id="watchlist-source" style="font-size: 0.75rem; color: var(--muted-text); margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); display: none;"></div>
   </div>
 
   <!-- ── Activity Feed ── -->
   <div class="grid">
     <div class="card">
-      <h2 style="cursor: pointer;" title="Click to see data source" onclick="showSource('agent-activity')">🤖 Agent Activity</h2>
-      <div id="agent-feed" style="color: var(--muted-text); text-align: center; padding: 24px;">
-        No agent activity. Agents generate logs during trading sessions.
+      <h2 style="cursor: pointer; opacity: 0.8; transition: opacity 0.2s;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.8" title="Click for data source" onclick="showSource('agent-activity')">🤖 Activity Log</h2>
+      <div id="agent-feed" style="color: var(--muted-text); text-align: center; padding: 32px 24px;">
+        <p style="margin: 0; font-size: 0.95rem;">No recent activity</p>
+        <p style="margin: 4px 0 0; font-size: 0.85rem;">Activity appears here during active trading sessions</p>
       </div>
-      <div id="agent-activity-source" style="font-size: 0.75rem; color: var(--muted-text); margin-top: 8px; display: none;"></div>
+      <div id="agent-activity-source" style="font-size: 0.75rem; color: var(--muted-text); margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); display: none;"></div>
     </div>
 
     <div class="card">
-      <h2 style="cursor: pointer;" title="Click to see data source" onclick="showSource('orders')">📋 Recent Orders</h2>
-      <div id="orders-feed" style="color: var(--muted-text); text-align: center; padding: 24px;">
-        No orders. Execute trades through Alpaca or IBKR to see order history.
+      <h2 style="cursor: pointer; opacity: 0.8; transition: opacity 0.2s;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.8" title="Click for data source" onclick="showSource('orders')">📋 Trade History</h2>
+      <div id="orders-feed" style="color: var(--muted-text); text-align: center; padding: 32px 24px;">
+        <p style="margin: 0; font-size: 0.95rem;">No trades yet</p>
+        <p style="margin: 4px 0 0; font-size: 0.85rem;">Orders appear here when you trade through connected brokers</p>
       </div>
-      <div id="orders-source" style="font-size: 0.75rem; color: var(--muted-text); margin-top: 8px; display: none;"></div>
+      <div id="orders-source" style="font-size: 0.75rem; color: var(--muted-text); margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); display: none;"></div>
     </div>
   </div>
 </div>
@@ -774,18 +813,25 @@ async function loadPortfolioData() {
     const res = await fetch(endpoint);
     const data = await res.json();
     if (data.account) {
-      document.getElementById('equity').textContent = `$${(data.account.equity || 0).toLocaleString()}`;
-      document.getElementById('pnl').textContent = `${(data.account.pnl_today || 0) >= 0 ? '+' : ''}$${(data.account.pnl_today || 0).toLocaleString()}`;
-      document.getElementById('positions').textContent = (data.positions || []).length;
+      const equity = data.account.equity || 0;
+      const pnl = data.account.pnl_today || 0;
+      const positions = (data.positions || []).length;
+
+      // Format for display
+      document.getElementById('equity').textContent = equity > 0 ? `$${(equity).toLocaleString()}` : '—';
+      document.getElementById('pnl').textContent = equity > 0 ? `${pnl >= 0 ? '+' : ''}$${pnl.toLocaleString()}` : '—';
+      document.getElementById('positions').textContent = equity > 0 ? positions : '—';
 
       const pnlEl = document.getElementById('pnl');
-      pnlEl.className = (data.account.pnl_today || 0) >= 0 ? 'metric-value positive' : 'metric-value negative';
+      if (equity > 0) {
+        pnlEl.className = 'metric-value ' + (pnl >= 0 ? 'positive' : 'negative');
+      }
 
       const sourceEl = document.getElementById('portfolio-source');
       const sourceText = DEMO_MODE ? '📋 Demo Data' :
-        data.source === 'IBKR' ? '🔗 IBKR Gateway (real)' :
-        data.source === 'Alpaca' ? '🟢 Alpaca API (real)' : '(no data source)';
-      sourceEl.textContent = `Source: ${sourceText}`;
+        data.source === 'IBKR' ? '🔗 Connected to IBKR' :
+        data.source === 'Alpaca' ? '🟢 Connected to Alpaca' : 'Not connected';
+      sourceEl.textContent = `${sourceText}`;
       sourceEl.style.display = 'block';
     }
   } catch (e) {
@@ -798,13 +844,18 @@ async function loadMarketStatus() {
     const endpoint = DEMO_MODE ? '/api/market-status/demo' : '/api/market-status';
     const res = await fetch(endpoint);
     const data = await res.json();
-    document.getElementById('market-status').textContent = data.market || 'CLOSED';
-    document.getElementById('vix-regime').textContent = data.vix_regime || '—';
-    document.getElementById('spy-1d').textContent = `${data.spy_1d || 0}%`;
+
+    const market = data.market || 'CLOSED';
+    const vix = data.vix || 0;
+    const spy = data.spy_1d || 0;
+
+    document.getElementById('market-status').textContent = market === 'OPEN' ? '🟢 Open' : '🔴 Closed';
+    document.getElementById('vix-regime').textContent = vix > 0 ? (vix > 20 ? 'High' : vix > 15 ? 'Moderate' : 'Low') : '—';
+    document.getElementById('spy-1d').textContent = spy !== 0 ? `${spy > 0 ? '+' : ''}${spy.toFixed(1)}%` : '—';
 
     const sourceEl = document.getElementById('market-status-source');
-    const sourceText = DEMO_MODE ? '📋 Demo Data' : '🔗 IBKR Gateway';
-    sourceEl.textContent = `Source: ${sourceText}`;
+    const sourceText = DEMO_MODE ? '📋 Demo Data' : 'Not connected';
+    sourceEl.textContent = `${sourceText}`;
     sourceEl.style.display = 'block';
   } catch (e) {
     console.error('Failed to load market status:', e);
@@ -821,20 +872,24 @@ async function loadWatchlist() {
     if (items && items.length > 0) {
       container.style.gridTemplateColumns = 'repeat(auto-fill, minmax(120px, 1fr))';
       container.style.textAlign = 'left';
-      container.innerHTML = items.map(item => `
-        <div class="watchlist-item">
-          <div class="watchlist-symbol">${item.ticker}</div>
-          <div class="watchlist-price">$${(item.price || 0).toFixed(2)}</div>
-          <div class="watchlist-change ${item.chg_pct >= 0 ? 'up' : 'down'}">
-            ${item.chg_pct >= 0 ? '↑' : '↓'} ${Math.abs(item.chg_pct || 0).toFixed(2)}%
+      container.innerHTML = items.map(item => {
+        const price = item.price || 0;
+        const change = item.chg_pct || 0;
+        return `
+          <div class="watchlist-item" style="cursor: pointer; transition: all 0.2s;" onmouseover="this.style.opacity=0.8" onmouseout="this.style.opacity=1">
+            <div class="watchlist-symbol">${item.ticker}</div>
+            <div class="watchlist-price" style="color: ${change >= 0 ? 'var(--success)' : 'var(--danger)'};">$${price.toFixed(2)}</div>
+            <div class="watchlist-change ${change >= 0 ? 'up' : 'down'}">
+              ${change >= 0 ? '↑' : '↓'} ${Math.abs(change).toFixed(2)}%
+            </div>
           </div>
-        </div>
-      `).join('');
+        `;
+      }).join('');
     }
 
     const sourceEl = document.getElementById('watchlist-source');
-    const sourceText = DEMO_MODE ? '📋 Demo Data' : '🟢 Alpaca API';
-    sourceEl.textContent = `Source: ${sourceText}`;
+    const sourceText = DEMO_MODE ? '📋 Demo Data' : 'Not connected';
+    sourceEl.textContent = `${sourceText}`;
     sourceEl.style.display = 'block';
   } catch (e) {
     console.error('Failed to load watchlist:', e);
@@ -849,24 +904,36 @@ async function loadSignals() {
     const container = document.getElementById('signals-container');
 
     if (signals && signals.length > 0) {
-      container.innerHTML = signals.map(sig => `
-        <div class="signal-card ${sig.type?.toLowerCase() || 'hold'}">
-          <div class="signal-header">
-            <span class="signal-title">${sig.symbol} — ${sig.type} Signal</span>
-            <span class="signal-confidence">${Math.round((sig.confidence || 0) * 100)}% Confidence</span>
+      container.innerHTML = signals.map(sig => {
+        const type = sig.type || 'HOLD';
+        const confidence = Math.round((sig.confidence || 0) * 100);
+        return `
+          <div class="signal-card ${type.toLowerCase()}">
+            <div class="signal-header">
+              <span class="signal-title">${sig.symbol} — ${type}</span>
+              <span class="signal-confidence" style="background: ${
+                type === 'BUY' ? 'rgba(16, 185, 129, 0.15)' :
+                type === 'SELL' ? 'rgba(239, 68, 68, 0.15)' :
+                'rgba(245, 158, 11, 0.15)'
+              }; color: ${
+                type === 'BUY' ? 'var(--success)' :
+                type === 'SELL' ? 'var(--danger)' :
+                'var(--warning)'
+              };">${confidence}% Confidence</span>
+            </div>
+            <p class="signal-body">${sig.description || 'Analysis in progress'}</p>
+            <div class="signal-footer">
+              <span class="signal-source">${DEMO_MODE ? '📋 Example' : '🤖 AI Analysis'}</span>
+              <span class="signal-timestamp" style="font-size: 0.8rem;">${new Date(sig.timestamp).toLocaleTimeString()}</span>
+            </div>
           </div>
-          <p class="signal-body">${sig.description || 'No description available'}</p>
-          <div class="signal-footer">
-            <span class="signal-source">${DEMO_MODE ? '📋 Demo Signal' : 'AI Trader'}</span>
-            <span class="signal-timestamp">${new Date(sig.timestamp).toLocaleString()}</span>
-          </div>
-        </div>
-      `).join('');
+        `;
+      }).join('');
     }
 
     const sourceEl = document.getElementById('signals-source');
-    const sourceText = DEMO_MODE ? '📋 Demo Data' : '🤖 AI Trader Signals';
-    sourceEl.textContent = `Source: ${sourceText}`;
+    const sourceText = DEMO_MODE ? '📋 Demo Data' : 'No signals';
+    sourceEl.textContent = `${sourceText}`;
     sourceEl.style.display = 'block';
   } catch (e) {
     console.error('Failed to load signals:', e);
