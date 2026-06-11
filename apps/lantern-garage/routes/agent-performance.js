@@ -62,5 +62,40 @@ module.exports = async function agentPerformanceRoutes(req, res, url, deps) {
     return true;
   }
 
+  // GET /api/agent-performance/provider-health
+  // Get current provider health status for dashboard
+  if (url.pathname === "/api/agent-performance/provider-health" && req.method === "GET") {
+    try {
+      let providerStatus = {};
+      try {
+        const providerRouter = require("../lib/provider-router");
+        providerStatus = providerRouter.getProviderStatus();
+      } catch (err) {
+        // Provider router not available, return empty
+      }
+
+      // Format for dashboard display
+      const providers = {};
+      const allProviders = ["anthropic", "openai", "gemini", "ollama", "mistral", "deepseek", "cohere"];
+
+      for (const provider of allProviders) {
+        const state = providerStatus[provider] || {};
+        providers[provider] = {
+          healthy: state.noKey ? false : state.blockedUntil ? false : true,
+          noKey: state.noKey || false,
+          blocked: state.blockedUntil && Date.now() < state.blockedUntil,
+          lastSuccess: state.lastSuccess,
+          lastError: state.lastError,
+          consecutiveFailures: state.consecutiveFailures || 0,
+        };
+      }
+
+      sendJson(res, { providers }, 200);
+    } catch (error) {
+      sendJson(res, { error: error.message }, 500);
+    }
+    return true;
+  }
+
   return false;
 };
