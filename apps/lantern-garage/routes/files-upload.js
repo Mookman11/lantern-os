@@ -92,26 +92,72 @@ async function processDocumentAsync(fileId, filePath, entry, deps) {
   try {
     const { fs, appendJsonlQueued, repoRoot } = deps;
     const path = require("path");
+    const { extractDocumentContent, extractFileMetadata } = require("../lib/document-extractor");
+    const { isDuplicate, recordDedupEntry, buildDedupIndex } = require("../lib/document-deduplicator");
 
     if (!fs.existsSync(filePath)) {
       console.error(`File not found for processing: ${filePath}`);
       return;
     }
 
-    // Read and chunk the document
-    const content = fs.readFileSync(filePath, "utf8");
-    const chunks = chunkText(content, 500);
+    // Extract content with appropriate method (PDF, OCR, plain text)
+    const extracted = await extractDocumentContent(filePath, entry.mimeType);
+    if (!extracted.content) {
+      updateFileProcessingStatus(fileId, {
+        processed: false,
+        error: `Extraction failed: ${extracted.error}`
+      }, deps);
+      return;
+    }
+
+    // Extract metadata
+    const metadata = await extractFileMetadata(filePath);
+
+    // Check for duplicates
+    const csfPath = path.join(repoRoot, "data", "csf-ingest", "deltas.jsonl");
+    const dedupIndex = buildDedupIndex(csfPath);
+    const isDup = isDuplicate(extracted.content, metadata, dedupIndex);
+
+    if (isDup) {
+      console.log(`[dedup] Skipping duplicate: ${entry.fileName} (matches ${isDup.fileName})`);
+      recordDedupEntry(extracted.content, metadata, filePath);
+      updateFileProcessingStatus(fileId, {
+        processed: true,
+        isDuplicate: true,
+        duplicateOf: isDup.fileId,
+        chunkCount: 0
+      }, deps);
+      return;
+    }
+
+    // Chunk the document
+    const chunks = chunkText(extracted.content, 500);
 
     // Ingest chunks into CSF memory as document entries
     const { ingestEntry: csfIngest } = require("../lib/csf-delta-store");
     for (let i = 0; i < chunks.length; i++) {
       try {
         csfIngest({
-          kind: "document",
+          kind: "document-chunk",
           text: chunks[i],
           tags: [entry.fileName, `chunk:${i + 1}/${chunks.length}`],
           symbols: extractKeywords(chunks[i]),
-          source: `file:${fileId}`,
+          source: {
+            fileId: fileId,
+            fileName: entry.fileName,
+            type: path.extname(filePath).slice(1),
+            extractionMethod: extracted.method,
+            confidence: extracted.confidence
+          },
+          docMetadata: {
+            title: metadata.fileName,
+            createdAt: metadata.createdAt,
+            modifiedAt: metadata.modifiedAt,
+            size: metadata.size,
+            pages: extracted.pages
+          },
+          chunkIdx: i,
+          totalChunks: chunks.length,
           timestamp: new Date().toISOString(),
         });
       } catch (e) {
@@ -119,8 +165,15 @@ async function processDocumentAsync(fileId, filePath, entry, deps) {
       }
     }
 
+    recordDedupEntry(extracted.content, metadata, filePath);
+
     // Update entry as processed
-    updateFileProcessingStatus(fileId, { processed: true, chunkCount: chunks.length }, deps);
+    updateFileProcessingStatus(fileId, {
+      processed: true,
+      chunkCount: chunks.length,
+      extractionMethod: extracted.method,
+      confidence: extracted.confidence
+    }, deps);
   } catch (err) {
     console.error(`Document processing failed for ${fileId}:`, err.message);
     updateFileProcessingStatus(fileId, { processed: false, error: err.message }, deps);

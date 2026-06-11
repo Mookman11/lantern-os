@@ -5,6 +5,42 @@ const { readMcpResourceSync } = require("./mcp-resource-client");
 const { formatCSFContextForPrompt } = require("./csf-memory");
 const { webSearchMcp, formatGroundingContext, needsGrounding, extractSearchQuery } = require("./web-search-client");
 
+// Extract key topics from user message and generate 3 web search suggestion links
+function generateWebSuggestions(userMessage) {
+  const topicPatterns = {
+    sports: /\b(basketball|football|baseball|soccer|hockey|tennis|golf|cricket|boxing)s?\b/i,
+    trains: /\b(trains?|railways?|locomotives?|stations?|transit|rails?)\b/i,
+    recipes: /\b(recipes?|cooking|cook|meals?|dishes?|foods?|ingredients?)\b/i,
+    movies: /\b(movies?|films?|cinemas?|watch|actors?|actresses?|directors?)\b/i,
+    music: /\b(musics?|songs?|albums?|artists?|concerts?|bands?|genres?)\b/i,
+    tech: /\b(technology|software|hardware|ai|code|programming|apps?)\b/i,
+    travel: /\b(travels?|trips?|destinations?|vacations?|hotels?|flights?|tours?)\b/i,
+    science: /\b(science|research|studies?|discoveries?|experiments?|biology|physics)\b/i,
+    news: /\b(news|current|todays?|today's|latest|breaking)\b/i,
+    health: /\b(health|fitness|diets?|exercises?|wellness|nutrition)\b/i,
+  };
+
+  let matchedTopics = [];
+  for (const [topic, pattern] of Object.entries(topicPatterns)) {
+    if (pattern.test(userMessage)) {
+      matchedTopics.push(topic);
+    }
+  }
+
+  if (matchedTopics.length === 0) {
+    const words = userMessage.split(/\s+/).filter(w => w.length > 4 && !/^(what|when|where|which|how|about)$/i.test(w));
+    if (words.length > 0) matchedTopics.push(words[0].toLowerCase());
+  }
+
+  const topicLabel = matchedTopics[0] || "interesting topics";
+
+  return [
+    { label: "Explore on Google", url: `https://www.google.com/search?q=${encodeURIComponent(topicLabel)}`, icon: "🔍" },
+    { label: "Latest on Wikipedia", url: `https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(topicLabel)}&title=Special:Search`, icon: "📖" },
+    { label: "News & Articles", url: `https://news.google.com/search?q=${encodeURIComponent(topicLabel)}`, icon: "📰" },
+  ];
+}
+
 // ------------------------------------------------------------------
 // Multi-Agent Personas — loaded from MCP resource (data/contexts/personas.json)
 // Previously hardcoded inline blob; now URI-addressable via context://personas
@@ -208,6 +244,7 @@ const DREAM_DOORS = _doorsData.doors || {
 
 async function dreamChatReply(message, recentDreams, requestedAgent = "", requestedProvider = "") {
   const text = String(message || "").trim();
+  const webSuggestions = generateWebSuggestions(message);
 
   // ── Three Doors game intercept ──
   // Python ThreeDoorsEngine (scripted state machine, offline-capable)
@@ -392,7 +429,7 @@ async function dreamChatReply(message, recentDreams, requestedAgent = "", reques
       });
       if (reply && reply.content) {
         const ollamaSuggestions = reply.doors && reply.doors.length > 0 ? reply.doors : suggestions;
-        return { reply: reply.content, agent: agent.name, suggestions: ollamaSuggestions, online: true, source: "ollama" };
+        return { reply: reply.content, agent: agent.name, suggestions: ollamaSuggestions, online: true, source: "ollama", webSuggestions };
       }
     } catch (err) {
       console.error("Ollama API error:", err.message);
@@ -439,7 +476,7 @@ async function dreamChatReply(message, recentDreams, requestedAgent = "", reques
         req2.end();
       });
       if (reply) {
-        return { reply, agent: agent.name, suggestions, online: true, source: "claude" };
+        return { reply, agent: agent.name, suggestions, online: true, source: "claude", webSuggestions };
       }
     } catch (err) { console.error("Claude API error:", err.message); }
   }
@@ -480,7 +517,7 @@ async function dreamChatReply(message, recentDreams, requestedAgent = "", reques
         req2.end();
       });
       if (reply) {
-        return { reply, agent: agent.name, suggestions, online: true, source: "gemini" };
+        return { reply, agent: agent.name, suggestions, online: true, source: "gemini", webSuggestions };
       }
     } catch (err) { console.error("Gemini API error:", err.message); }
   }
@@ -523,7 +560,7 @@ async function dreamChatReply(message, recentDreams, requestedAgent = "", reques
         req2.end();
       });
       if (reply) {
-        return { reply, agent: agent.name, suggestions, online: true, source: "openai" };
+        return { reply, agent: agent.name, suggestions, online: true, source: "openai", webSuggestions };
       }
     } catch (err) { console.error("OpenAI API error:", err.message); }
   }
@@ -536,6 +573,7 @@ async function dreamChatReply(message, recentDreams, requestedAgent = "", reques
     suggestions,
     online: false,
     source: "none",
+    webSuggestions,
     help: "Ollama (local): install at http://127.0.0.1:11434 for offline AI. Cloud: GEMINI_API_KEY (with live web search), ANTHROPIC_API_KEY, OPENAI_API_KEY.",
   };
 }

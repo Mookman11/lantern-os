@@ -414,7 +414,7 @@
                     suggestions = doorsMatch[1].split("|").map(s => s.trim().replace(/^[ABC]\s+/i, "").trim()).filter(Boolean);
                   }
                 }
-                finishStream(row, bubble, cursor, displayText, evt.source, evt.error, suggestions, evt.image_prompt);
+                finishStream(row, bubble, cursor, displayText, evt.source, evt.error, suggestions, evt.image_prompt, evt.webSuggestions);
               }
             } catch { /* skip malformed */ }
           }
@@ -426,7 +426,7 @@
               if (buf.trim()) processLines([buf]);
               if (!streamFinished) {
                 if (!hasTokens) bubble.textContent = "No response received.";
-                finishStream(row, bubble, cursor, fullText, "done", undefined, undefined);
+                finishStream(row, bubble, cursor, fullText, "done", undefined, undefined, undefined, undefined);
               }
               return;
             }
@@ -435,7 +435,7 @@
             buf = lines.pop();
             processLines(lines);
             read();
-          }).catch(() => { if (!streamFinished) finishStream(row, bubble, cursor, fullText, "error"); });
+          }).catch(() => { if (!streamFinished) finishStream(row, bubble, cursor, fullText, "error", undefined, undefined, undefined, undefined); });
         }
         read();
       })
@@ -443,11 +443,11 @@
         setThinking(false);
         bubble.textContent = "Failed to reach the server.";
         cursor.remove();
-        finishStream(row, bubble, cursor, "", "error");
+        finishStream(row, bubble, cursor, "", "error", undefined, undefined, undefined, undefined);
       });
   }
 
-  function finishStream(row, bubble, cursor, text, source, error, suggestions, imagePrompt) {
+  function finishStream(row, bubble, cursor, text, source, error, suggestions, imagePrompt, webSuggestions) {
     cursor.remove();
     if (!text && !error) {
       bubble.textContent = bubble.textContent || "…";
@@ -500,6 +500,42 @@
         chips.appendChild(btn);
       });
       row.appendChild(chips);
+    }
+
+    // Render web suggestions (3 clickable links to explore topics)
+    if (Array.isArray(webSuggestions) && webSuggestions.length > 0) {
+      const webChips = document.createElement("div");
+      webChips.className = "web-suggestions";
+      webChips.style.marginTop = "8px";
+      webChips.style.display = "flex";
+      webChips.style.gap = "6px";
+      webChips.style.flexWrap = "wrap";
+      webSuggestions.forEach(ws => {
+        const link = document.createElement("a");
+        link.href = ws.url;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.className = "web-suggestion";
+        link.style.fontSize = "0.85em";
+        link.style.padding = "4px 10px";
+        link.style.borderRadius = "4px";
+        link.style.backgroundColor = "#e8f4f8";
+        link.style.color = "#0066cc";
+        link.style.textDecoration = "none";
+        link.style.border = "1px solid #b3d9e6";
+        link.style.cursor = "pointer";
+        link.textContent = `${ws.icon} ${ws.label}`;
+        link.onmouseover = () => {
+          link.style.backgroundColor = "#d0eaf0";
+          link.style.borderColor = "#7db5cc";
+        };
+        link.onmouseout = () => {
+          link.style.backgroundColor = "#e8f4f8";
+          link.style.borderColor = "#b3d9e6";
+        };
+        webChips.appendChild(link);
+      });
+      row.appendChild(webChips);
     }
 
     // ── Three Doors banner (disabled — appendDoorsBanner not yet implemented) ──

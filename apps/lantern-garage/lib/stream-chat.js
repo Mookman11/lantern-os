@@ -97,6 +97,46 @@ function doorsOrFallback(text, isKeystoneDebug = false) {
   return { cleanText, suggestions: finalDoors };
 }
 
+// Extract key topics from user message and generate 3 web search suggestion links
+function generateWebSuggestions(userMessage) {
+  const topicPatterns = {
+    sports: /\b(basketball|football|baseball|soccer|hockey|tennis|golf|cricket|boxing)s?\b/i,
+    trains: /\b(trains?|railways?|locomotives?|stations?|transit|rails?)\b/i,
+    recipes: /\b(recipes?|cooking|cook|meals?|dishes?|foods?|ingredients?)\b/i,
+    movies: /\b(movies?|films?|cinemas?|watch|actors?|actresses?|directors?)\b/i,
+    music: /\b(musics?|songs?|albums?|artists?|concerts?|bands?|genres?)\b/i,
+    tech: /\b(technology|software|hardware|ai|code|programming|apps?)\b/i,
+    travel: /\b(travels?|trips?|destinations?|vacations?|hotels?|flights?|tours?)\b/i,
+    science: /\b(science|research|studies?|discoveries?|experiments?|biology|physics)\b/i,
+    news: /\b(news|current|todays?|today's|latest|breaking)\b/i,
+    health: /\b(health|fitness|diets?|exercises?|wellness|nutrition)\b/i,
+  };
+
+  let matchedTopics = [];
+  for (const [topic, pattern] of Object.entries(topicPatterns)) {
+    if (pattern.test(userMessage)) {
+      matchedTopics.push(topic);
+    }
+  }
+
+  // If no patterns match, extract first meaningful word
+  if (matchedTopics.length === 0) {
+    const words = userMessage.split(/\s+/).filter(w => w.length > 4 && !/^(what|when|where|which|how|about)$/i.test(w));
+    if (words.length > 0) matchedTopics.push(words[0].toLowerCase());
+  }
+
+  const topicLabel = matchedTopics[0] || "interesting topics";
+
+  // Generate 3 search suggestion links with generic but relevant queries
+  const suggestions = [
+    { label: "Explore on Google", url: `https://www.google.com/search?q=${encodeURIComponent(topicLabel)}`, icon: "🔍" },
+    { label: "Latest on Wikipedia", url: `https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(topicLabel)}&title=Special:Search`, icon: "📖" },
+    { label: "News & Articles", url: `https://news.google.com/search?q=${encodeURIComponent(topicLabel)}`, icon: "📰" },
+  ];
+
+  return suggestions;
+}
+
 // Non-blocking image generation sidecar for Three Doors mode
 function triggerImageGeneration({ cleanText, suggestions, surfaceMode, symbolMesh }) {
   if (surfaceMode !== "three-doors") return null;
@@ -615,6 +655,9 @@ Interpret this convergence result and provide:
     text: message.slice(0, maxConversationTextLength),
   }).catch(() => {});
 
+  // Generate 3 web suggestions based on user query topics
+  const webSuggestions = generateWebSuggestions(message);
+
   // Snapshot provider availability from the 60s PCSF cache (avoids per-request env re-reads)
   const providerState = getProviderState();
   const anyProviderConfigured = !!(
@@ -736,7 +779,7 @@ Interpret this convergence result and provide:
             text: cleanText.slice(0, maxConversationTextLength),
           }).catch(() => {});
           recordProviderSuccess("ollama");
-          const meta = { agent: agent.name, online: true, cleanText, suggestions, model: ollamaModel };
+          const meta = { agent: agent.name, online: true, cleanText, suggestions, model: ollamaModel, webSuggestions };
           if (imageEntryId) meta.image = { entryId: imageEntryId, status: "generating" };
           sendDone("ollama", meta);
           return;
@@ -826,7 +869,7 @@ Interpret this convergence result and provide:
         text: geminiClean.slice(0, maxConversationTextLength),
       }).catch(() => {});
       recordProviderSuccess("gemini");
-      sendDone("gemini", { agent: agent.name, online: true, cleanText: geminiClean, suggestions: geminiDoors });
+      sendDone("gemini", { agent: agent.name, online: true, cleanText: geminiClean, suggestions: geminiDoors, webSuggestions });
       return;
     } catch (err) {
       recordProviderFailure("gemini", err.message);
@@ -910,7 +953,7 @@ Interpret this convergence result and provide:
         text: anthropicClean.slice(0, maxConversationTextLength),
       }).catch(() => {});
       recordProviderSuccess("anthropic");
-      sendDone("anthropic", { agent: agent.name, online: true, cleanText: anthropicClean, suggestions: anthropicDoors });
+      sendDone("anthropic", { agent: agent.name, online: true, cleanText: anthropicClean, suggestions: anthropicDoors, webSuggestions });
       return;
     } catch (err) {
       recordProviderFailure("anthropic", err.message);
@@ -981,7 +1024,7 @@ Interpret this convergence result and provide:
         text: openaiClean.slice(0, maxConversationTextLength),
       }).catch(() => {});
       recordProviderSuccess("openai");
-      sendDone("openai", { agent: agent.name, online: true, cleanText: openaiClean, suggestions: openaiDoors });
+      sendDone("openai", { agent: agent.name, online: true, cleanText: openaiClean, suggestions: openaiDoors, webSuggestions });
       return;
     } catch (err) {
       recordProviderFailure("openai", err.message);
@@ -1029,7 +1072,7 @@ Interpret this convergence result and provide:
       const { cleanText: xaiClean, suggestions: xaiDoors } = doorsOrFallback(fullReply, isKeystoneDebug);
       await appendConversationEntry({ recordedAt: new Date().toISOString(), surface: "dream-chat-stream", role: "lantern", text: xaiClean.slice(0, maxConversationTextLength) }).catch(() => {});
       recordProviderSuccess("xai");
-      sendDone("grok", { agent: agent.name, online: true, cleanText: xaiClean, suggestions: xaiDoors });
+      sendDone("grok", { agent: agent.name, online: true, cleanText: xaiClean, suggestions: xaiDoors, webSuggestions });
       return;
     } catch (err) {
       recordProviderFailure("xai", err.message);
@@ -1142,7 +1185,7 @@ Interpret this convergence result and provide:
           text: ollamaClean.slice(0, maxConversationTextLength),
         }).catch(() => {});
         recordProviderSuccess("ollama");
-        sendDone("ollama", { agent: agent.name, online: true, cleanText: ollamaClean, suggestions: ollamaDoors });
+        sendDone("ollama", { agent: agent.name, online: true, cleanText: ollamaClean, suggestions: ollamaDoors, webSuggestions });
         return;
       }
     } catch (err) {
