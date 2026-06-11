@@ -367,7 +367,8 @@ module.exports = async function tradingRoutes(req, res, url, deps) {
     sendJson(res, {
       configured: providers,
       mcp: {
-        ibkr: 'Claude Code MCP: read-only quotes, positions, orderbook, risk data'
+        ibkr: 'Claude Code MCP: Live quotes, positions, orderbook, account risk (read-only)',
+        alpaca: 'Alpaca MCP Server: Stocks, options, crypto, portfolio management'
       }
     }, 200);
     return true;
