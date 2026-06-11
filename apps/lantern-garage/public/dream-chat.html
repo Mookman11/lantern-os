@@ -195,6 +195,45 @@
       gap: 8px;
       align-items: flex-end;
     }
+
+    /* File upload */
+    .file-upload-area {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 8px;
+    }
+    #file-input { display: none; }
+    .file-upload-btn {
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-size: 18px;
+      cursor: pointer;
+      padding: 4px;
+      line-height: 1;
+    }
+    .file-upload-btn:hover { color: var(--accent); }
+    .attached-files {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      font-size: 11px;
+    }
+    .file-chip {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 3px 6px;
+      display: flex;
+      gap: 4px;
+      align-items: center;
+    }
+    .file-chip .remove { cursor: pointer; opacity: 0.6; }
+    .file-chip .remove:hover { opacity: 1; }
+
     .input-field {
       flex: 1;
       background: var(--surface2);
@@ -546,6 +585,11 @@
 
   <!-- Input area -->
   <div class="input-container">
+    <div class="file-upload-area">
+      <button class="file-upload-btn" onclick="document.getElementById('file-input').click()" title="Attach file">📎</button>
+      <input type="file" id="file-input" accept=".txt,.pdf,.json,.csv,.md" onchange="attachFile(event)">
+      <div class="attached-files" id="attached-files"></div>
+    </div>
     <div class="input-wrapper">
       <textarea id="input" class="input-field" placeholder="Write something, ask a question…" rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage();}"></textarea>
       <button class="send-button" id="send-btn" onclick="sendMessage()" title="Send">↑</button>
@@ -1222,6 +1266,105 @@
     origAddUserBubble(text);
     setTimeout(saveConversation, 100);
   };
+
+  // ====== FILE UPLOAD ======
+  let attachedFiles = [];
+
+  function attachFile(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const fileObj = { name: file.name, size: file.size, type: file.type };
+    attachedFiles.push(fileObj);
+    renderAttachedFiles();
+
+    // Reset input
+    event.target.value = '';
+  }
+
+  function renderAttachedFiles() {
+    const container = document.getElementById('attached-files');
+    container.innerHTML = attachedFiles.map((f, i) => `
+      <div class="file-chip">
+        <span>📄 ${f.name}</span>
+        <span class="remove" onclick="attachedFiles.splice(${i},1);renderAttachedFiles()">✕</span>
+      </div>
+    `).join('');
+  }
+
+  function clearAttachedFiles() {
+    attachedFiles = [];
+    renderAttachedFiles();
+  }
+
+  // ====== KEYBOARD SHORTCUTS ======
+  document.addEventListener('keydown', (e) => {
+    // Cmd/Ctrl + N = new conversation
+    if ((e.metaKey || e.ctrlKey) && e.key === 'n') {
+      e.preventDefault();
+      newConversation();
+    }
+    // Cmd/Ctrl + K = focus search
+    if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+      e.preventDefault();
+      document.getElementById('search-convos').focus();
+    }
+    // Cmd/Ctrl + ? = show help
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === '?') {
+      e.preventDefault();
+      showHelp();
+    }
+  });
+
+  function showHelp() {
+    alert(`Dream Chat Keyboard Shortcuts
+
+⌘/Ctrl + N  — New conversation
+⌘/Ctrl + K  — Search conversations
+⌘/Ctrl + ?  — Show this help
+
+Enter       — Send message
+Shift+Enter — New line
+
+📎 Attach files (.txt, .pdf, .json, .csv, .md)
+`);
+  }
+
+  // ====== SERVER SYNC ======
+  async function syncConversationToServer(convoId) {
+    if (!convoId || !history.length) return;
+
+    try {
+      // Ensure conversation exists on server
+      const createRes = await fetch('/api/dreams/conversations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: convoId })
+      }).catch(() => null);
+
+      // Send each message
+      for (const msg of history) {
+        await fetch(`/api/dreams/conversations/${convoId}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            role: msg.role,
+            text: msg.text || msg.content,
+            timestamp: Date.now()
+          })
+        }).catch(() => null);
+      }
+    } catch (err) {
+      console.error('Sync failed:', err);
+    }
+  }
+
+  // Sync every 30s if conversation exists
+  setInterval(() => {
+    if (currentConversationId && history.length > 0) {
+      syncConversationToServer(currentConversationId);
+    }
+  }, 30000);
 </script>
 <script src="js/convergance-sync.js"></script>
 </body>
