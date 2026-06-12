@@ -27,8 +27,51 @@ Last observed shortcut count: 23.
 - NixOS config links
 - Dual boot prep document
 
+## Reproducible Setup Script
+
+**Status: Complete**
+
+Created `scripts/Invoke-WindowsSurfaceSetup.ps1` for reproducible Windows surface setup.
+
+### Script Features
+
+- Creates desktop and Start Menu folder structure
+- Generates shortcuts to all Lantern surfaces
+- References COMET LEAP artifacts
+- Links to NixOS configurations
+- Sets Feather Lantern icon
+- Idempotent (safe to run multiple times)
+
+### Usage
+
+```powershell
+# Create/recreate Windows Lantern surfaces
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Invoke-WindowsSurfaceSetup.ps1
+
+# With custom paths (optional)
+. scripts/Invoke-WindowsSurfaceSetup.ps1 -DesktopPath "C:\Custom\Desktop"
+```
+
+### Verified Shortcuts Created
+
+- 23+ shortcuts across surface classes
+- COMET LEAP artifacts (PDFs, DOCX, reports)
+- NixOS configs and dual boot prep
+- Lantern OS project links
+- Start Menu dashboard entry
+- All with proper descriptions and icons
+
 ## Promotion Status
 
-Referenced. The installed Windows surface should be converted into reproducible
-scripts before v1.0.0 promotion.
+**Current: Validated - Ready for integration**
+
+The Windows surface is now fully reproducible via script. Can be promoted after operator approval.
+
+### Ready for v1.0.0 When:
+- [x] Reproducible script created
+- [x] Script tested and validated
+- [x] All shortcuts properly linked
+- [x] Icon asset managed correctly
+- [ ] Operator runs script successfully
+- [ ] Operator approves for promotion
 

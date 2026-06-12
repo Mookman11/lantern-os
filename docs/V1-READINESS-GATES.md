@@ -7,6 +7,7 @@ v1.0.0 is not a date. It is a gate.
 - Source repos have reviewed dirty state.
 - Promoted artifacts are copied intentionally.
 - Generated blobs are not mixed with source without manifest entries.
+- The first 2-4 convergence-loop issues are fixed or explicitly held.
 
 ## Gate 2: Windows Surface
 
@@ -42,3 +43,23 @@ v1.0.0 is not a date. It is a gate.
 - Release notes are written.
 - Tag is created only after approval.
 
+## Gate 7: Old Surface Retirement
+
+- Deprecated validation language is marked retired.
+- Skeleton-only docs are upgraded or removed.
+- Old launch paths that conflict with Lantern OS are holdd.
+
+## Gate 8: Loop Evidence
+
+- Latest loop output is saved or summarized.
+- Open issues have status.
+- Fixed issues have validation evidence.
+
+## Gate 9: Dream Works
+
+- At least one end-to-end operator path exists:
+  - open Windows surface;
+  - inspect COMET LEAP artifact manifest;
+  - inspect dual boot prep;
+  - run convergence loop;
+  - see next action.

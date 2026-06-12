@@ -1,7 +1,7 @@
 # Innovator Evidence Method
 
-The legacy Seven audit is only a minimum smoke check. Lantern OS uses the
-operator's newer Innovator method for release decisions.
+Lantern OS uses the operator's Innovator method for release decisions. The old
+Seven smoke check is deprecated and must not be treated as a release gate.
 
 ## Method
 
@@ -10,8 +10,11 @@ operator's newer Innovator method for release decisions.
 3. Tie the claim to source evidence.
 4. Classify the capability being asserted.
 5. Classify the boundary or consent rule.
-6. Record validation evidence.
-7. Promote, hold, revise, or reject.
+6. Classify the rollback path.
+7. Retire or hold legacy surfaces that conflict with the claim.
+8. Record validation evidence.
+9. Promote, hold, revise, or reject.
+10. Re-run the convergence loop before expanding scope.
 
 ## Evidence Classes
 
@@ -36,10 +39,14 @@ Each promoted artifact should record:
 - rollback/removal path;
 - operator approval status.
 
+## Deprecated Legacy Path
+
+The old Seven audit can remain as historical context in source repos, but
+Lantern OS readiness must use `docs/CONVERGENCE-LOOP.md`.
+
 ## Hard Stops
 
 - No bootloader, partition, or firmware mutation by an agent.
 - No medical, legal, financial, or governance authority claims without explicit
   boundary language.
 - No production-ready claim without validation evidence.
-
