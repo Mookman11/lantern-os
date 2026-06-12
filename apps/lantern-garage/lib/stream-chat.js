@@ -611,11 +611,13 @@ async function handleStreamChat(req, url, res) {
   };
   const routeLabel = isKeystoneDebug
     ? "Keystone · direct debug"
-    : surfaceMode === "three-doors"
-      ? "Three Doors · RP game"
-      : isRpMode
-        ? `${agent.name || "Lantern"} · RP route`
-        : (ROUTE_LABEL_MAP[converganceIntent] || "Dream Chat · router");
+    : requestedProvider === "keystone-ft"
+      ? "Keystone FT · memory route"
+      : surfaceMode === "three-doors"
+        ? "Three Doors · RP game"
+        : isRpMode
+          ? `${agent.name || "Lantern"} · RP route`
+          : (ROUTE_LABEL_MAP[converganceIntent] || "Dream Chat · router");
 
   // Plain router prompt — no persona, no doors (default for non-RP messages)
   const ROUTER_PROMPT = `You are Dream Chat, the orchestration router for Lantern OS. Route requests to the correct agent or surface. Respond directly and concisely — no roleplay, no dream personas, no door suggestions unless the user explicitly opts in.\n\nContext:\n${dreamContext}${csfBlock}${groundingContext ? "\n\n" + groundingContext : ""}`;
@@ -864,6 +866,46 @@ async function handleStreamChat(req, url, res) {
       }
     }
     
+  }
+
+  // Provider 0b: Keystone FT managed agent (Haiku + memory store) — explicit request only.
+  // Streams via the unified Python connector; the Python side tries the managed
+  // sessions API (memory-augmented) and falls back to the messages API itself.
+  if (message && requestedProvider === "keystone-ft") {
+    try {
+      let sseDone = false;
+      let sseErr = null;
+      const sseStream = unifiedAgentStreamSSE(message, agent.id, "keystone-ft", dreamContext);
+      sseStream.onData((parsed) => {
+        if (parsed.token) { fullReply += parsed.token; sendToken(parsed.token); }
+        if (parsed.done) { sseDone = true; }
+      });
+      sseStream.onError((err) => { sseErr = err; sseDone = true; });
+      await new Promise((resolve) => {
+        const check = setInterval(() => {
+          if (sseDone) { clearInterval(check); resolve(); }
+        }, 50);
+      });
+      if (sseErr) throw sseErr;
+      if (fullReply) {
+        const { cleanText, suggestions } = doorsOrFallback(fullReply, isKeystoneDebug || !isRpMode);
+        await appendConversationEntry({
+          recordedAt: new Date().toISOString(),
+          surface: "dream-chat-stream",
+          role: "lantern",
+          text: cleanText.slice(0, maxConversationTextLength),
+        }).catch(() => {});
+        recordProviderSuccess("keystone-ft");
+        sendDone("keystone-ft", { agent: "Keystone FT", provider: "keystone-ft", online: true, cleanText, suggestions });
+        return;
+      }
+      throw new Error("keystone-ft returned no tokens");
+    } catch (err) {
+      recordProviderFailure("keystone-ft", err.message);
+      sendError(`Keystone FT failed: ${err.message}. Check ANTHROPIC_API_KEY and data/training/ft-result.json.`);
+      sendFail(err.message);
+      return;
+    }
   }
 
   // Provider 1: Gemini (streaming) — cloud fallback
