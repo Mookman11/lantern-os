@@ -19,7 +19,7 @@ import time
 import urllib.request
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from collections import defaultdict, deque
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from enum import Enum, IntEnum
@@ -267,8 +267,7 @@ class SlotManager:
                 data["slots"][slot_id]["status"] = "released"
                 data["slots"][slot_id]["released_at"] = _now()
                 self._write(data)
-                # Trigger flush on release to persist state
-                self.flush()
+        self.flush()  # outside the lock — flush() acquires it separately
 
     def active_count(self, slot_type: str) -> int:
         data = self._read()
@@ -1480,6 +1479,11 @@ class TesseractEngine:
                 self._status_cube = StatusCube.load(self.data_dir / "status-cube.json")
             except Exception:
                 pass
+        # Pre-import connector on main thread so _core_inference never waits on the import lock.
+        try:
+            import unified_agent_connector as _uac  # noqa: F401
+        except Exception:
+            pass
 
     def _init_cells(self) -> None:
         for layer in Layer:
@@ -1540,24 +1544,28 @@ class TesseractEngine:
                     self._executor.submit(self._surface, ctx, message): (Layer.SURFACE, "persona_select"),
                     self._executor.submit(self._interface_mcp, replace(ctx)): (Layer.INTERFACE, "mcp_bridge"),
                 }
-                for future in as_completed(futures):
-                    layer, op = futures[future]
-                    _span = self._enter(layer, op)
-                    trace.append(_span)
-                    try:
-                        ctx_update = future.result(timeout=2.0)
-                        # Fast selective merge: only copy non-empty fields
-                        if ctx_update.persona != ctx.persona:
-                            ctx.persona = ctx_update.persona
-                        if ctx_update.provider:
-                            ctx.provider = ctx_update.provider
-                        if ctx_update.mcp_tools:
-                            ctx.mcp_tools = ctx_update.mcp_tools
-                    except Exception as exc:
-                        trace.append(self._exit(layer, op, _span, error=str(exc)))
-                        self.metrics.record_error(f"{layer.name}.{op}")
-                    else:
-                        trace.append(self._exit(layer, op, _span))
+                try:
+                    for future in as_completed(futures, timeout=2.5):
+                        layer, op = futures[future]
+                        _span = self._enter(layer, op)
+                        trace.append(_span)
+                        try:
+                            ctx_update = future.result(timeout=2.0)
+                            # Fast selective merge: only copy non-empty fields
+                            if ctx_update.persona != ctx.persona:
+                                ctx.persona = ctx_update.persona
+                            if ctx_update.provider:
+                                ctx.provider = ctx_update.provider
+                            if ctx_update.mcp_tools:
+                                ctx.mcp_tools = ctx_update.mcp_tools
+                        except Exception as exc:
+                            trace.append(self._exit(layer, op, _span, error=str(exc)))
+                            self.metrics.record_error(f"{layer.name}.{op}")
+                        else:
+                            trace.append(self._exit(layer, op, _span))
+                except FuturesTimeoutError:
+                    for f in futures:
+                        f.cancel()
 
                 _span = self._enter(Layer.INTERFACE, "slot_claim")
                 trace.append(_span)
@@ -1569,21 +1577,25 @@ class TesseractEngine:
                     self._executor.submit(self._convergence_csf, ctx): "csf_context",
                     self._executor.submit(self._convergence_rag, ctx): "rag_pull",
                 }
-                for future in as_completed(conv_futures):
-                    op = conv_futures[future]
-                    _span = self._enter(Layer.CONVERGENCE, op)
-                    trace.append(_span)
-                    try:
-                        ctx_update = future.result(timeout=3.0)
-                        if ctx_update.csf_segments:
-                            ctx.csf_segments = ctx_update.csf_segments
-                        if ctx_update.lore_hints:
-                            ctx.lore_hints.extend(ctx_update.lore_hints)
-                    except Exception as exc:
-                        trace.append(self._exit(Layer.CONVERGENCE, op, _span, error=str(exc)))
-                        self.metrics.record_error(f"CONVERGENCE.{op}")
-                    else:
-                        trace.append(self._exit(Layer.CONVERGENCE, op, _span))
+                try:
+                    for future in as_completed(conv_futures, timeout=4.0):
+                        op = conv_futures[future]
+                        _span = self._enter(Layer.CONVERGENCE, op)
+                        trace.append(_span)
+                        try:
+                            ctx_update = future.result(timeout=3.0)
+                            if ctx_update.csf_segments:
+                                ctx.csf_segments = ctx_update.csf_segments
+                            if ctx_update.lore_hints:
+                                ctx.lore_hints.extend(ctx_update.lore_hints)
+                        except Exception as exc:
+                            trace.append(self._exit(Layer.CONVERGENCE, op, _span, error=str(exc)))
+                            self.metrics.record_error(f"CONVERGENCE.{op}")
+                        else:
+                            trace.append(self._exit(Layer.CONVERGENCE, op, _span))
+                except FuturesTimeoutError:
+                    for f in conv_futures:
+                        f.cancel()
 
                 _span = self._enter(Layer.CORE, "inference_stream")
                 trace.append(_span)
@@ -1713,6 +1725,13 @@ class TesseractEngine:
             "timing": ctx.timing,
         }
 
+    def _warm_memos_bridge(self) -> None:
+        try:
+            from convergence_io.memos_bridge import get_cube  # type: ignore
+            get_cube()
+        except Exception:
+            pass
+
     def _interface_mcp(self, ctx: ConvergenceContext) -> ConvergenceContext:
         ctx.mcp_tools = ["get_agent_status", "dispatch_task", "ingest_rag"]
         return ctx
@@ -1752,20 +1771,23 @@ class TesseractEngine:
         # ── MemOS semantic retrieval (primary) ───────────────────────────────
         # Uses MemOS MemCube to semantically search dream journal memories.
         # Falls back to flat-rag-house if MemOS not installed.
-        try:
-            from convergence_io.memos_bridge import get_cube  # type: ignore
-            cube = get_cube()
-            # Build query from current message context + persona
-            query = " ".join(filter(None, [
-                " ".join(ctx.lore_hints[:2]) if ctx.lore_hints else "",
-                ctx.persona,
-            ])) or "dream"
-            mem_context = cube.get_context_for_prompt(query, limit=3)
-            if mem_context:
-                ctx.lore_hints = [mem_context]
-                return ctx
-        except Exception as _memos_err:
-            pass  # fall through to flat-rag-house
+        # Guard: importing memos_bridge cold takes 15-20s and holds the import lock,
+        # blocking _core_inference. Only use it if already loaded in sys.modules.
+        if "convergence_io.memos_bridge" in sys.modules:
+            try:
+                from convergence_io.memos_bridge import get_cube  # type: ignore
+                cube = get_cube()
+                # Build query from current message context + persona
+                query = " ".join(filter(None, [
+                    " ".join(ctx.lore_hints[:2]) if ctx.lore_hints else "",
+                    ctx.persona,
+                ])) or "dream"
+                mem_context = cube.get_context_for_prompt(query, limit=3)
+                if mem_context:
+                    ctx.lore_hints = [mem_context]
+                    return ctx
+            except Exception:
+                pass  # fall through to flat-rag-house
 
         # ── Flat RAG house fallback ──────────────────────────────────────────
         rag_path = self.data_dir / "rag-house" / "flat-rag-house-latest.json"

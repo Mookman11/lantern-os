@@ -91,7 +91,7 @@ class ProviderConfig:
             "anthropic": "claude-haiku-4-5-20251001",
             "openai": "gpt-4.1-mini",
             "gemini": "gemini-2.5-flash",
-            "ollama": "llama3.2",
+            "ollama": os.environ.get("OLLAMA_MODEL", "qwen2.5-coder"),
             "deepseek": "deepseek-chat",
             "groq": "llama-3.1-70b-versatile",
             "azure": "gpt-4.1",
