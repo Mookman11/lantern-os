@@ -913,7 +913,46 @@ Interpret this convergence result and provide:
   const modelChain = OLLAMA_MODEL_CHAIN[intent] || OLLAMA_MODEL_CHAIN.default;
   
   const ollamaLocalFirst = !requestedProvider || requestedProvider === "ollama" || requestedProvider === "local";
-  
+
+  // ── Convergence Delegation (if intent requires multi-agent coordination) ────
+  if (requiresConvergence && message && !isKeystoneDebug) {
+    try {
+      sendToken(`◈ Convergence synthesis (${requestedAgent})…\n\n`);
+      const primaryProvider = primaryProviderHint?.provider || "ollama";
+      const convergenceResult = await convergeMessage(message, requestedAgent, primaryProvider);
+
+      if (convergenceResult && convergenceResult.reply) {
+        fullReply = convergenceResult.reply;
+        const { cleanText, suggestions } = doorsOrFallback(fullReply, isKeystoneDebug, suppressDoors);
+        await appendConversationEntry({
+          recordedAt: new Date().toISOString(),
+          surface: "dream-chat-stream",
+          role: "convergence",
+          text: cleanText.slice(0, maxConversationTextLength),
+        }).catch(() => {});
+        const imageSidecarId = triggerImageGeneration({ cleanText, suggestions, surfaceMode, symbolMesh });
+        sendDone("convergence", {
+          agent: requestedAgent,
+          online: true,
+          cleanText,
+          suggestions,
+          source: "convergence",
+          provider: convergenceResult.provider || primaryProvider,
+          timing: convergenceResult.timing || {},
+          webSuggestions,
+          image: imageSidecarId ? { entryId: imageSidecarId, status: "generating" } : undefined,
+        });
+        return;
+      } else if (convergenceResult?.error) {
+        // Convergence failed — fall through to standard provider chain
+        console.warn(`[convergence] Failed for ${requestedAgent}: ${convergenceResult.error}`);
+      }
+    } catch (err) {
+      console.error(`[convergence] Exception: ${err.message}`);
+      // Fall through to standard providers
+    }
+  }
+
   if (ollamaLocalFirst && message && !isKeystoneDebug) {
     
     for (const ollamaModel of modelChain) {
