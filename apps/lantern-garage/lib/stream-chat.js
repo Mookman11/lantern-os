@@ -406,177 +406,14 @@ async function handleStreamChat(req, url, res) {
     }
 
     if (cmd.name === "converge" || cmd.name === "convergance") {
-      const { spawn } = require("child_process");
-      const py = spawn("python", ["src/convergence_io_engine.py", "loop"], { cwd: repoRoot });
-      let stdout = "";
-      let stderr = "";
-      py.stdout.on("data", (d) => { stdout += d.toString(); });
-      py.stderr.on("data", (d) => { stderr += d.toString(); });
-      
-      const timeout = setTimeout(() => {
-        py.kill();
-        sse.writeStreamHeaders(res);
-        sse.sendError(res, "Convergence engine timeout (60s)");
-        sse.sendDone(res, "failed");
-      }, 60000);
-
-      py.on("close", (code) => {
-        clearTimeout(timeout);
-        
-        if (code !== 0) {
-          sse.writeStreamHeaders(res);
-          sse.sendError(res, `Convergence engine failed (exit ${code}): ${stderr.slice(0, 500)}`);
-          sse.sendDone(res, "failed");
-          return;
-        }
-
-        try {
-          const result = JSON.parse(stdout);
-          
-          // Analyze convergence results for intelligent routing
-          const findings = analyzeConvergenceResult(result);
-
-          // Build 20-step tesseract convergence context for AI interpretation
-          const convergenceContext = `
-Tesseract Convergence Analysis (20 phases):
-Overall Score: ${result.convergence_score || 0}/100
-Status: ${result.promotion_ready ? "PROMOTION READY" : "NEEDS REVIEW"}
-Version: ${result.version?.build || result.version?.tag || "unknown"}
-
-Phase Results:
-${result.phases ? result.phases.map((p, i) => `${i + 1}. ${p.name}: ${p.status}`).join("\n") : "No phase data"}
-
-Routing Findings:
-- Test failures: ${findings.testFailures.length}
-- Doc drift: ${findings.docDrift.length}
-- Provider/capacity failures: ${findings.providerFailures.length}
-- Validation failures: ${findings.validationFailures.length}
-- Other failures: ${findings.otherFailures.length}
-
-Proposed actions:
-${findings.actions.map((a, i) => `${i + 1}. [${a.profile}] ${a.label}: ${a.hint}`).join("\n")}
-
-Key Metrics:
-- Total phases: ${result.phases?.length || 0}
-- Passed: ${result.phases?.filter(p => p.status === "pass").length || 0}
-- Failed: ${result.phases?.filter(p => p.status === "fail").length || 0}
-- Skipped: ${result.phases?.filter(p => p.status === "skip").length || 0}
-
-Interpret this convergence result and provide:
-1. Executive summary (2-3 sentences)
-2. Top 3 blockers or risks
-3. Recommended next actions with agent routing
-4. Confidence assessment for each phase
-5. If safe, suggest whether to "Create patch" or "Open PR"
-`;
-
-          sse.writeStreamHeaders(res);
-          const sendToken = (token) => sse.sendToken(res, token);
-          const sendDone = (source, meta) => sse.sendDone(res, source, meta);
-
-          // Stream the raw convergence data first
-          sendToken(`◈ Tesseract Convergence Analysis\n\n`);
-          sendToken(`Score: ${result.convergence_score || 0}/100\n`);
-          sendToken(`Status: ${result.promotion_ready ? "✅ Ready" : "⚠️ Review Needed"}\n\n`);
-
-          if (result.phases) {
-            sendToken(`Phase Breakdown:\n`);
-            result.phases.forEach((p, i) => {
-              const icon = p.status === "pass" ? "✓" : p.status === "fail" ? "✗" : "○";
-              sendToken(`${icon} ${i + 1}. ${p.name}: ${p.status}\n`);
-            });
-            sendToken(`\n`);
-          }
-
-          if (findings.actions.length > 0) {
-            sendToken(`Proposed actions:\n`);
-            findings.actions.forEach((a, i) => {
-              sendToken(`${i + 1}. ${a.label} (${a.profile})\n`);
-            });
-            sendToken(`\n`);
-          }
-
-          // Now use AI to interpret and provide contextual feedback
-          const ollamaBase = process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434";
-          const ollamaModel = process.env.OLLAMA_MODEL || "qwen2.5-coder";
-
-          const payload = JSON.stringify({
-            model: ollamaModel,
-            stream: true,
-            messages: [
-              { role: "system", content: "You are a convergence analyst. Interpret tesseract convergence results and provide actionable feedback with agent routing. Be concise, specific, and prioritized. Route findings to the correct agent profile." },
-              { role: "user", content: convergenceContext }
-            ],
-          });
-
-          const ollamaUrl = new URL(ollamaBase);
-          const req2 = http.request({
-            hostname: ollamaUrl.hostname,
-            port: ollamaUrl.port || 11434,
-            path: "/api/chat",
-            method: "POST",
-            headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) },
-          }, (upstream) => {
-            if (upstream.statusCode !== 200) {
-              upstream.resume();
-              sendToken(`\n⚠️ AI interpretation unavailable. Raw data shown above.\n`);
-              sendDone("convergence", { agent: "Convergence", online: true, score: result.convergence_score, actions: findings.actions });
-              res.end();
-              return;
-            }
-
-            let buf = "";
-            upstream.on("data", (chunk) => {
-              buf += chunk.toString();
-              const lines = buf.split("\n");
-              buf = lines.pop();
-              for (const line of lines) {
-                if (!line.trim()) continue;
-                try {
-                  const parsed = JSON.parse(line);
-                  if (parsed.message?.content) {
-                    sendToken(parsed.message.content);
-                  }
-                } catch {}
-              }
-            });
-            upstream.on("end", () => {
-              sendDone("convergence", { agent: "Convergence", online: true, score: result.convergence_score, actions: findings.actions });
-              res.end();
-            });
-            upstream.on("error", () => {
-              sendToken(`\n⚠️ AI interpretation error. Raw data shown above.\n`);
-              sendDone("convergence", { agent: "Convergence", online: true, score: result.convergence_score, actions: findings.actions });
-              res.end();
-            });
-          });
-
-          req2.on("error", () => {
-            sendToken(`\n⚠️ Ollama unavailable. Raw data shown above.\n`);
-            sendDone("convergence", { agent: "Convergence", online: false, score: result.convergence_score, actions: findings.actions });
-            res.end();
-          });
-          req2.setTimeout(30000, () => { req2.destroy(); });
-          req2.write(payload);
-          req2.end();
-
-        } catch (exc) {
-          sse.writeStreamHeaders(res);
-          sse.sendError(res, `Convergence parse error: ${exc.message}\n\nRaw output:\n${stdout.slice(0, 1000)}`);
-          sse.sendDone(res, "failed");
-          res.end();
-        }
-      });
-      
-      py.on("error", (err) => {
-        clearTimeout(timeout);
-        sse.writeStreamHeaders(res);
-        sse.sendError(res, `Convergence engine spawn error: ${err.message}`);
-        sse.sendDone(res, "failed");
-        res.end();
-      });
-      
-      return;
+      // Route the task to Keystone via the normal LLM chain (same as !three-doors fallthrough).
+      // Keystone's system prompt handles dev/GitHub tasks directly.
+      const taskContent = (cmd.args || "").trim() || message.replace(/^!\S+\s*/, "").trim();
+      message = taskContent
+        ? `[Convergence task] ${taskContent}`
+        : message.replace(/^!\S+\s*/, "").trim() || message;
+      requestedAgent = requestedAgent || "keystone";
+      // fall through to normal SSE chat routing below
     }
 
     if (cmd.name === "self-edit" || cmd.name === "selfedit" || cmd.name === "code") {
@@ -632,7 +469,9 @@ Interpret this convergence result and provide:
     }
 
     // Three Doors variants: start fresh game if no history, else strip command and continue
-    if (cmd.name === "three-doors" || cmd.name === "threedoors" || cmd.name === "three_doors") {
+    if (cmd.name === "three-doors" || cmd.name === "threedoors" || cmd.name === "three_doors"
+        || cmd.name === "converge" || cmd.name === "convergance") {
+      if (cmd.name === "converge" || cmd.name === "convergance") { /* already handled above */ }
       if (history && history.length > 0) {
         // Game already in progress — strip the bang command, keep any surrounding text
         const stripped = message.replace(/!(?:three-doors|threedoors|three_doors)\b/gi, "").trim();
@@ -667,7 +506,7 @@ Interpret this convergence result and provide:
   // ── Keystone debug mode ───────────────────────────────────────────────
   // When Keystone is selected, bypass persona/doors and talk raw to the model
   // about app dev, repo state, and convergence. Direct API access from the UX.
-  const isKeystoneDebug = agent.id === "keystone" && mcpFlag;
+  const isKeystoneDebug = agent.id === "keystone" && (mcpFlag || message.startsWith("[Convergence task]"));
 
   let dreamContext = recentDreams.length > 0
     ? `Recent journal entries:\n${recentDreams.slice(0, 3).map((d, i) =>
