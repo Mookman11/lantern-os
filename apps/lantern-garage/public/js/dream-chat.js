@@ -1169,6 +1169,7 @@
   let ctfPaletteOpen = false;
 
   function buildCtfPalette() {
+    if (!ctfPopup) return;
     ctfPopup.innerHTML = "";
     for (const [word, sym] of Object.entries(CTF)) {
       const btn = document.createElement("button");
@@ -1188,46 +1189,50 @@
   }
 
   function toggleCtfPalette() {
+    if (!ctfPopup) return;
     ctfPaletteOpen = !ctfPaletteOpen;
     ctfPopup.classList.toggle("hidden", !ctfPaletteOpen);
     if (ctfPaletteOpen && !ctfPopup.children.length) buildCtfPalette();
-    document.getElementById("ctf-btn").style.color = ctfPaletteOpen ? "var(--accent)" : "";
+    const ctfBtn = document.getElementById("ctf-btn");
+    if (ctfBtn) ctfBtn.style.color = ctfPaletteOpen ? "var(--accent)" : "";
   }
 
   // Auto-suggest CTF as you type
-  inputEl.addEventListener("input", () => {
-    const words = inputEl.value.split(/\s+/);
-    const last = words[words.length - 1];
-    if (last.length >= 3 && !ctfPaletteOpen) {
-      const matches = ctfLookup(last);
-      if (matches.length > 0) {
-        ctfPopup.classList.remove("hidden");
-        ctfPopup.innerHTML = "";
-        matches.forEach(({ word, sym }) => {
-          const btn = document.createElement("button");
-          btn.className = "ctf-sym";
-          btn.textContent = `${sym} ${word}`;
-          btn.onclick = () => {
-            const ws = inputEl.value.split(/\s+/);
-            ws[ws.length - 1] = sym;
-            inputEl.value = ws.join(" ") + " ";
-            inputEl.selectionStart = inputEl.selectionEnd = inputEl.value.length;
-            ctfPopup.classList.add("hidden");
-            inputEl.focus();
-          };
-          ctfPopup.appendChild(btn);
-        });
-        return;
+  if (ctfPopup) {
+    inputEl.addEventListener("input", () => {
+      const words = inputEl.value.split(/\s+/);
+      const last = words[words.length - 1];
+      if (last.length >= 3 && !ctfPaletteOpen) {
+        const matches = ctfLookup(last);
+        if (matches.length > 0) {
+          ctfPopup.classList.remove("hidden");
+          ctfPopup.innerHTML = "";
+          matches.forEach(({ word, sym }) => {
+            const btn = document.createElement("button");
+            btn.className = "ctf-sym";
+            btn.textContent = `${sym} ${word}`;
+            btn.onclick = () => {
+              const ws = inputEl.value.split(/\s+/);
+              ws[ws.length - 1] = sym;
+              inputEl.value = ws.join(" ") + " ";
+              inputEl.selectionStart = inputEl.selectionEnd = inputEl.value.length;
+              ctfPopup.classList.add("hidden");
+              inputEl.focus();
+            };
+            ctfPopup.appendChild(btn);
+          });
+          return;
+        }
       }
-    }
-    if (!ctfPaletteOpen) ctfPopup.classList.add("hidden");
-  });
-
-  document.addEventListener("click", (e) => {
-    if (!ctfPopup.contains(e.target) && e.target.id !== "ctf-btn" && e.target !== inputEl) {
       if (!ctfPaletteOpen) ctfPopup.classList.add("hidden");
-    }
-  });
+    });
+
+    document.addEventListener("click", (e) => {
+      if (!ctfPopup.contains(e.target) && e.target.id !== "ctf-btn" && e.target !== inputEl) {
+        if (!ctfPaletteOpen) ctfPopup.classList.add("hidden");
+      }
+    });
+  }
 
   // ════════════════════════════════════════════════════════════════
   //  Voice — STT (Web Speech API) + TTS
