@@ -88,6 +88,11 @@ async function recordNewsItem(item) {
   const key = String(item.id || item.url || item.headline || JSON.stringify(item)).slice(0, 80);
   const memId = `trading_news_${_shortHash(key)}`;
   
+  // Check in-memory set for fast path first
+  if (_seenNews.has(key)) {
+    return null; // Already processed
+  }
+  
   // Check existing file for deduplication (prevents race condition)
   const fs = require("fs");
   try {
@@ -96,7 +101,8 @@ async function recordNewsItem(item) {
       try {
         const existing = JSON.parse(line);
         if (existing.memory_id === memId) {
-          // Already exists, skip
+          // Already exists in file, add to in-memory set and skip
+          _seenNews.add(key);
           return existing;
         }
       } catch {}
@@ -105,8 +111,7 @@ async function recordNewsItem(item) {
     // File doesn't exist yet, continue
   }
   
-  // Also check in-memory set for fast path
-  if (_seenNews.has(key)) return;
+  // Add to in-memory set before writing to prevent duplicate writes in same process
   _seenNews.add(key);
 
   const rec = _csfEntityRecord(item, memId);

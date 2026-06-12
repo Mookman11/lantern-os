@@ -111,11 +111,12 @@ foreach ($issue in $targetIssues) {
     $slotId = "github/issue-$($issue.number)"
     
     # Parse priority from labels
-    $priorityLabel = @($issue.labels | Where-Object { $_ -match "^p[0-2]$" }) | Select-Object -First 1
+    $priorityLabel = @($issue.labels | Where-Object { $_ -match "^p[0-3]$" }) | Select-Object -First 1
     $priority = switch ($priorityLabel) {
         "p0" { 1 }
         "p1" { 2 }
         "p2" { 3 }
+        "p3" { 4 }
         default { 2 }
     }
     
