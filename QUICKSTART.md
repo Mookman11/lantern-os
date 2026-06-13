@@ -288,20 +288,35 @@ After running, move `archive/reports-YYYY-MM-DD/` and `archive/manifests-*-YYYY-
 
 ---
 
-## 10. Public Deployment via Cloudflare Tunnel (Optional)
+## 10. Public Deployment via Cloudflare Tunnel (Automatic)
 
-To access Lantern OS from anywhere via HTTPS without port forwarding:
+The Cloudflare tunnel now starts automatically with `npm start` — no separate command needed!
+
+**One-time setup:**
 
 ```bash
 # Install Cloudflare tunnel agent
 choco install cloudflare-warp
 
-# Authenticate and create tunnel
+# Authenticate (one-time, opens browser)
 cloudflared tunnel login
-cloudflared tunnel create lantern-os
 
+# Create tunnel (one-time)
+cloudflared tunnel create lantern-os
+```
+
+Then access publicly:
+- **Dream Journal:** `https://lantern-os.net`
+- **MCP (public):** `https://mcp.lantern-os.net`
+- **MCP (OAuth2):** `https://mcp.lantern-os.net/oauth`
+
+The tunnel will start automatically whenever you run `npm start` (can disable with `LANTERN_CLOUDFLARE_TUNNEL=false`).
+
+**Manual tunnel start (if not using npm start):**
+
+```bash
 # Run tunnel (connects local ports to public domain)
-cloudflared tunnel run lantern-os
+cloudflared tunnel run lantern-os --config cloudflare-config.yml
 ```
 
 Then access:
