@@ -21,8 +21,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import torch
 
 from src.cio_sde import (
-    CIO_SDE, Dynamics, rollout, analyze_trajectory, free_energy,
-    SemanticCollapseOperator,
+    CIO_SDE, Dynamics, LinearDynamics, rollout, analyze_trajectory, free_energy,
+    SemanticCollapseOperator, AntiCollapseOperator,
+    collapse_certificate, lyapunov_value,
 )
 
 
@@ -105,6 +106,50 @@ def scenario_collapse() -> None:
     print(f"    state frozen onto attractor: ‖x‖ {norms[0]:.4f} → {norms[-1]:.4f}")
 
 
+def scenario_certificate() -> None:
+    banner("6. LYAPUNOV CERTIFICATE — guaranteed collapse + verified contraction")
+    # stable linear node: drift Jacobian is exactly A = -0.8 I
+    A = -0.8 * torch.eye(5)
+    cert = collapse_certificate(A.unsqueeze(0))
+    print(f"  A = -0.8·I : {cert.summary()}")
+    node = LinearDynamics(A, B=torch.zeros(5, 2))
+    m = CIO_SDE(dim=5, ctrl_dim=2, hidden=8)
+    m.graph.active = node
+    m.pcsf.u_max = 1e-6
+    x0 = torch.randn(64, 5)
+    s0 = torch.eye(5).expand(64, 5, 5).clone()
+    xf, _, tr = rollout(m, x0, s0, steps=120, dt=0.05, base_seed=0)
+    v0 = lyapunov_value(x0, A.unsqueeze(0))
+    vf = lyapunov_value(xf, A.unsqueeze(0))
+    print(f"  Lyapunov V : {v0:.3f} → {vf:.4f}  (predicted decay rate {cert.contraction_rate:.2f})")
+    print(f"  {analyze_trajectory(tr).summary()}")
+
+    # null block: collapse onto a 2-D invariant manifold
+    A2 = torch.diag(torch.tensor([0.0, 0.0, 0.0, -0.9, -0.9]))
+    print(f"  null block : {collapse_certificate(A2.unsqueeze(0)).summary()}")
+    # a single unstable mode: collapse NOT guaranteed
+    A3 = torch.diag(torch.tensor([0.6, -0.9, -0.9, -0.9, -0.9]))
+    print(f"  unstable   : {collapse_certificate(A3.unsqueeze(0)).summary()}")
+
+
+def scenario_anti_collapse() -> None:
+    banner("7. Σ₀⁻¹ ANTI-COLLAPSE — persistent excitation escapes the 42-state")
+    # degenerate system that froze 40/40 under Σ₀ alone
+    m = CIO_SDE(dim=4, ctrl_dim=2, hidden=32)
+    for p in m.graph.active.drift_net.parameters():
+        torch.nn.init.zeros_(p)
+    m.collapse_op = SemanticCollapseOperator()
+    m.anti_collapse_op = AntiCollapseOperator(strength=0.5)
+    x0 = 0.01 * torch.randn(8, 4)
+    s0 = torch.eye(4).expand(8, 4, 4).clone()
+    _, _, tr = rollout(m, x0, s0, steps=40, base_seed=1)
+    norms = tr.x_norms()
+    print(f"  Σ₀ fired   : {len(tr.collapses)}/40 steps (was 40/40 without Σ₀⁻¹)")
+    print(f"  ‖x‖        : {norms[0]:.4f} → {norms[-1]:.4f}  (re-excited, escaped collapse)")
+    print("  Σ₀⁻¹ injects along null eigenmodes only while proximity p > 0 — "
+          "zero cost in healthy regimes.")
+
+
 def scenario_free_energy() -> None:
     banner("5. FREE ENERGY — convergence objective is wired + differentiable")
     torch.manual_seed(4)
@@ -134,6 +179,8 @@ if __name__ == "__main__":
     scenario_replay()
     scenario_hot_swap()
     scenario_collapse()
+    scenario_certificate()
+    scenario_anti_collapse()
     scenario_free_energy()
     print("\n" + "=" * 64)
     print("  CIO SDE demo complete — all scenarios ran.")

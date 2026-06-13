@@ -27,16 +27,10 @@ class Dynamics(nn.Module):
     diffusion g: R^d       → R^d   per-dim noise gain (exploration), kept ≥ 0
     """
 
-    def __init__(self, dim: int, ctrl_dim: int, hidden: int = 64,
-                 feedback: float = 0.0) -> None:
+    def __init__(self, dim: int, ctrl_dim: int, hidden: int = 64) -> None:
         super().__init__()
         self.dim = dim
         self.ctrl_dim = ctrl_dim
-        # feedback > 0 makes the node contractive: a stabilizing −k·x term that
-        # pulls the state toward the origin. feedback = 0 is the free (possibly
-        # divergent) regime. This is the knob that selects stable vs unstable
-        # dilation regions (invariant 5).
-        self.feedback = feedback
         self.drift_net = nn.Sequential(
             nn.Linear(dim + ctrl_dim, hidden), nn.SiLU(),
             nn.Linear(hidden, dim),
@@ -47,14 +41,38 @@ class Dynamics(nn.Module):
         )
 
     def drift(self, x: Tensor, u: Tensor) -> Tensor:
-        f = self.drift_net(torch.cat([x, u], dim=-1))
-        if self.feedback:
-            f = f - self.feedback * x
-        return f
+        return self.drift_net(torch.cat([x, u], dim=-1))
 
     def diffusion(self, x: Tensor) -> Tensor:
         # softplus → strictly non-negative noise gain
         return torch.nn.functional.softplus(self.diffusion_net(x))
+
+
+class LinearDynamics(Dynamics):
+    """
+    A node with an explicitly specified drift spectrum:  f(x, u) = x Aᵀ + u Bᵀ.
+
+    Unlike the neural Dynamics, the drift Jacobian here is exactly A — a known,
+    fixed matrix — so the Lyapunov collapse certificate (which reasons about
+    eig(A)) can be verified against the actual rollout. This is a principled
+    stable/unstable node, not an ad-hoc feedback term bolted onto a black box.
+    """
+
+    def __init__(self, A: Tensor, B: Optional[Tensor] = None,
+                 noise: float = 0.05) -> None:
+        dim = A.shape[0]
+        ctrl_dim = B.shape[1] if B is not None else 1
+        super().__init__(dim, ctrl_dim, hidden=1)
+        self.register_buffer("A", A.clone())
+        self.register_buffer(
+            "B", B.clone() if B is not None else torch.zeros(dim, ctrl_dim))
+        self._noise = noise
+
+    def drift(self, x: Tensor, u: Tensor) -> Tensor:
+        return x @ self.A.T + u @ self.B.T
+
+    def diffusion(self, x: Tensor) -> Tensor:
+        return torch.full_like(x, self._noise)
 
 
 # ── PCSF controller (u* = argmin H) ──────────────────────────────────────────
@@ -242,6 +260,7 @@ class CIO_SDE(nn.Module):
         self.cov = CovarianceField(dim, r=r)
         self.ctrl_cost = ctrl_cost
         self.collapse_op = None      # optional Σ₀ Semantic Collapse Operator
+        self.anti_collapse_op = None # optional Σ₀⁻¹ Anti-Collapse Operator
         self.register_buffer("x_target", torch.zeros(dim))
 
     # L(x, u) = ‖x − x*‖² + ρ‖u‖²  (latency+compute+risk rolled into a quadratic)
@@ -278,11 +297,25 @@ class CIO_SDE(nn.Module):
         sigma_next = self.cov.step(sigma, A, q_diag, dt)
 
         info = {"u": u, "f": f, "g": g, "dilation": dilation.squeeze(-1),
-                "collapse": None}
+                "collapse": None, "anti_collapse_p": 0.0}
+
+        # Σ₀⁻¹ anti-collapse: inject excitation along null modes to escape an
+        # imminent 42-state. When it fires it SUPPRESSES the Σ₀ freeze this step
+        # (the whole point is to prevent collapse, not freeze into it).
+        anti_active = False
+        if self.anti_collapse_op is not None:
+            p = self.anti_collapse_op.proximity(self, x, u, sigma, A)
+            if p > 0.0:
+                dx_extra, sig_extra = self.anti_collapse_op.excite(
+                    x, sigma_next, A, p, noise)
+                x_next = x_next + dx_extra
+                sigma_next = self.cov._project_psd(sigma_next + sig_extra)
+                info["anti_collapse_p"] = p
+                anti_active = True
 
         # Σ₀ gating: dx = f dt + dW − Σ₀(x,Σ,G,u). When the system is
         # underdetermined, freeze onto the minimal invariant attractor.
-        if self.collapse_op is not None:
+        if self.collapse_op is not None and not anti_active:
             res = self.collapse_op.evaluate(self, x, u, sigma, A)
             if res.triggered:
                 x_next = res.x_star          # collapse: dx→0 onto attractor
@@ -351,6 +384,7 @@ def rollout(model: CIO_SDE, x0: Tensor, sigma0: Tensor, steps: int,
                 dilation=info["dilation"].mean().item(),
                 xdot_norm=xdot.norm().item(),
                 cost=model.stage_cost(x, info["u"]).mean().item(),
+                anti_collapse_p=float(info.get("anti_collapse_p", 0.0)),
             )
         x, sigma = x_next, sigma_next
 
