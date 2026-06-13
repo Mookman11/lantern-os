@@ -83,6 +83,23 @@
   /* Market status */
   .mkt-row{display:flex;justify-content:space-between;padding:3px 0;font-family:var(--mono);font-size:10px}
   .mkt-label{color:var(--text2)}.mkt-val{color:var(--text0)}
+  /* ── Normie help layer ── */
+  .logo-sub{font-family:var(--sans);font-size:9px;color:var(--text2);font-weight:400;letter-spacing:0;white-space:nowrap}
+  .help-btn{font-family:var(--sans);font-size:11px;padding:5px 11px;border-radius:4px;border:1px solid var(--blue);background:rgba(74,158,255,.12);color:var(--blue);cursor:pointer;white-space:nowrap}
+  .help-btn:hover{background:rgba(74,158,255,.22)}
+  .hstat[title]{cursor:help}
+  .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:100}
+  .modal-bg.show{display:flex}
+  .modal{background:var(--bg1);border:1px solid var(--border);border-radius:10px;max-width:580px;width:92%;max-height:84vh;overflow-y:auto}
+  .modal-h{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg1)}
+  .modal-h h2{font-family:var(--sans);font-size:16px;font-weight:500}
+  .modal-x{background:none;border:none;color:var(--text1);font-size:24px;cursor:pointer;line-height:1}
+  .modal-body{padding:16px 20px;font-family:var(--sans);font-size:13px;line-height:1.5}
+  .gl-intro{background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:12px 14px;margin-bottom:16px;color:var(--text1)}
+  .gl-intro b{color:var(--green)}
+  .gl-item{margin-bottom:13px}
+  .gl-term{font-weight:600;color:var(--text0)}
+  .gl-def{color:var(--text1);margin-top:2px}
 </style>
 </head>
 <body>
@@ -90,14 +107,18 @@
 
 <!-- Header -->
 <div class="header">
-  <div class="logo">Lantern<span>Trader</span></div>
-  <div class="badge badge-paper">PAPER</div>
-  <div class="hstat"><div class="l">Equity</div><div class="v" id="hEquity">—</div></div>
-  <div class="hstat"><div class="l">Day P&L</div><div class="v" id="hDayPnl">—</div></div>
-  <div class="hstat"><div class="l">VIX</div><div class="v" id="hVix">—</div></div>
-  <div class="hstat"><div class="l">Positions</div><div class="v" id="hPos">—</div></div>
-  <div class="hstat"><div class="l">Market</div><div class="v" id="hMkt">—</div></div>
-  <div class="pulse"></div>
+  <div style="display:flex;flex-direction:column;gap:1px">
+    <div class="logo">Lantern<span>Trader</span></div>
+    <div class="logo-sub">AI trading assistant · practice mode</div>
+  </div>
+  <div class="badge badge-paper" title="Practice mode — every trade here is simulated. No real money is bought, sold, or lost.">PAPER</div>
+  <div class="hstat" title="Equity — the total pretend value of the account right now (cash plus whatever the holdings are worth)."><div class="l">Equity</div><div class="v" id="hEquity">—</div></div>
+  <div class="hstat" title="Day P&L — Profit or Loss so far today. Green is up, red is down."><div class="l">Day P&L</div><div class="v" id="hDayPnl">—</div></div>
+  <div class="hstat" title="VIX — the market's &quot;fear gauge&quot;. Higher numbers mean a more nervous, jumpy market."><div class="l">VIX</div><div class="v" id="hVix">—</div></div>
+  <div class="hstat" title="Positions — how many stocks the assistant is currently holding."><div class="l">Positions</div><div class="v" id="hPos">—</div></div>
+  <div class="hstat" title="Market — whether the U.S. stock market is open or closed right now."><div class="l">Market</div><div class="v" id="hMkt">—</div></div>
+  <div class="pulse" title="Live — the dashboard is refreshing automatically."></div>
+  <button class="help-btn" onclick="toggleHelp(true)">❓ What is this?</button>
   <a href="/" class="nav-link">← Back</a>
 </div>
 
@@ -132,6 +153,38 @@
 </div>
 
 </div><!-- /layout -->
+
+<!-- Plain-English help modal -->
+<div class="modal-bg" id="helpModal" onclick="if(event.target===this)toggleHelp(false)">
+  <div class="modal">
+    <div class="modal-h">
+      <h2>What am I looking at?</h2>
+      <button class="modal-x" onclick="toggleHelp(false)" aria-label="Close">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="gl-intro">This is an <b>AI trading assistant</b>. It watches a list of stocks, looks for good moments to buy or sell, and shows its thinking here. Right now it's in <b>practice mode</b> — everything is pretend, so no real money is ever at risk.</div>
+
+      <div class="gl-item"><div class="gl-term">PAPER (top-left badge)</div><div class="gl-def">Practice mode. Trades are simulated in a safe sandbox — nothing touches a real account.</div></div>
+      <div class="gl-item"><div class="gl-term">Equity</div><div class="gl-def">The total pretend value of the account right now: cash plus whatever the holdings are currently worth.</div></div>
+      <div class="gl-item"><div class="gl-term">Day P&amp;L</div><div class="gl-def">Profit or Loss so far today. Green means up, red means down.</div></div>
+      <div class="gl-item"><div class="gl-term">VIX</div><div class="gl-def">The market's "fear gauge." Higher numbers mean a more nervous, jumpy market; lower numbers mean calm.</div></div>
+      <div class="gl-item"><div class="gl-term">The stock cards</div><div class="gl-def">Each card is one stock the assistant is watching. <span style="color:var(--green)">▲ LONG</span> = it expects the price to rise; <span style="color:var(--red)">▼ SHORT</span> = it expects a fall. The percentage is how confident it is.</div></div>
+      <div class="gl-item"><div class="gl-term">The colored ladder on each card</div><div class="gl-def">Price levels that matter. <span style="color:var(--green)">Green zones (support)</span> are where a stock tends to stop falling; <span style="color:var(--red)">red zones (resistance)</span> are where it tends to stop rising. The bright line is the current price.</div></div>
+      <div class="gl-item"><div class="gl-term">Agent Feed</div><div class="gl-def">Live notes from the AI as it thinks and acts — like reading its train of thought.</div></div>
+      <div class="gl-item"><div class="gl-term">Kalshi Odds</div><div class="gl-def">Live odds from a real prediction market (e.g. sports games) that the system also tracks as a signal. "Terminal →" opens the full betting screen.</div></div>
+
+      <div class="gl-intro" style="margin-top:4px;margin-bottom:0">Tip: hover over any number in the top bar to see what it means.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Plain-English help modal ────────────────────────────────────────────────
+function toggleHelp(show){
+  document.getElementById('helpModal').classList.toggle('show', show);
+}
+document.addEventListener('keydown', e=>{ if(e.key==='Escape') toggleHelp(false); });
+</script>
 
 <script>
 // ── State ──────────────────────────────────────────────────────────────────
