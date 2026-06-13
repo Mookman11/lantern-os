@@ -537,8 +537,10 @@ function openProviderSettings() {
 async function initDashboard() {
   try {
     dashboardUI.showInfo('Initializing dashboard…', 0);
-    const data = await dashboardAPI.getSystemStatus();
-    updateAllTabs(data.data);
+    const response = await dashboardAPI.getSystemStatus();
+    // Handle both {ok, data: {...}} and direct data object
+    const data = response.data || response;
+    updateAllTabs(data);
     dashboardUI.showSuccess('Dashboard ready', 2000);
   } catch (err) {
     dashboardUI.showError('Failed to load dashboard: ' + err.message);
@@ -549,8 +551,10 @@ async function initDashboard() {
 setInterval(async () => {
   try {
     dashboardAPI.clearCache(); // Force fresh fetch
-    const data = await dashboardAPI.getSystemStatus();
-    updateAllTabs(data.data);
+    const response = await dashboardAPI.getSystemStatus();
+    // Handle both {ok, data: {...}} and direct data object
+    const data = response.data || response;
+    updateAllTabs(data);
   } catch (err) {
     console.error('Auto-refresh failed:', err);
   }
