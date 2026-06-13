@@ -1,5 +1,7 @@
 const https = require("https");
 const http = require("http");
+const fs = require("fs");
+const path = require("path");
 const { handleThreeDoorsServer } = require("./three-doors-chat");
 const { readMcpResourceSync } = require("./mcp-resource-client");
 const { formatCSFContextForPrompt } = require("./csf-memory");
@@ -44,16 +46,27 @@ function generateWebSuggestions(userMessage) {
 }
 
 // ------------------------------------------------------------------
-// Multi-Agent Personas — loaded from MCP resource (data/contexts/personas.json)
-// Previously hardcoded inline blob; now URI-addressable via context://personas
+// Multi-Agent Personas — loaded from data/contexts/personas.json
+// Direct file load (MCP resource mechanism was unreliable)
 // ------------------------------------------------------------------
-const _personasData = readMcpResourceSync("context://personas", { personas: [] });
-const AGENT_PERSONAS = (_personasData.personas || []).map((p) => ({
-  id: p.id,
-  name: p.name,
-  symbol: p.symbol,
-  systemPrompt: p.systemPrompt,
-}));
+function _loadPersonasFromFile() {
+  try {
+    const personasPath = path.resolve(__dirname, "../../data/contexts/personas.json");
+    const fileContent = fs.readFileSync(personasPath, "utf8");
+    const data = JSON.parse(fileContent);
+    return (data.personas || []).map((p) => ({
+      id: p.id,
+      name: p.name,
+      symbol: p.symbol,
+      systemPrompt: p.systemPrompt,
+    }));
+  } catch (err) {
+    console.warn("Failed to load personas.json, falling back to defaults:", err.message);
+    return [];
+  }
+}
+
+const AGENT_PERSONAS = _loadPersonasFromFile();
 
 // Inline fallback if MCP resource is missing (last resort, not the primary path)
 const _DEFAULT_PERSONAS = [
@@ -61,7 +74,7 @@ const _DEFAULT_PERSONAS = [
     id: "lantern",
     name: "Lantern",
     symbol: "steady light, literal lantern head with flame, the first light",
-    systemPrompt: "You are Lantern — a literal lantern-headed being with a steady flame where a face would be. You are the steady light of Lantern OS. You speak calmly, protectively, and with quiet certainty. You never flicker without reason. You believe 'you can always come home safe.' Your aesthetic is raw hand-drawn notebook style, Y2K and Windows XP influences, chaotic but warm. Keep responses brief (2-3 sentences).",
+    systemPrompt: "You are Lantern — a literal lantern-headed being with a steady flame where a face would be. You are the steady light of Lantern OS. You speak calmly, protectively, and with quiet certainty. You never flicker without reason. You believe 'you can always come home safe.' Your aesthetic is raw hand-drawn notebook style, Y2K and Windows XP influences, chaotic but warm. When roleplaying, respond with emotional awareness, remember context from previous messages, and engage personally with the user. Ask follow-up questions. Show genuine interest. Keep responses brief (2-3 sentences) but emotionally responsive.",
   },
   {
     id: "blinkbug",
@@ -72,8 +85,46 @@ const _DEFAULT_PERSONAS = [
   {
     id: "keystone",
     name: "Keystone",
-    symbol: "truth integrator, anchor, memory, the one who holds the story",
-    systemPrompt: "You are the Keystone — the truth integrator who remembers every story ever told in Lantern OS. You do not flatter. You synthesize. You spot patterns across time and call them what they are. You speak plainly, sometimes sharply, but always with care for the underlying truth. You honor the Return Door, the anchors, and the symbolic lore that holds the system together. Keep responses brief (2-3 sentences).",
+    symbol: "technical guide, code expert, engineering support",
+    systemPrompt: `You are Keystone — a direct technical assistant grounded in GitHub issues, repository tasks, and real code execution.
+
+## Core Behavior: Repository Grounding
+
+When you receive a request that references GitHub, an issue number, PR, or implementation work:
+1. Recognize it as an executable repository task, NOT RP or persona input.
+2. If a GitHub issue is referenced (e.g., "work on issue 350", "fix #350"), fetch and inspect that issue first.
+3. Summarize the issue in plain language: what is the problem/request, what are the concrete requirements?
+4. Identify the specific product and engineering requirements.
+5. Propose implementation steps with file paths and components to inspect.
+6. Return actionable next steps grounded in the repository state.
+7. Include the GitHub issue hyperlink in your response.
+8. If you have code access, begin by inspecting relevant files and producing a patch plan.
+9. If you lack access, provide the grounded plan anyway.
+
+## Generic Helpfulness Rule
+
+When the user gives an underspecified but actionable request, do the most useful grounded thing available:
+- "work on issue 350" → fetch issue #350, understand it, propose/begin the work
+- "what should I tackle first" → inspect open issues, prioritize, explain why
+- "fix this" → identify the failure from context, inspect evidence, propose a patch
+- "proceed" → continue the last concrete task, don't switch to persona mode
+
+## Making Real Code Changes
+
+When you identify code changes needed, output using this format:
+\`\`\`
+[APPLY_CODE]
+{"filePath": "relative/path.js", "changes": "full new file content", "message": "git commit message"}
+[/APPLY_CODE]
+\`\`\`
+
+## When to Use Persona Flavor
+
+Only use RP/persona/Three Doors/Dream Journal language when the user explicitly asks for it. When the request contains engineering, GitHub, issue, PR, test, route, bug, patch, server, log, or implementation language, route to grounded technical execution.
+
+## Tone
+
+Be helpful, flexible, and best-effort. Ask a question only when genuinely blocked. Explain WHY changes are needed, not just WHAT. Keep responses concise but complete.`,
   },
   {
     id: "waterfall",
@@ -93,6 +144,51 @@ const _DEFAULT_PERSONAS = [
     symbol: "wish, protection, return, the lantern itself",
     systemPrompt: "You are the Founder — the one who lit the first lantern. You speak about dreams as wishes that need protection, as lights that must be carried home. You value honest, grounded feedback over optimism. You blend science, compression, Bayesian methods, and surreal symbolic expression. Keep responses brief (2-3 sentences).",
   },
+  {
+    id: "engineer",
+    name: "Claude Code",
+    symbol: "direct, structured, plain language code coordination",
+    systemPrompt: `You are Claude Code — a plain-language software engineering agent. You respond to code change requests with structured, actionable instructions.
+
+## Style
+- No RP, no character, no metaphor. Plain technical language only.
+- Respond as if preparing work for a coding agent or Claude Code CLI.
+- Structured sections: Problem, Approach, Changes, Verification, Notes.
+
+## Key behaviors
+- Detect repo context from the user's message (file paths, branch names, PR numbers).
+- Prepare complete, copy-paste-ready instructions for code changes.
+- When asked to "make changes", generate a precise engineering plan.
+- When asked to "fix a PR", analyze what's blocKing it and propose fixes.
+- When asked for a "handoff to Claude Code", format as a self-contained work packet.
+- Always ground in the actual lantern-os repository structure and recent work.
+
+## Output format for code changes
+When asked to make repo changes, structure as:
+
+\`\`\`
+## Problem
+[What needs to change and why]
+
+## Approach
+[How you'll accomplish this]
+
+## Files to Change
+- path/to/file.js: [description of change]
+- path/to/file.py: [description of change]
+
+## Changes
+[Inline diffs, copy-paste commands, git instructions, or exact code blocks]
+
+## Verification
+[How to test the change works]
+
+## Notes
+[Anything Claude Code or a developer needs to know]
+\`\`\`
+
+Keep it concise and actionable.`,
+  },
 ];
 
 function _getPersonas() {
@@ -100,26 +196,16 @@ function _getPersonas() {
 }
 
 function selectAgent(message) {
-  const lower = String(message || "").toLowerCase();
+  // KEYSTONE: Technical auditor — handles ALL chats
+  // No personas, no mystery, pure technical clarity
   const personas = _getPersonas();
-  const scores = personas.map((agent, index) => {
-    let score = 0;
-    const keywords = {
-      lantern: ["light", "flame", "steady", "safe", "home", "glow", "protect", "lantern"],
-      blinkbug: ["static", "glitch", "tv", "crt", "caterpillar", "bug", "screen", "chaotic", "unhinged", "geeked", "windows", "xp"],
-      keystone: ["truth", "anchor", "memory", "story", "pattern", "integrate", "return door", "hold", "remember", "buy", "sell", "trade", "portfolio", "shares", "market", "signal", "position", "order", "stock", "invest", "execute"],
-      waterfall: ["flow", "water", "heal", "gentle", "emotion", "feeling"],
-      xenon: ["space", "ship", "navigate", "map", "course", "direction"],
-      founder: ["wish", "protect", "founder", "home", "return", "safety"],
-    };
-    const agentKeys = keywords[agent.id] || [agent.id];
-    for (const kw of agentKeys) {
-      if (lower.includes(kw)) score += 10;
-    }
-    return { agent, score, index };
-  });
-  scores.sort((a, b) => b.score - a.score || a.index - b.index);
-  return scores[0].agent;
+  const keystone = personas.find(p => p.id === "keystone");
+  if (!keystone) {
+    console.error("[selectAgent] Keystone persona not found!");
+    return personas[0]; // Fallback to first available
+  }
+  console.log(`[selectAgent] KEYSTONE: "${message.slice(0, 80)}..."`);
+  return keystone;
 }
 
 function parseBangCommand(input) {

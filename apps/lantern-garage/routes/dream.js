@@ -19,6 +19,7 @@ module.exports = async function dreamRoutes(req, res, url, deps) {
     unifiedAgentGreet, unifiedAgentHealth, unifiedAgentInspect,
     handleStreamChat } = deps;
   const { handleConvergenceCommand, selectAgent } = require("../lib/dream-chat");
+  const { classifyIntent, CAPABILITY_REGISTRY } = require("../lib/intent-router");
 
   // ── CSF search endpoint ───────────────────────────────────────────────
   if (url.pathname === "/api/csf/search" && req.method === "GET") {
@@ -53,6 +54,81 @@ module.exports = async function dreamRoutes(req, res, url, deps) {
       sendJson(res, { ...data, query, generatedAt: new Date().toISOString() });
     } catch (err) {
       sendJson(res, { segments: [], query, error: err.message, generatedAt: new Date().toISOString() });
+    }
+    return true;
+  }
+
+  // ── Code modification endpoint (Keystone can apply real changes) ─────────
+  if (url.pathname === "/api/code/apply" && req.method === "POST") {
+    try {
+      const raw = await collectRequestBody(req);
+      const body = JSON.parse(raw || "{}");
+      const { filePath, changes, message } = body;
+
+      if (!filePath || !changes) {
+        sendJson(res, { error: "filePath and changes required" }, 400);
+        return true;
+      }
+
+      const { execSync } = require("child_process");
+      const fullPath = path.join(repoRoot, filePath);
+
+      // Safety: ensure path is within repo
+      const normalized = path.normalize(fullPath);
+      if (!normalized.startsWith(path.normalize(repoRoot))) {
+        sendJson(res, { error: "Path traversal blocked" }, 403);
+        return true;
+      }
+
+      // Apply changes: either full replacement or array of edits
+      let content;
+      try {
+        if (fs.existsSync(fullPath)) {
+          content = fs.readFileSync(fullPath, "utf8");
+        } else {
+          content = "";
+        }
+      } catch (e) {
+        sendJson(res, { error: `Cannot read file: ${e.message}` }, 400);
+        return true;
+      }
+
+      if (typeof changes === "string") {
+        // Full replacement
+        content = changes;
+      } else if (Array.isArray(changes)) {
+        // Array of {old, new} replacements
+        for (const edit of changes) {
+          if (edit.old && edit.new !== undefined) {
+            content = content.replace(edit.old, edit.new);
+          }
+        }
+      }
+
+      // Write file
+      const dir = path.dirname(fullPath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      fs.writeFileSync(fullPath, content, "utf8");
+
+      // Git add and commit
+      try {
+        execSync(`git add "${filePath}"`, { cwd: repoRoot });
+        const commitMsg = message || `code: ${filePath}`;
+        execSync(`git commit -m "${commitMsg.replace(/"/g, '\\"')}"`, { cwd: repoRoot });
+      } catch (gitErr) {
+        // Commit might fail if nothing changed, that's OK
+      }
+
+      sendJson(res, {
+        applied: true,
+        filePath,
+        committed: true,
+        message: `Applied changes to ${filePath} and committed to git`,
+      });
+    } catch (error) {
+      sendJson(res, { error: error.message }, 400);
     }
     return true;
   }
@@ -292,13 +368,19 @@ module.exports = async function dreamRoutes(req, res, url, deps) {
 from three_doors_engine import ThreeDoorsEngine
 req = json.loads(sys.stdin.read())
 e = ThreeDoorsEngine(req['userId'])
-e.agent = req.get('agent', '')
-result = e.to_api_response()
-if req['action'] in ['start','reset']:
-    result = e.to_api_response(e.reset() if req['action']=='reset' else e.start_game())
-elif req['action']=='choose':
-    s = e.choose_door(req['choice'])
-    result = e.to_api_response(s) if s else {"error":"invalid_choice"}
+if req.get('agent'):
+    e.agent = req['agent']
+if req['action'] == 'reset':
+    e.reset()
+    result = e.to_api_response(e.start_game())
+elif req['action'] in ['start']:
+    scene = e.start_game()
+    result = e.to_api_response(scene)
+elif req['action'] == 'choose':
+    scene = e.choose_door(req['choice'])
+    result = e.to_api_response(scene)
+else:
+    result = {"error": "unknown_action"}
 print(json.dumps(result))`;
 
       const result = await new Promise((resolve, reject) => {
@@ -370,73 +452,59 @@ print(e.sd_prompt_for_state())`;
         body.prompt = promptResult;
       }
 
-      // Use in-house SD server for image generation
-      const sdHost = process.env.SD_HOST || "127.0.0.1";
-      const sdPort = process.env.SD_PORT || "7860";
-
-      // Fast probe: check if SD server is reachable before attempting generation
-      const sdReachable = await new Promise((resolve) => {
-        const probe = http.request({ hostname: sdHost, port: sdPort, path: "/", method: "GET" },
-          () => { probe.destroy(); resolve(true); });
-        probe.on("error", () => resolve(false));
-        probe.setTimeout(2000, () => { probe.destroy(); resolve(false); });
-        probe.end();
-      });
-
-      if (!sdReachable) {
-        // Fallback: generic pre-rendered scene image if one exists
-        const genericPath = sceneKey
-          ? path.join(repoRoot, "apps", "lantern-garage", "public", "data", "images", "three-doors", `${sceneKey}.png`)
-          : "";
-        if (genericPath && fs.existsSync(genericPath)) {
-          sendJson(res, {
-            image_available: true,
-            image_url: `data/images/three-doors/${sceneKey}.png`,
-            cached: true,
-            fallback: "generic",
-            generatedAt: new Date().toISOString(),
-          });
-          return true;
-        }
+      // Image generation via ModelsLab API (cloud-based Stable Diffusion)
+      const modelsLabApiKey = process.env.MODELSLAB_API_KEY;
+      if (!modelsLabApiKey) {
         sendJson(res, {
           image_available: false,
           image_prompt: body.prompt || "",
-          error: "sd_server_unavailable",
+          error: "image_service_not_configured",
           generatedAt: new Date().toISOString(),
         });
         return true;
       }
 
-      const imageResult = await new Promise((resolve, reject) => {
+      const imageResult = await new Promise(async (resolve, reject) => {
         const payload = JSON.stringify({
           prompt: body.prompt,
-          negative_prompt: "cartoon, anime, blurry, distorted",
-          steps: 25,
+          negative_prompt: "cartoon, anime, blurry, distorted, ugly, bad quality",
+          height: "512",
+          width: "768",
+          steps: "25",
           guidance_scale: 7.5,
-          width: 768,
-          height: 512,
+          model_id: "DreamShaper XL 7.0",
+          base64: false,
         });
 
-        const reqSD = http.request({
-          hostname: sdHost,
-          port: sdPort,
-          path: "/generate",
+        const https = require("https");
+        const reqModelsLab = https.request({
+          hostname: "api.modelslab.com",
+          path: "/api/v6/images/text2img",
           method: "POST",
-          headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) },
-        }, (upstream) => {
-          let raw = "";
-          upstream.on("data", (c) => (raw += c));
-          upstream.on("end", () => {
+          headers: {
+            "Content-Type": "application/json",
+            "Content-Length": Buffer.byteLength(payload),
+            "Authorization": `Bearer ${modelsLabApiKey}`,
+          },
+        }, (res) => {
+          let data = "";
+          res.on("data", (chunk) => { data += chunk; });
+          res.on("end", () => {
             try {
-              const json = JSON.parse(raw);
-              resolve(json);
-            } catch { reject(new Error("invalid response from SD server")); }
+              const result = JSON.parse(data);
+              if (result.status === "success" && result.images && result.images.length > 0) {
+                resolve({ image: result.images[0], prompt: body.prompt });
+              } else {
+                reject(new Error("ModelsLab: " + (result.message || "no image generated")));
+              }
+            } catch (e) { reject(new Error("invalid ModelsLab response")); }
           });
         });
-        reqSD.on("error", reject);
-        reqSD.setTimeout(120000, () => { reqSD.destroy(); reject(new Error("SD server timeout")); });
-        reqSD.write(payload);
-        reqSD.end();
+
+        reqModelsLab.on("error", reject);
+        reqModelsLab.setTimeout(120000, () => { reqModelsLab.destroy(); reject(new Error("image generation timeout")); });
+        reqModelsLab.write(payload);
+        reqModelsLab.end();
       });
 
       // Persist into the contextualized cache for replay

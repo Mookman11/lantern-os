@@ -9,6 +9,33 @@
   let directModeEnabled = false;
   let keystoneMcpEnabled = false; // legacy compat
   let originalAgents = [];
+  // ── ROUTE INTENT DETECTION ────────────────────────────────────────────────
+  // Returns a route intent string used to select the backend agent/surface.
+  // RP is opt-in only — general chat, code work, and GitHub work use the router.
+  const RP_OPT_IN_RE = /open.*three[-_]?doors|roleplay|role[-\s]?play|continue the scene|\bas (lantern|blinkbug|waterfall|xenon|founder)\b/i;
+  const CODING_TRIGGERS = [
+    "make changes", "make a change", "change the code", "edit the code",
+    "modify the code", "integrate this", "wire this", "wire into",
+    "add to repo", "add to the repo", "commit to", "push to",
+    "prep a pr", "prepare a pr", "create a pr", "open a pr", "fix the pr",
+    "fix latest pr", "scan the pr", "scan latest pr", "review the pr",
+    "merge the pr", "handoff to claude code", "handoff to claude",
+    "make a handoff", "claude code", "use claude code", "coding agent",
+    "code change", "code changes", "repo change", "repo changes",
+    "git change", "github change", "bug fix", "fix the bug", "fix bug",
+    "fix this bug", "refactor", "improve the code", "add tests",
+    "add a test", "fix the test", "implement", "implementation",
+    "deploy", "deployment", "pull request", "open pr", "create pr",
+  ];
+
+  function detectRouteIntent(msg) {
+    const lower = (msg || "").toLowerCase().trim();
+    if (RP_OPT_IN_RE.test(msg)) return "dream_chat";
+    if (CODING_TRIGGERS.some(t => lower.includes(t))) return "coding_change";
+    if (/\b(debug|error|broken|crash|not working|not responding)\b/i.test(lower)) return "technical_debug";
+    return "general";
+  }
+
   // Agent is contextual — Lantern is default, others triggered by name in message
   function detectAgent(msg) {
     const lower = (msg || "").toLowerCase();
@@ -60,26 +87,37 @@
       const elapsed = Math.round((Date.now() - this.sessionStart) / 1000);
       const mins = Math.floor(elapsed / 60).toString().padStart(2, "0");
       const secs = (elapsed % 60).toString().padStart(2, "0");
-      document.getElementById("dbg-session").textContent = `${mins}:${secs}`;
-      document.getElementById("dbg-messages").textContent = this.messagesSent;
-      document.getElementById("dbg-tokens").textContent = this.tokensReceived;
+      const sessionEl = document.getElementById("dbg-session");
+      if (sessionEl) sessionEl.textContent = `${mins}:${secs}`;
+      const msgEl = document.getElementById("dbg-messages");
+      if (msgEl) msgEl.textContent = this.messagesSent;
+      const tokenEl = document.getElementById("dbg-tokens");
+      if (tokenEl) tokenEl.textContent = this.tokensReceived;
       const errEl = document.getElementById("dbg-errors");
-      errEl.textContent = this.errors;
-      errEl.className = "debug-val " + (this.errors > 0 ? "err" : "ok");
+      if (errEl) {
+        errEl.textContent = this.errors;
+        errEl.className = "debug-val " + (this.errors > 0 ? "err" : "ok");
+      }
       const fbEl = document.getElementById("dbg-fallbacks");
-      fbEl.textContent = this.fallbacks;
-      fbEl.className = "debug-val " + (this.fallbacks > 0 ? "warn" : "ok");
+      if (fbEl) {
+        fbEl.textContent = this.fallbacks;
+        fbEl.className = "debug-val " + (this.fallbacks > 0 ? "warn" : "ok");
+      }
       const avg = this.latencies.length > 0
         ? Math.round(this.latencies.reduce((a, b) => a + b, 0) / this.latencies.length) + " ms"
         : "—";
-      document.getElementById("dbg-latency").textContent = avg;
-      document.getElementById("dbg-provider").textContent = this.lastProvider || "—";
-      document.getElementById("dbg-agent").textContent = this.lastAgent || "—";
+      const latEl = document.getElementById("dbg-latency");
+      if (latEl) latEl.textContent = avg;
+      const provEl = document.getElementById("dbg-provider");
+      if (provEl) provEl.textContent = this.lastProvider || "—";
+      const agentEl = document.getElementById("dbg-agent");
+      if (agentEl) agentEl.textContent = this.lastAgent || "—";
     },
   };
   setInterval(() => analytics.render(), 1000);
   function toggleDebug() {
-    document.getElementById("debug-panel").classList.toggle("open");
+    const panel = document.getElementById("debug-panel");
+    if (panel) panel.classList.toggle("open");
   }
 
   function toggleKeystoneMcp() {
@@ -131,8 +169,8 @@
         agents = data.agents || [];
         originalAgents = agents;
         originalAgents = agents;
-        statusDot.className = "dot online";
-        statusLabel.textContent = "online";
+        if (statusDot) statusDot.className = "dot online";
+        if (statusLabel) statusLabel.textContent = "online";
         TELEMETRY.log("agents", `Loaded ${agents.length} agents`);
         return;
       }
@@ -140,8 +178,8 @@
     } catch (err) {
       TELEMETRY.error("agents", `Failed to load agents: ${err.message}`, { serverBase });
     }
-    statusDot.className = "dot";
-    statusLabel.textContent = "offline";
+    if (statusDot) statusDot.className = "dot";
+    if (statusLabel) statusLabel.textContent = "offline";
   }
   loadAgents();
 
@@ -326,7 +364,7 @@
   }
 
   // ── Stream agent response ───────────────────────────────────────────────────
-  function streamAgentResponse(message) {
+  async function streamAgentResponse(message) {
     stopSpeaking();
     isStreaming = true;
     sendBtn.disabled = true;
@@ -356,14 +394,18 @@
     let fullText = "";
     let hasTokens = false;
     const provider = providerSelect.value;
-    const agent = directModeEnabled ? "" : detectAgent(message);
     // POST with history for multi-turn context; history excludes current message (already appended)
     const historyToSend = conversationHistory.slice(0, -1).slice(-6); // last 6 turns before this message
 
     fetch(`${serverBase}/api/dream/chat/stream`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, provider: provider || undefined, agent: agent || undefined, history: historyToSend, mcp: directModeEnabled }),
+      body: JSON.stringify({
+        message,
+        provider: provider || undefined,
+        history: historyToSend,
+        mcp: directModeEnabled,
+      }),
     })
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -375,6 +417,8 @@
         let buf = "";
 
         let streamFinished = false;
+        let routeInfo = null;
+        let receiptInfo = null;
         function processLines(lines) {
           for (const line of lines) {
             if (!line.startsWith("data:")) continue;
@@ -382,6 +426,19 @@
             if (!raw) continue;
             try {
               const evt = JSON.parse(raw);
+              if (evt.type === "route") {
+                routeInfo = evt;
+                // Show routing card with info from actual server-side routing decision
+                if (!document.querySelector(".route-card")) {
+                  const rc = document.createElement("div");
+                  rc.className = "route-card";
+                  rc.textContent = evt.label || `${evt.agentName} · ${evt.surface}`;
+                  bubble.insertBefore(rc, cursor);
+                }
+              }
+              if (evt.type === "receipt") {
+                receiptInfo = evt;
+              }
               if (evt.type === "token" && evt.text) {
                 if (!hasTokens) { hasTokens = true; setThinking(false); }
                 fullText += evt.text;
@@ -414,7 +471,7 @@
                     suggestions = doorsMatch[1].split("|").map(s => s.trim().replace(/^[ABC]\s+/i, "").trim()).filter(Boolean);
                   }
                 }
-                finishStream(row, bubble, cursor, displayText, evt.source, evt.error, suggestions, evt.image_prompt, evt.webSuggestions, evt.actions);
+                finishStream(row, bubble, cursor, displayText, evt.source, evt.error, suggestions, evt.image_prompt, evt.webSuggestions, evt.actions, evt.routeLabel);
               }
             } catch { /* skip malformed */ }
           }
@@ -447,7 +504,7 @@
       });
   }
 
-  function finishStream(row, bubble, cursor, text, source, error, suggestions, imagePrompt, webSuggestions, actions) {
+  function finishStream(row, bubble, cursor, text, source, error, suggestions, imagePrompt, webSuggestions, actions, routeLabel) {
     cursor.remove();
     if (!text && !error) {
       bubble.textContent = bubble.textContent || "…";
@@ -467,6 +524,14 @@
       const turn = conversationHistory.filter(m => m.role === "assistant").length;
       const latStr = latency ? `${(latency / 1000).toFixed(1)}s` : null;
       const isErr = source === "failed" || source === "unavailable" || source === "error" || !!error;
+      // Route signature — who/what the user is talking to
+      if (routeLabel) {
+        const sig = document.createElement("div");
+        sig.className = "msg-route-sig";
+        sig.setAttribute("aria-label", `Active route: ${routeLabel}`);
+        sig.textContent = routeLabel;
+        row.appendChild(sig);
+      }
       const footer = document.createElement("div");
       footer.className = `msg-footer${isErr ? " offline" : source ? ` ${source}` : ""}`;
       const parts = [];
@@ -1084,6 +1149,7 @@
   let ctfPaletteOpen = false;
 
   function buildCtfPalette() {
+    if (!ctfPopup) return;
     ctfPopup.innerHTML = "";
     for (const [word, sym] of Object.entries(CTF)) {
       const btn = document.createElement("button");
@@ -1103,46 +1169,50 @@
   }
 
   function toggleCtfPalette() {
+    if (!ctfPopup) return;
     ctfPaletteOpen = !ctfPaletteOpen;
     ctfPopup.classList.toggle("hidden", !ctfPaletteOpen);
     if (ctfPaletteOpen && !ctfPopup.children.length) buildCtfPalette();
-    document.getElementById("ctf-btn").style.color = ctfPaletteOpen ? "var(--accent)" : "";
+    const ctfBtn = document.getElementById("ctf-btn");
+    if (ctfBtn) ctfBtn.style.color = ctfPaletteOpen ? "var(--accent)" : "";
   }
 
   // Auto-suggest CTF as you type
-  inputEl.addEventListener("input", () => {
-    const words = inputEl.value.split(/\s+/);
-    const last = words[words.length - 1];
-    if (last.length >= 3 && !ctfPaletteOpen) {
-      const matches = ctfLookup(last);
-      if (matches.length > 0) {
-        ctfPopup.classList.remove("hidden");
-        ctfPopup.innerHTML = "";
-        matches.forEach(({ word, sym }) => {
-          const btn = document.createElement("button");
-          btn.className = "ctf-sym";
-          btn.textContent = `${sym} ${word}`;
-          btn.onclick = () => {
-            const ws = inputEl.value.split(/\s+/);
-            ws[ws.length - 1] = sym;
-            inputEl.value = ws.join(" ") + " ";
-            inputEl.selectionStart = inputEl.selectionEnd = inputEl.value.length;
-            ctfPopup.classList.add("hidden");
-            inputEl.focus();
-          };
-          ctfPopup.appendChild(btn);
-        });
-        return;
+  if (ctfPopup) {
+    inputEl.addEventListener("input", () => {
+      const words = inputEl.value.split(/\s+/);
+      const last = words[words.length - 1];
+      if (last.length >= 3 && !ctfPaletteOpen) {
+        const matches = ctfLookup(last);
+        if (matches.length > 0) {
+          ctfPopup.classList.remove("hidden");
+          ctfPopup.innerHTML = "";
+          matches.forEach(({ word, sym }) => {
+            const btn = document.createElement("button");
+            btn.className = "ctf-sym";
+            btn.textContent = `${sym} ${word}`;
+            btn.onclick = () => {
+              const ws = inputEl.value.split(/\s+/);
+              ws[ws.length - 1] = sym;
+              inputEl.value = ws.join(" ") + " ";
+              inputEl.selectionStart = inputEl.selectionEnd = inputEl.value.length;
+              ctfPopup.classList.add("hidden");
+              inputEl.focus();
+            };
+            ctfPopup.appendChild(btn);
+          });
+          return;
+        }
       }
-    }
-    if (!ctfPaletteOpen) ctfPopup.classList.add("hidden");
-  });
-
-  document.addEventListener("click", (e) => {
-    if (!ctfPopup.contains(e.target) && e.target.id !== "ctf-btn" && e.target !== inputEl) {
       if (!ctfPaletteOpen) ctfPopup.classList.add("hidden");
-    }
-  });
+    });
+
+    document.addEventListener("click", (e) => {
+      if (!ctfPopup.contains(e.target) && e.target.id !== "ctf-btn" && e.target !== inputEl) {
+        if (!ctfPaletteOpen) ctfPopup.classList.add("hidden");
+      }
+    });
+  }
 
   // ════════════════════════════════════════════════════════════════
   //  Voice — STT (Web Speech API) + TTS

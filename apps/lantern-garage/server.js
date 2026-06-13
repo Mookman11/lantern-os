@@ -78,12 +78,16 @@ const deps = {
 
 const routes = [
   require("./routes/status"),
+  require("./routes/system-overview"),
   require("./routes/ui"),
+  require("./routes/nodes"),
+  require("./routes/mesh"),
   require("./routes/rag"),
   require("./routes/operator"),
   require("./routes/files"),
   require("./routes/files-upload"),
   require("./routes/dreamer"),
+  require("./routes/queue"),
   require("./routes/dream"),
   require("./routes/dreams"),
   require("./routes/keystone"),
@@ -99,7 +103,7 @@ const routes = [
   require("./routes/leaderboard"),
   require("./routes/surfaces"),
   require("./routes/self-edit"),
-  require("./routes/creator"),
+  require("./routes/personal-cube"),
 ];
 
 async function route(req, res) {
@@ -233,6 +237,63 @@ process.on("SIGINT", () => shutdown("SIGINT"));
 
 server.listen(port, host, () => {
   console.log(`Lantern Garage app listening on ${host}:${port}`);
+
+  // Auto-register this node to the mesh
+  (async () => {
+    try {
+      const nodeId = process.env.LANTERN_NODE_ID || require("os").hostname();
+      const nodeName = process.env.LANTERN_NODE_NAME || `Lantern (${require("os").hostname()})`;
+      const agentList = AGENT_PERSONAS.map(a => a.id) || ["lantern"];
+      const workerCount = parseInt(process.env.LANTERN_WORKERS || "1", 10);
+
+      const registrationData = {
+        nodeId,
+        nodeName,
+        agents: agentList,
+        workers: workerCount,
+        port
+      };
+
+      const registrationReq = require("http").request({
+        hostname: "127.0.0.1",
+        port,
+        path: "/api/nodes/register",
+        method: "POST",
+        headers: { "Content-Type": "application/json" }
+      }, (res) => {
+        let data = "";
+        res.on("data", chunk => data += chunk);
+        res.on("end", () => {
+          try {
+            const result = JSON.parse(data);
+            if (result.ok) {
+              console.log(`[Mesh] Node registered: ${nodeName} (${agentList.length} agents, ${workerCount} workers)`);
+            }
+          } catch { /* silent */ }
+        });
+      });
+      registrationReq.on("error", () => { /* silent */ });
+      registrationReq.write(JSON.stringify(registrationData));
+      registrationReq.end();
+
+      // Heartbeat every 30 seconds
+      setInterval(() => {
+        const heartbeat = require("http").request({
+          hostname: "127.0.0.1",
+          port,
+          path: "/api/nodes/register",
+          method: "POST",
+          headers: { "Content-Type": "application/json" }
+        }, () => {});
+        heartbeat.on("error", () => {});
+        heartbeat.write(JSON.stringify(registrationData));
+        heartbeat.end();
+      }, 30000);
+    } catch (err) {
+      console.warn(`[Mesh] Auto-registration failed: ${err.message}`);
+    }
+  })();
+
   refreshAllPcsf(repoRoot);
   // Ollama cold-start probe
   const ollamaBase = process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434";

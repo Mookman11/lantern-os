@@ -505,9 +505,11 @@ class ThreeDoorsEngine:
                 chosen = d
                 break
         if not chosen:
-            # Custom door: player invented their own — still advance the stage
-            if len(choice.strip()) > 1:
-                chosen = {"label": "CUSTOM", "name": choice.strip()}
+            # Accept single-word custom doors (e.g. a player-named door).
+            # Reject multi-word phrases that don't match any real door.
+            stripped = choice.strip()
+            if len(stripped) > 1 and ' ' not in stripped:
+                chosen = {"label": "CUSTOM", "name": stripped}
             else:
                 return None
 
