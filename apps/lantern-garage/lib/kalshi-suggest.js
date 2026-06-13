@@ -1,109 +1,105 @@
 /**
- * Kalshi suggestion engine — builds the "Tinder of trading" deck.
+ * Kalshi suggestion engine — NOW-SLICE favorability for the swipe deck.
  *
- * Merges LIVE market prices (kalshi-api) with the CIO trajectory recorded in
- * data/kalshi/price-snapshots.jsonl to produce, per market, a recommended side
- * (green = bet YES / bullish, red = bet NO / bearish), a conviction score, and
- * a plain-English reason.
+ * Each card carries ONE favorable position the AI picks for *this instant*:
+ * buy YES or buy NO, chosen from the current data slice only —
+ *   - tick      : current yes_ask vs the previous tick (live momentum)
+ *   - spread    : bid/ask tightness (how cleanly you can enter)
+ *   - liquidity : resting size / liquidity on the book
+ *   - urgency   : time to close (shorter game times rank first)
+ * No historical trajectory is used — the decision is "only relevant to now's
+ * data slice", so it stays valid under a tight (~6s) refresh.
  *
- * Honesty note: training showed no short-horizon DRIFT edge in these odds, so
- * conviction is driven mainly by trajectory STABILITY (the CIO dilation idea) and
- * is deliberately modest. Reasons say what's actually behind the number. Nothing
- * here places an order — the card's green/red click goes through the existing
- * dry-run / kill-switch-gated /order route.
- *
- * Deck order: bearish (sell/NO) leans first, then bullish (buy/YES) — "sell
- * first, buy second" — each sub-sorted by conviction.
+ * The deck is a binary: GREEN/right takes the favorable position, RED/left
+ * passes. Nothing is sent here — the take routes through the existing dry-run /
+ * kill-switch-gated /order endpoint.
  */
 
 "use strict";
 
-const fs = require("fs");
-const path = require("path");
 const kalshi = require("./kalshi-api");
 
-const SNAPSHOTS = path.resolve(__dirname, "..", "..", "..", "data", "kalshi", "price-snapshots.jsonl");
-
-function loadSeries() {
-  const series = {};   // ticker -> [{ts, p}]
-  if (!fs.existsSync(SNAPSHOTS)) return series;
-  for (const line of fs.readFileSync(SNAPSHOTS, "utf8").split("\n")) {
-    const s = line.trim();
-    if (!s) continue;
-    let r;
-    try { r = JSON.parse(s); } catch { continue; }
-    const t = r.ticker;
-    if (!t) continue;
-    const ya = parseFloat(r.yes_ask) || 0, na = parseFloat(r.no_ask) || 0;
-    if (ya + na <= 0) continue;
-    (series[t] = series[t] || []).push({ ts: r.ts || "", p: ya / (ya + na) });
-  }
-  for (const t of Object.keys(series)) series[t].sort((a, b) => a.ts.localeCompare(b.ts));
-  return series;
+function prevYesCents(m) {
+  const f = parseFloat(m.previous_yes_ask_dollars);
+  return Number.isFinite(f) ? Math.round(f * 100) : null;
 }
 
-function signalFor(ps) {
-  // Returns { trendPts, vol, depth, conviction, side, reason }
-  if (!ps || ps.length < 4) {
-    return {
-      trendPts: 0, vol: 0, depth: ps ? ps.length : 0, conviction: 30, side: "yes",
-      reason: "thin history — low conviction",
-    };
-  }
-  const w = ps.slice(-8).map((x) => x.p);
-  const diffs = w.slice(1).map((v, i) => v - w[i]);
-  const trend = diffs.reduce((a, b) => a + b, 0) / diffs.length;       // prob/round
-  const vol = Math.sqrt(diffs.reduce((a, b) => a + b * b, 0) / diffs.length);
-  const trendPts = trend * 100;                                        // points/round
-  const stab = Math.max(0, 1 - vol * 40);                             // 1 = rock steady
-  // conviction: modest base + trend clarity + stability (capped — see honesty note)
-  const conviction = Math.round(Math.min(85, 32 + Math.abs(trendPts) * 7 + stab * 26));
-  const side = trend >= 0 ? "yes" : "no";
-  const dir = trend >= 0 ? "odds rising" : "odds falling";
-  const steady = vol * 100 < 0.6 ? "stable" : "choppy";
-  const reason = `${dir} ${trendPts >= 0 ? "+" : ""}${trendPts.toFixed(1)} pts/round · ${steady} · ${ps.length} rounds`;
-  return { trendPts: +trendPts.toFixed(2), vol: +(vol * 100).toFixed(2), depth: ps.length, conviction, side, reason };
+function favorability(m, nowMs) {
+  const yesA = m.yes_ask, yesB = m.yes_bid, noA = m.no_ask, noB = m.no_bid;
+  const prevYes = prevYesCents(m);
+  const tick = (yesA != null && prevYes != null) ? yesA - prevYes : 0;
+  const spreadYes = (yesA != null && yesB != null) ? yesA - yesB : 99;
+  const spreadNo = (noA != null && noB != null) ? noA - noB : 99;
+
+  // favorable side from the now-slice: follow the live tick; tie → tighter book
+  let side;
+  if (tick > 0) side = "yes";
+  else if (tick < 0) side = "no";
+  else side = spreadYes <= spreadNo ? "yes" : "no";
+  const sideAsk = side === "yes" ? yesA : noA;
+  const spread = side === "yes" ? spreadYes : spreadNo;
+
+  const close = m.close_time ? Date.parse(m.close_time) : NaN;
+  const minsToClose = Number.isFinite(close) ? Math.max(0, (close - nowMs) / 60000) : Infinity;
+
+  // conviction (all current-slice): momentum + book tightness + liquidity + urgency
+  const mom = Math.min(20, Math.abs(tick) * 6);
+  const tight = spread <= 1 ? 16 : spread <= 2 ? 9 : spread <= 4 ? 3 : 0;
+  const liq = Math.min(14, Math.log10((parseFloat(m.liquidity_dollars) || 0) + 1) * 5);
+  const urgency = minsToClose < 60 ? 12 : minsToClose < 240 ? 7 : minsToClose < 1440 ? 3 : 0;
+  const conviction = Math.round(Math.min(82, 28 + mom + tight + liq + urgency));
+
+  const dir = tick > 0 ? `YES ticked +${tick}¢`
+            : tick < 0 ? `YES ticked ${tick}¢`
+            : "flat tick";
+  const tt = minsToClose === Infinity ? ""
+           : minsToClose < 60 ? `closes ${Math.round(minsToClose)}m`
+           : minsToClose < 1440 ? `closes ${Math.round(minsToClose / 60)}h`
+           : `closes ${Math.round(minsToClose / 1440)}d`;
+  const reason = [dir, `${spread}¢ spread`, tt].filter(Boolean).join(" · ");
+
+  return { side, sideAsk, spread, tick, conviction, reason, minsToClose };
 }
 
 async function getSuggestions({ limit = 60, series_ticker = "KXMLBGAME" } = {}) {
   const mk = await kalshi.getMarkets({ series_ticker, status: "open", limit: 200 });
   const markets = (mk.data && mk.data.markets) || [];
-  const series = loadSeries();
+  const nowMs = Date.now();
 
   const cards = [];
   for (const m of markets) {
-    const yes = m.yes_ask, no = m.no_ask;                 // cents (normalized by kalshi-api)
-    if (yes == null && no == null) continue;
-    const denom = (yes || 0) + (no || 0);
-    const yesPct = denom > 0 ? Math.round((yes / denom) * 100) : (yes != null ? yes : 0);
-    const sig = signalFor(series[m.ticker]);
+    if (m.yes_ask == null && m.no_ask == null) continue;
+    const f = favorability(m, nowMs);
+    const denom = (m.yes_ask || 0) + (m.no_ask || 0);
+    const yesPct = denom > 0 ? Math.round((m.yes_ask / denom) * 100) : (m.yes_ask || 0);
     cards.push({
       ticker: m.ticker,
       title: m.title || m.ticker,
       yesLabel: m.yes_sub_title || "YES",
       noLabel: m.no_sub_title || "NO",
-      yesCents: yes, noCents: no, yesPct,
-      side: sig.side,
-      conviction: sig.conviction,
-      reason: sig.reason,
-      trendPts: sig.trendPts,
-      depth: sig.depth,
+      yesCents: m.yes_ask, noCents: m.no_ask, yesPct,
+      favSide: f.side,                                   // 'yes' | 'no'
+      favLabel: f.side === "yes" ? (m.yes_sub_title || "YES") : (m.no_sub_title || "NO"),
+      favAsk: f.sideAsk,
+      conviction: f.conviction,
+      reason: f.reason,
+      minsToClose: Number.isFinite(f.minsToClose) ? Math.round(f.minsToClose) : null,
       close: m.close_time || "",
     });
   }
 
-  // sell/NO leans first, then buy/YES; conviction desc within each; near-term tiebreak
+  // time-sensitive: soonest-closing first (shorter game times), then conviction
   cards.sort((a, b) => {
-    const sa = a.side === "no" ? 0 : 1, sb = b.side === "no" ? 0 : 1;
-    if (sa !== sb) return sa - sb;
-    if (b.conviction !== a.conviction) return b.conviction - a.conviction;
-    return String(a.close).localeCompare(String(b.close));
+    const ma = a.minsToClose == null ? 1e9 : a.minsToClose;
+    const mb = b.minsToClose == null ? 1e9 : b.minsToClose;
+    if (ma !== mb) return ma - mb;
+    return b.conviction - a.conviction;
   });
 
   return {
     count: cards.length,
     generatedAt: new Date().toISOString(),
-    note: "Experimental CIO read — conviction from trajectory stability, not a proven edge. Practice mode.",
+    note: "Now-slice favorability (live tick + spread + liquidity + time-to-close). Practice mode — green takes the favorable side, gated dry-run.",
     cards: cards.slice(0, limit),
   };
 }
