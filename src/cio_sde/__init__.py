@@ -25,6 +25,7 @@ The four CIO invariants are enforced in code:
 
 from .engine import (
     Dynamics,
+    LinearDynamics,
     PCSFController,
     CovarianceField,
     GraphController,
@@ -38,10 +39,15 @@ from .collapse import (
     SemanticCollapseOperator,
     CollapseResult,
     CollapseOutcome,
+    CollapseCertificate,
+    collapse_certificate,
+    lyapunov_value,
+    AntiCollapseOperator,
 )
 
 __all__ = [
     "Dynamics",
+    "LinearDynamics",
     "PCSFController",
     "CovarianceField",
     "GraphController",
@@ -55,4 +61,8 @@ __all__ = [
     "SemanticCollapseOperator",
     "CollapseResult",
     "CollapseOutcome",
+    "CollapseCertificate",
+    "collapse_certificate",
+    "lyapunov_value",
+    "AntiCollapseOperator",
 ]
