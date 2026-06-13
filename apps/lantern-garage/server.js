@@ -176,6 +176,54 @@ if (discordToken && discordGuildId) {
   console.log("[Discord Bot] Skipped (set DISCORD_BOT_TOKEN + LANTERN_DISCORD_GUILD_ID in .env.local to enable)");
 }
 
+// ── MCP Server (no-auth, port 8771) ──
+let mcpServer = null;
+const mcpServerScript = path.join(repoRoot, "src", "mcp_server", "server.py");
+const enableMcpServer = process.env.LANTERN_MCP_SERVER !== "false";
+if (enableMcpServer && fs.existsSync(mcpServerScript)) {
+  const pythonExe = process.platform === "win32" ? "python" : "python3";
+  mcpServer = spawn(pythonExe, [mcpServerScript], {
+    stdio: "inherit",
+    cwd: repoRoot,
+    env: { ...process.env, LANTERN_MCP_PORT: "8771" },
+  });
+  mcpServer.on("error", (err) => {
+    console.error(`[MCP Server] Failed to start: ${err.message}`);
+  });
+  mcpServer.on("exit", (code) => {
+    console.log(`[MCP Server] exited with code ${code}`);
+  });
+  console.log(`[MCP Server] Starting on port 8771...`);
+} else if (enableMcpServer) {
+  console.warn(`[MCP Server] Script not found: ${mcpServerScript}`);
+} else {
+  console.log("[MCP Server] Disabled (set LANTERN_MCP_SERVER=true to enable)");
+}
+
+// ── MCP OAuth2 Server (OAuth2 protected, port 8772) ──
+let mcpOAuthServer = null;
+const mcpOAuthServerScript = path.join(repoRoot, "src", "mcp_server", "server_oauth.py");
+const enableMcpOAuth = process.env.LANTERN_MCP_OAUTH !== "false";
+if (enableMcpOAuth && fs.existsSync(mcpOAuthServerScript)) {
+  const pythonExe = process.platform === "win32" ? "python" : "python3";
+  mcpOAuthServer = spawn(pythonExe, [mcpOAuthServerScript], {
+    stdio: "inherit",
+    cwd: repoRoot,
+    env: { ...process.env, LANTERN_MCP_OAUTH_PORT: "8772" },
+  });
+  mcpOAuthServer.on("error", (err) => {
+    console.error(`[MCP OAuth Server] Failed to start: ${err.message}`);
+  });
+  mcpOAuthServer.on("exit", (code) => {
+    console.log(`[MCP OAuth Server] exited with code ${code}`);
+  });
+  console.log(`[MCP OAuth Server] Starting on port 8772...`);
+} else if (enableMcpOAuth) {
+  console.warn(`[MCP OAuth Server] Script not found: ${mcpOAuthServerScript}`);
+} else {
+  console.log("[MCP OAuth Server] Disabled (set LANTERN_MCP_OAUTH=true to enable)");
+}
+
 // ── Trading Microservice (Lantern OS Native) ──
 let tradingService = null;
 const tradingServiceScript = path.join(__dirname, "start-trading-service.js");
@@ -221,6 +269,12 @@ function shutdown(signal) {
   console.log(`\n${signal} received. Shutting down...`);
   if (discordBot && !discordBot.killed) {
     discordBot.kill("SIGTERM");
+  }
+  if (mcpServer && !mcpServer.killed) {
+    mcpServer.kill("SIGTERM");
+  }
+  if (mcpOAuthServer && !mcpOAuthServer.killed) {
+    mcpOAuthServer.kill("SIGTERM");
   }
   if (tradingService && !tradingService.killed) {
     tradingService.kill("SIGTERM");

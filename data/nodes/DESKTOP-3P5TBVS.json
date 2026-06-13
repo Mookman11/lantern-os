@@ -3,11 +3,18 @@
   "nodeName": "Lantern (DESKTOP-3P5TBVS)",
   "platform": "win32",
   "arch": "x64",
-  "uptime": 151.1978154,
-  "agents": [],
+  "uptime": 2460.8355539,
+  "agents": [
+    "lantern",
+    "keystone",
+    "blinkbug",
+    "waterfall",
+    "xenon",
+    "founder"
+  ],
   "workerCount": 1,
-  "registeredAt": "2026-06-13T06:27:14.412Z",
-  "lastSeen": "2026-06-13T06:27:14.413Z",
+  "registeredAt": "2026-06-13T08:14:45.034Z",
+  "lastSeen": "2026-06-13T08:14:45.034Z",
   "address": "127.0.0.1",
   "port": 4177
 }
