@@ -203,7 +203,7 @@ function selectAgent(message) {
     const keywords = {
       lantern: ["light", "flame", "steady", "safe", "home", "glow", "protect", "lantern"],
       blinkbug: ["static", "glitch", "tv", "crt", "caterpillar", "bug", "screen", "chaotic", "unhinged", "geeked", "windows", "xp"],
-      keystone: ["truth", "anchor", "memory", "story", "pattern", "integrate", "return door", "hold", "remember", "buy", "sell", "trade", "portfolio", "shares", "market", "signal", "position", "order", "stock", "invest", "execute"],
+      keystone: ["code", "github", "issue", "pattern", "architecture", "logic", "structure", "debug", "fix", "build", "test", "repo", "commit", "branch", "deploy", "technical"],
       waterfall: ["flow", "water", "heal", "gentle", "emotion", "feeling"],
       xenon: ["space", "ship", "navigate", "map", "course", "direction"],
       founder: ["wish", "protect", "founder", "home", "return", "safety"],
