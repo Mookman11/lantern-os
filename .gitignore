@@ -92,6 +92,9 @@ data/status/agent-monitor-latest.json
 data/conversations/garage-conversations.jsonl
 apps/data/conversations/garage-conversations.jsonl
 
+# Runtime memoization / local tool artifacts
+.memos/
+
 # Deployment weight reduction (static site deploy)
 .git/
 
@@ -175,3 +178,4 @@ data/csf_memory/symbolic-dict.json
 
 # ClaimsPacket runtime log
 data/claim-packets/
+output/
