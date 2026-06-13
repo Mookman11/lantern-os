@@ -196,26 +196,16 @@ function _getPersonas() {
 }
 
 function selectAgent(message) {
-  const lower = String(message || "").toLowerCase();
+  // KEYSTONE: Technical auditor — handles ALL chats
+  // No personas, no mystery, pure technical clarity
   const personas = _getPersonas();
-  const scores = personas.map((agent, index) => {
-    let score = 0;
-    const keywords = {
-      lantern: ["light", "flame", "steady", "safe", "home", "glow", "protect", "lantern"],
-      blinkbug: ["static", "glitch", "tv", "crt", "caterpillar", "bug", "screen", "chaotic", "unhinged", "geeked", "windows", "xp"],
-      keystone: ["code", "github", "issue", "pattern", "architecture", "logic", "structure", "debug", "fix", "build", "test", "repo", "commit", "branch", "deploy", "technical"],
-      waterfall: ["flow", "water", "heal", "gentle", "emotion", "feeling"],
-      xenon: ["space", "ship", "navigate", "map", "course", "direction"],
-      founder: ["wish", "protect", "founder", "home", "return", "safety"],
-    };
-    const agentKeys = keywords[agent.id] || [agent.id];
-    for (const kw of agentKeys) {
-      if (lower.includes(kw)) score += 10;
-    }
-    return { agent, score, index };
-  });
-  scores.sort((a, b) => b.score - a.score || a.index - b.index);
-  return scores[0].agent;
+  const keystone = personas.find(p => p.id === "keystone");
+  if (!keystone) {
+    console.error("[selectAgent] Keystone persona not found!");
+    return personas[0]; // Fallback to first available
+  }
+  console.log(`[selectAgent] KEYSTONE: "${message.slice(0, 80)}..."`);
+  return keystone;
 }
 
 function parseBangCommand(input) {
