@@ -92,96 +92,101 @@ module.exports = async function dreamerRoutes(req, res, url, deps) {
     return true;
   }
   if (url.pathname === "/api/dreamer/upload" && req.method === "POST") {
+    console.log("[UPLOAD] Starting upload handler");
     try {
       const fs = require("fs");
-      const Busboy = require("busboy");
+      const busboy = require("busboy");
       const user = normalizeDreamerUser(url.searchParams.get("user") || "dreamer");
+      console.log("[UPLOAD] Setup complete, creating busboy");
 
       const videosDir = path.join(repoRoot, "data", "dreamer", "videos");
       if (!fs.existsSync(videosDir)) {
         fs.mkdirSync(videosDir, { recursive: true });
       }
 
-      const bb = Busboy({ headers: req.headers });
+      const bb = busboy({ headers: req.headers });
       let fileInfo = null;
-      let fields = {};
+      let entryJson = null;
       let uploadError = null;
 
       bb.on("file", (fieldname, file, info) => {
-        if (uploadError) {
+        if (fieldname === "file") {
+          const timestamp = Date.now();
+          const filename = `${timestamp}-${info.filename}`;
+          const filepath = path.join(videosDir, filename);
+          const writeStream = fs.createWriteStream(filepath);
+
+          file.on("error", (err) => { uploadError = err; });
+          writeStream.on("error", (err) => { uploadError = err; });
+
+          writeStream.on("finish", () => {
+            if (!uploadError) {
+              const stats = fs.statSync(filepath);
+              fileInfo = {
+                filename: info.filename,
+                savedAs: filename,
+                mimeType: info.mimeType,
+                size: stats.size,
+                path: path.relative(repoRoot, filepath)
+              };
+            }
+          });
+
+          file.pipe(writeStream);
+        } else {
           file.resume();
-          return;
         }
-
-        const timestamp = Date.now();
-        const filename = `${timestamp}-${info.filename}`;
-        const filepath = path.join(videosDir, filename);
-        const writeStream = fs.createWriteStream(filepath);
-
-        file.on("error", (err) => {
-          console.error("File stream error:", err);
-          uploadError = err;
-          if (fs.existsSync(filepath)) fs.unlinkSync(filepath);
-        });
-
-        writeStream.on("finish", () => {
-          try {
-            const stats = fs.statSync(filepath);
-            fileInfo = {
-              filename: info.filename,
-              savedAs: filename,
-              mimeType: info.mimeType,
-              size: stats.size,
-              path: path.relative(repoRoot, filepath)
-            };
-          } catch (err) {
-            console.error("Stats error:", err);
-            uploadError = err;
-            if (fs.existsSync(filepath)) fs.unlinkSync(filepath);
-          }
-        });
-
-        writeStream.on("error", (err) => {
-          console.error("Write stream error:", err);
-          uploadError = err;
-          if (fs.existsSync(filepath)) fs.unlinkSync(filepath);
-        });
-
-        file.pipe(writeStream);
       });
 
       bb.on("field", (fieldname, value) => {
-        fields[fieldname] = String(value).slice(0, 1000);
+        console.log(`[dreamer] Field: ${fieldname} = ${typeof value}`);
+        if (fieldname === "entry") {
+          console.log(`[dreamer] Parsing entry JSON: ${value.substring(0, 50)}...`);
+          try {
+            entryJson = JSON.parse(value);
+            console.log(`[dreamer] Entry parsed successfully: ${JSON.stringify(entryJson)}`);
+          } catch (e) {
+            console.log(`[dreamer] Entry parse failed: ${e.message}`);
+            uploadError = e;
+          }
+        }
       });
 
       bb.on("close", async () => {
         try {
+          console.log(`[dreamer] Close event - entryJson=${entryJson ? "defined" : "null"}, uploadError=${uploadError ? "yes" : "no"}`);
+
           if (uploadError) {
-            sendJson(res, { error: `Upload failed: ${uploadError.message}` }, 400);
+            sendJson(res, { error: uploadError.message }, 400);
             return;
           }
 
+          if (!entryJson) {
+            sendJson(res, { error: "No entry data provided" }, 400);
+            return;
+          }
+
+          // Map JSON entry to dreamer schema
           const entry = {
-            kind: fields.type || "video",
-            title: fields.title || "Untitled",
-            project: fields.project || "",
-            description: fields.description || "",
-            tags: fields.tags ? fields.tags.split(",").map(t => t.trim()).filter(Boolean) : [],
-            private: true,
-            file: fileInfo || null,
-            timestamp: new Date().toISOString()
+            kind: entryJson.type || "video",
+            name: entryJson.title || "Untitled",
+            mood: entryJson.project || "",
+            text: entryJson.description || "",
+            tags: entryJson.tags ? entryJson.tags.split(",").map(t => t.trim()).filter(Boolean) : [],
           };
 
           const record = await appendDreamerEntry(user, entry);
-          sendJson(res, { saved: true, record, file: fileInfo });
+          sendJson(res, {
+            saved: true,
+            record: { ...record, file: fileInfo },
+            file: fileInfo
+          });
         } catch (error) {
-          console.error("Entry creation error:", error);
           sendJson(res, { error: error.message }, 400);
         }
       });
 
       bb.on("error", (error) => {
-        console.error("Busboy error:", error);
         if (!res.headersSent) {
           sendJson(res, { error: error.message }, 400);
         }
@@ -189,7 +194,6 @@ module.exports = async function dreamerRoutes(req, res, url, deps) {
 
       req.pipe(bb);
     } catch (error) {
-      console.error("Upload route error:", error);
       sendJson(res, { error: error.message }, 500);
     }
     return true;

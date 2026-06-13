@@ -541,11 +541,16 @@ form.addEventListener('submit', async (e) => {
   e.preventDefault();
 
   const formData = new FormData();
-  formData.append('title', document.getElementById('title').value);
-  formData.append('type', document.getElementById('type').value);
-  formData.append('project', document.getElementById('project').value);
-  formData.append('description', document.getElementById('description').value);
-  formData.append('tags', document.getElementById('tags').value);
+
+  // Pack form data as JSON
+  const entry = {
+    title: document.getElementById('title').value,
+    type: document.getElementById('type').value,
+    project: document.getElementById('project').value,
+    description: document.getElementById('description').value,
+    tags: document.getElementById('tags').value
+  };
+  formData.append('entry', JSON.stringify(entry));
 
   if (fileInput.files.length > 0) {
     formData.append('file', fileInput.files[0]);
@@ -589,15 +594,31 @@ async function loadRecentEntries() {
         return;
       }
 
-      const recent = data.entries.slice(0, 5);
+      const recent = data.entries.slice(0, 5).reverse();
       list.innerHTML = recent.map(entry => {
-        const date = new Date(entry.timestamp).toLocaleDateString();
-        const type = entry.kind || 'entry';
+        // Handle multiple possible field names for title
+        const title = entry.title || entry.name || 'Untitled';
+
+        // Handle multiple possible field names for timestamp/date
+        let dateStr = 'Unknown date';
+        const timestamp = entry.timestamp || entry.recordedAt || entry.createdAt;
+        if (timestamp) {
+          try {
+            const date = new Date(timestamp);
+            if (!isNaN(date.getTime())) {
+              dateStr = date.toLocaleDateString();
+            }
+          } catch (e) {
+            dateStr = 'Invalid date';
+          }
+        }
+
+        const type = entry.kind || entry.type || 'entry';
         return `
           <div class="entry-item">
             <div>
-              <div class="entry-title">${entry.title || 'Untitled'}</div>
-              <div class="entry-time">${date}</div>
+              <div class="entry-title">${title}</div>
+              <div class="entry-time">${dateStr}</div>
             </div>
             <span class="entry-type">${type}</span>
           </div>
