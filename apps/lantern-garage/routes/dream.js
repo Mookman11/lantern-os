@@ -58,6 +58,81 @@ module.exports = async function dreamRoutes(req, res, url, deps) {
     return true;
   }
 
+  // ── Code modification endpoint (Keystone can apply real changes) ─────────
+  if (url.pathname === "/api/code/apply" && req.method === "POST") {
+    try {
+      const raw = await collectRequestBody(req);
+      const body = JSON.parse(raw || "{}");
+      const { filePath, changes, message } = body;
+
+      if (!filePath || !changes) {
+        sendJson(res, { error: "filePath and changes required" }, 400);
+        return true;
+      }
+
+      const { execSync } = require("child_process");
+      const fullPath = path.join(repoRoot, filePath);
+
+      // Safety: ensure path is within repo
+      const normalized = path.normalize(fullPath);
+      if (!normalized.startsWith(path.normalize(repoRoot))) {
+        sendJson(res, { error: "Path traversal blocked" }, 403);
+        return true;
+      }
+
+      // Apply changes: either full replacement or array of edits
+      let content;
+      try {
+        if (fs.existsSync(fullPath)) {
+          content = fs.readFileSync(fullPath, "utf8");
+        } else {
+          content = "";
+        }
+      } catch (e) {
+        sendJson(res, { error: `Cannot read file: ${e.message}` }, 400);
+        return true;
+      }
+
+      if (typeof changes === "string") {
+        // Full replacement
+        content = changes;
+      } else if (Array.isArray(changes)) {
+        // Array of {old, new} replacements
+        for (const edit of changes) {
+          if (edit.old && edit.new !== undefined) {
+            content = content.replace(edit.old, edit.new);
+          }
+        }
+      }
+
+      // Write file
+      const dir = path.dirname(fullPath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      fs.writeFileSync(fullPath, content, "utf8");
+
+      // Git add and commit
+      try {
+        execSync(`git add "${filePath}"`, { cwd: repoRoot });
+        const commitMsg = message || `code: ${filePath}`;
+        execSync(`git commit -m "${commitMsg.replace(/"/g, '\\"')}"`, { cwd: repoRoot });
+      } catch (gitErr) {
+        // Commit might fail if nothing changed, that's OK
+      }
+
+      sendJson(res, {
+        applied: true,
+        filePath,
+        committed: true,
+        message: `Applied changes to ${filePath} and committed to git`,
+      });
+    } catch (error) {
+      sendJson(res, { error: error.message }, 400);
+    }
+    return true;
+  }
+
   // ── Unified agent endpoints ───────────────────────────────────────────
   if (url.pathname === "/api/dream/greet" && req.method === "GET") {
     try {
