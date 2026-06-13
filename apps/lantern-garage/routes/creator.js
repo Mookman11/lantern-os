@@ -3,6 +3,8 @@
 
 const { analyzeVideoForHighlights } = require("../lib/highlight-engine");
 const { generateVariants } = require("../lib/retention-engine");
+const { detectSafeZones } = require("../lib/safe-zone-detector");
+const { generateCaptions, generateVTT, generateSRT, generateJSON } = require("../lib/caption-engine");
 
 module.exports = async function creatorRoutes(req, res, url, deps) {
   const { sendJson, path: pathModule, repoRoot } = deps;
@@ -124,6 +126,101 @@ module.exports = async function creatorRoutes(req, res, url, deps) {
       });
     } catch (error) {
       console.error("[creator] variants error:", error.message);
+      sendJson(res, { error: error.message }, 500);
+    }
+    return true;
+  }
+
+  // =========================================================================
+  // POST /api/creator/captions
+  // =========================================================================
+  // Generate captions from highlight timeline with multiple export formats
+  //
+  // Request:
+  // {
+  //   "highlightTimeline": { ... },
+  //   "strategy": "auto|gaming|emotional|narrative",
+  //   "format": "vtt|srt|json"
+  // }
+  //
+  // Response:
+  // {
+  //   "success": true,
+  //   "captions": [...],
+  //   "vtt": "...",
+  //   "srt": "...",
+  //   "json": {...}
+  // }
+
+  if (url.pathname === "/api/creator/captions" && req.method === "POST") {
+    try {
+      const raw = await deps.collectRequestBody(req);
+      const body = JSON.parse(raw);
+
+      if (!body.highlightTimeline) {
+        sendJson(res, { error: "highlightTimeline required" }, 400);
+        return true;
+      }
+
+      const strategy = body.strategy || "auto";
+      const format = body.format || "all";
+
+      const captions = generateCaptions(body.highlightTimeline, null, strategy);
+
+      const result = {
+        success: true,
+        captionCount: captions.length,
+        captions: captions.map((c) => c.toJSON()),
+      };
+
+      if (format === "vtt" || format === "all") {
+        result.vtt = generateVTT(captions);
+      }
+      if (format === "srt" || format === "all") {
+        result.srt = generateSRT(captions);
+      }
+      if (format === "json" || format === "all") {
+        result.json = JSON.parse(generateJSON(captions));
+      }
+
+      sendJson(res, result);
+    } catch (error) {
+      console.error("[creator] captions error:", error.message);
+      sendJson(res, { error: error.message }, 500);
+    }
+    return true;
+  }
+
+  // =========================================================================
+  // POST /api/creator/safe-zones
+  // =========================================================================
+  // Detect safe zones in video (facecam, HUD, minimap, killfeed)
+  //
+  // Request:
+  // {
+  //   "videoPath": "data/dreamer/videos/...",
+  //   "frameData": { width, height, pixels: [...] }
+  // }
+
+  if (url.pathname === "/api/creator/safe-zones" && req.method === "POST") {
+    try {
+      const raw = await deps.collectRequestBody(req);
+      const body = JSON.parse(raw);
+
+      if (!body.frameData) {
+        sendJson(res, { error: "frameData required" }, 400);
+        return true;
+      }
+
+      const safeZoneMap = await detectSafeZones(body.videoPath, body.frameData);
+
+      sendJson(res, {
+        success: true,
+        zoneCount: safeZoneMap.safeZones.length,
+        ...safeZoneMap.toJSON(),
+      });
+    } catch (error) {
+      console.error("[creator] safe-zones error:", error.message);
       sendJson(res, { error: error.message }, 500);
     }
     return true;
