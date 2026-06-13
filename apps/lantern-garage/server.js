@@ -31,6 +31,7 @@ const { refreshAllPcsf } = require("./lib/pcsf-refresh");
 const { getRoutingSnapshot, refreshProviderCache } = require("./lib/provider-cache");
 const { JobQueue } = require("./lib/job-queue");
 const { JobWorker } = require("./lib/job-worker");
+const { PrWatcher } = require("./lib/pr-watcher");
 
 const repoRoot = path.resolve(__dirname, "..", "..");
 const publicRoot = path.join(__dirname, "public");
@@ -51,6 +52,9 @@ const jobQueue = new JobQueue(repoRoot);
 const jobWorker = new JobWorker(jobQueue, repoRoot);
 jobWorker.start(2000); // Poll every 2 seconds for new jobs
 
+// PR Watcher — auto-reviews PRs idle for 3min via Keystone fleet
+const prWatcher = new PrWatcher({ repoRoot, port, idleMs: Number(process.env.PR_WATCHER_IDLE_MS || 3 * 60_000) });
+
 // Shared dependency bundle passed to every route module
 const deps = {
   fs, path,
@@ -67,7 +71,7 @@ const deps = {
   dreamChatReply, AGENT_PERSONAS, DREAM_DOORS, selectAgent,
   unifiedAgentGreet, unifiedAgentHealth, unifiedAgentInspect,
   handleStreamChat,
-  jobQueue, jobWorker,
+  jobQueue, jobWorker, prWatcher,
   repoRoot, publicRoot,
   conversationLogPath, flatRagHousePath, flatRagHouseManifestPath,
   operatorNotesPath, cloudMirrorsPath, cloudMirrorUrls,
@@ -105,6 +109,7 @@ const routes = [
   require("./routes/self-edit"),
   require("./routes/personal-cube"),
   require("./routes/agent-status"),
+  require("./routes/pr-review"),
 ];
 
 async function route(req, res) {
@@ -308,6 +313,7 @@ function shutdown(signal) {
   if (cloudflaredProcess && !cloudflaredProcess.killed) {
     cloudflaredProcess.kill("SIGTERM");
   }
+  prWatcher.stop();
   server.close(() => {
     process.exit(0);
   });
@@ -374,6 +380,7 @@ server.listen(port, host, () => {
     }
   })();
 
+  prWatcher.start();
   refreshAllPcsf(repoRoot);
   // Ollama cold-start probe
   const ollamaBase = process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434";
