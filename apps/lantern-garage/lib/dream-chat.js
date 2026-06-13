@@ -331,6 +331,7 @@ const DREAM_DOORS = _doorsData.doors || {
 };
 
 async function dreamChatReply(message, recentDreams, requestedAgent = "", requestedProvider = "") {
+  console.log("[dreamChatReply] Called with agent:", requestedAgent, "provider:", requestedProvider);
   const text = String(message || "").trim();
   const webSuggestions = generateWebSuggestions(message);
 
@@ -626,6 +627,7 @@ async function dreamChatReply(message, recentDreams, requestedAgent = "", reques
 
   // PRIORITY 2: Anthropic Claude (if explicitly requested or Ollama unavailable)
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  console.log("[dream-chat] DEBUG: anthropicKey exists:", !!anthropicKey, "rp:", rp, "condition:", (anthropicKey && (!rp || rp === "claude" || rp === "anthropic")) || (!rp && !ollamaModel));
   if ((anthropicKey && (!rp || rp === "claude" || rp === "anthropic")) || (!rp && !ollamaModel)) {
     try {
       const payload = JSON.stringify({
