@@ -264,6 +264,33 @@ if (fs.existsSync(aiTraderStartupScript)) {
   console.log(`[AI Trader] Using native Lantern OS Trading Microservice`);
 }
 
+// ── Cloudflare Tunnel (optional, for public access) ──
+let cloudflaredProcess = null;
+const enableCloudflare = process.env.LANTERN_CLOUDFLARE_TUNNEL !== "false";
+if (enableCloudflare) {
+  const cloudflareConfigPath = path.join(repoRoot, "cloudflare-config.yml");
+  if (fs.existsSync(cloudflareConfigPath)) {
+    cloudflaredProcess = spawn("cloudflared", ["tunnel", "run", "lantern-os", "--config", cloudflareConfigPath], {
+      stdio: "inherit",
+      cwd: repoRoot,
+      env: { ...process.env },
+    });
+    cloudflaredProcess.on("error", (err) => {
+      console.error(`[Cloudflare Tunnel] Failed to start: ${err.message}`);
+      console.log("[Cloudflare Tunnel] Install with: choco install cloudflare-warp");
+    });
+    cloudflaredProcess.on("exit", (code) => {
+      console.log(`[Cloudflare Tunnel] exited with code ${code}`);
+    });
+    console.log(`[Cloudflare Tunnel] Starting (lantern-os)...`);
+  } else {
+    console.log("[Cloudflare Tunnel] Config not found. Create cloudflare-config.yml for public access.");
+    console.log("[Cloudflare Tunnel] See: docs/CLOUDFLARE-TUNNEL-DEPLOYMENT.md");
+  }
+} else {
+  console.log("[Cloudflare Tunnel] Disabled (set LANTERN_CLOUDFLARE_TUNNEL=true to enable)");
+}
+
 // Graceful shutdown
 function shutdown(signal) {
   console.log(`\n${signal} received. Shutting down...`);
@@ -281,6 +308,9 @@ function shutdown(signal) {
   }
   if (aiTraderProcess && !aiTraderProcess.killed) {
     aiTraderProcess.kill("SIGTERM");
+  }
+  if (cloudflaredProcess && !cloudflaredProcess.killed) {
+    cloudflaredProcess.kill("SIGTERM");
   }
   server.close(() => {
     process.exit(0);
