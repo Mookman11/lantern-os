@@ -55,3 +55,35 @@
 - These promises confused the boundary between dream-chat personas and Claude Code (the full agent system)
 - New prompt is honest: Keystone is a technical guide within dream-chat, not a code executor
 - Better routing: complex implementation → Claude Code; technical discussion → Keystone
+
+---
+
+## Critical Gap: Agent Orchestration System (NOT YET IMPLEMENTED)
+
+### Current State
+- Dream-chat is functional at http://127.0.0.1:4177/dream-chat.html
+- Routing works: messages routed through agent personas
+- GitHub issues are documented and prioritized
+- **Missing:** Autonomous agents actually working on issues
+
+### What Needs to be Wired
+1. **Agent Slots Configuration** (`~/.claude/agent-slots.json`)
+   - Define local agent lanes: claude/, gemini/, codex/, devin/, grok/, openai/
+   - Each lane runs autonomously, picks up work from monoworkstream queue
+   
+2. **Work Queue System**
+   - GitHub issues → priority queue
+   - Agent lanes pull from queue based on lane assignment
+   - Each agent works independently on its branch
+   - Results → PRs per monoworkstream lane
+   
+3. **Dream-Chat ↔ Agent Bridge**
+   - `POST /api/dream/chat/stream` with "what should I work on?"
+   - Should return: current agent status, active issues, progress
+   - Not: text analysis of issues
+
+### Expected Behavior (When Wired)
+- User asks: "Check GitHub issues"
+- System response: "Claude lane: issue #335 in progress (60% complete), Gemini lane: idle, ready for #326"
+- Agents continue work autonomously without manual intervention
+- Dream-chat shows real-time work status instead of discussing work
