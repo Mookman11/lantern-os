@@ -758,7 +758,6 @@ async function handleStreamChat(req, url, res) {
   // converganceDecision already computed above (before systemPrompt)
 
   if (routeDecision.requires_convergence && !isKeystoneDebug && surfaceMode !== "three-doors") {
-    sendToken(`Routing to ${routeLabel}...\n`);
     const convResult = await convergeMessage(message, routeDecision.agent, requestedProvider || null, {
       timeoutMs: Number(process.env.CONVERGENCE_ROUTE_TIMEOUT_MS || 8000),
     });
