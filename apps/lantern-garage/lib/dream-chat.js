@@ -1,5 +1,7 @@
 const https = require("https");
 const http = require("http");
+const fs = require("fs");
+const path = require("path");
 const { handleThreeDoorsServer } = require("./three-doors-chat");
 const { readMcpResourceSync } = require("./mcp-resource-client");
 const { formatCSFContextForPrompt } = require("./csf-memory");
@@ -44,16 +46,27 @@ function generateWebSuggestions(userMessage) {
 }
 
 // ------------------------------------------------------------------
-// Multi-Agent Personas — loaded from MCP resource (data/contexts/personas.json)
-// Previously hardcoded inline blob; now URI-addressable via context://personas
+// Multi-Agent Personas — loaded from data/contexts/personas.json
+// Direct file load (MCP resource mechanism was unreliable)
 // ------------------------------------------------------------------
-const _personasData = readMcpResourceSync("context://personas", { personas: [] });
-const AGENT_PERSONAS = (_personasData.personas || []).map((p) => ({
-  id: p.id,
-  name: p.name,
-  symbol: p.symbol,
-  systemPrompt: p.systemPrompt,
-}));
+function _loadPersonasFromFile() {
+  try {
+    const personasPath = path.resolve(__dirname, "../../data/contexts/personas.json");
+    const fileContent = fs.readFileSync(personasPath, "utf8");
+    const data = JSON.parse(fileContent);
+    return (data.personas || []).map((p) => ({
+      id: p.id,
+      name: p.name,
+      symbol: p.symbol,
+      systemPrompt: p.systemPrompt,
+    }));
+  } catch (err) {
+    console.warn("Failed to load personas.json, falling back to defaults:", err.message);
+    return [];
+  }
+}
+
+const AGENT_PERSONAS = _loadPersonasFromFile();
 
 // Inline fallback if MCP resource is missing (last resort, not the primary path)
 const _DEFAULT_PERSONAS = [
