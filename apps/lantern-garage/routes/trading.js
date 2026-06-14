@@ -1393,6 +1393,30 @@ module.exports = async function tradingRoutes(req, res, url, deps) {
     return true;
   }
 
+  // GET /api/trading/ai-trader/watchlist
+  // Get AI trader's current watchlist
+  if (url.pathname === '/api/trading/ai-trader/watchlist' && req.method === 'GET') {
+    try {
+      const result = await callAITrader('/api/watchlist');
+      sendJson(res, result.data, result.status);
+    } catch (error) {
+      sendJson(res, { error: 'Watchlist fetch failed', details: error.message }, 500);
+    }
+    return true;
+  }
+
+  // GET /api/trading/ai-trader/zones
+  // Get AI trader's detected market zones
+  if (url.pathname === '/api/trading/ai-trader/zones' && req.method === 'GET') {
+    try {
+      const result = await callAITrader('/api/zones');
+      sendJson(res, result.data, result.status);
+    } catch (error) {
+      sendJson(res, { error: 'Zones fetch failed', details: error.message }, 500);
+    }
+    return true;
+  }
+
   // GET /api/trading/memory/recent?limit=20&kind=order|signal
   // Trading Phase 2 (#323): recent orders/signals persisted into CSF memory
   // queryable by dream-chat and other agents. Newest first.
