@@ -214,6 +214,16 @@ module.exports = async function creatorRoutes(req, res, url, deps) {
         videoPath: body.videoPath,
         variant: body.variant || "balanced",
         format: body.format,
+        // V10 re-encode + crop-plan options (all optional)
+        entryId: body.entryId || null, // when set, persists validation+fit back to the entry
+        renderKey: body.renderKey || body.variant || "highlight",
+        fit: body.fit, // pad (default) | crop | blur
+        fps: body.fps,
+        width: body.width,
+        height: body.height,
+        start: body.start,
+        duration: body.duration,
+        useSafeZones: body.useSafeZones === true, // crop-plan to avoid facecam/HUD
       });
 
       sendJson(res, {
