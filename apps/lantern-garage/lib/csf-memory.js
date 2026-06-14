@@ -254,6 +254,18 @@ function formatCSFContextForPrompt(message) {
     if (deltaCtx) parts.push(deltaCtx);
   } catch { /* non-fatal */ }
 
+  // Σ₀ Framework context — for grounding requests that mention collapse, unification, or self-reference
+  if (message && (message.includes("collapse") || message.includes("unification") || message.includes("self-reference") || message.includes("grounding"))) {
+    try {
+      const sigma0Path = path.join(repoRoot, "docs", "SIGMA0-QUANTUM-RELATIVITY-ANALYSIS.md");
+      if (fs.existsSync(sigma0Path)) {
+        const sigma0Text = fs.readFileSync(sigma0Path, "utf8");
+        const summary = sigma0Text.split("\n").slice(0, 30).join("\n"); // First 30 lines as summary
+        parts.push(`**Σ₀ Framework Context (Grounding):**\n${summary}`);
+      }
+    } catch { /* non-fatal */ }
+  }
+
   return parts.join("\n\n");
 }
 
