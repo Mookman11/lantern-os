@@ -340,6 +340,27 @@ server.listen(port, host, () => {
   cryptoCollector.start(30000); // 30s interval
   deps.cryptoCollector = cryptoCollector; // Make available to routes
 
+  // ── Crypto Tight-Band Observer (auto-start) ──
+  const observerScript = path.resolve(repoRoot, "experiments", "crypto_live_trader.py");
+  if (fs.existsSync(observerScript)) {
+    const logsDir = path.resolve(repoRoot, "logs");
+    if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
+    const observerLog = fs.createWriteStream(path.join(logsDir, "crypto-observer.log"), { flags: "a" });
+    const observerProc = spawn("python", [observerScript, "--interval", "10", "--edge", "0.06"], {
+      detached: false,
+      stdio: ["ignore", observerLog, "inherit"],
+    });
+    observerProc.on("exit", (code) => console.warn(`[observer] crypto_live_trader exited with code ${code}`));
+    deps.cryptoObserver = {
+      pid: observerProc.pid,
+      startedAt: new Date().toISOString(),
+      process: observerProc,
+    };
+    console.log(`[observer] crypto_live_trader started (pid ${observerProc.pid})`);
+  } else {
+    console.warn("[observer] experiments/crypto_live_trader.py not found — observer not started");
+  }
+
   // Auto-register this node to the mesh
   (async () => {
     try {
