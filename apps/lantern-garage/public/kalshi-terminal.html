@@ -97,6 +97,14 @@
   .engine-trace{font-family:var(--mono);font-size:9px;color:var(--text3);margin-top:4px;
     display:flex;gap:4px;flex-wrap:wrap}
   .trace-chip{padding:1px 5px;border-radius:3px;background:var(--bg1);border:1px solid var(--border)}
+  /* sync bar */
+  .sync-bar{height:2px;background:var(--border);overflow:hidden;flex-shrink:0}
+  .sync-fill{height:100%;background:var(--blue);transform-origin:left;will-change:transform}
+  /* sync dot in freshness chip */
+  @keyframes sdotpulse{0%{transform:scale(1.8);opacity:1}100%{transform:scale(1);opacity:.7}}
+  .sdot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--text3);
+    vertical-align:middle;margin-right:5px;transition:background .3s}
+  .sdot.live{background:var(--green);animation:sdotpulse .4s ease-out}
   /* paper book */
   .pbook{padding:6px 16px 10px;max-height:160px;overflow-y:auto;border-top:1px solid var(--border)}
   .pbook-hdr{font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--text3);margin-bottom:5px;
@@ -121,9 +129,10 @@
   <span class="chip" id="cBal">balance —</span>
   <span class="chip" id="cCreds">creds —</span>
   <span class="chip" id="cMode">mode —</span>
-  <span class="chip fresh" id="cFresh">now-slice —</span>
+  <span class="chip fresh" id="cFresh"><span class="sdot" id="sdot"></span>—</span>
   <a href="/trader-dashboard.html" style="margin-left:auto;font-size:11px">← Dashboard</a>
 </div>
+<div class="sync-bar"><div class="sync-fill" id="syncFill"></div></div>
 <div class="note" id="note">Green / swipe right = take the favorable position · Red / swipe left = pass. Live now-slice, refreshed every 6s. Practice mode.</div>
 
 <div class="deck">
@@ -153,7 +162,9 @@
 
 <script>
 const API='/api/trading/kalshi';
+const SYNC_MS=5000;
 let conn={}, deck=[], idx=0, busy=false, dragging=false, liveMap={};
+let lastSyncMs=0, lastDetCount=null;
 
 async function j(path,opts){ try{const r=await fetch(API+path,opts);return await r.json();}catch(e){return{error:e.message};} }
 const c=v=>v==null?'—':v;
@@ -173,32 +184,70 @@ async function loadBalance(){
   cBal.innerHTML='balance <b>'+(d.error?'—':'$'+(d.balance_dollars!=null?d.balance_dollars:((d.balance||0)/100).toFixed(2)))+'</b>';
 }
 
-async function loadDeck(){
-  document.getElementById('end').style.display='none';
-  const d=await j('/impossibility-deck?limit=60');
-  deck=(d.cards)||[]; idx=0;
-  liveMap={}; for(const x of deck) liveMap[x.ticker]=x;
-  markFresh(d.determined);
-  render();
-}
-
-// tight-band refresh: re-pull now-slice every 6s, patch the front card in place
-async function refreshNow(){
-  if(idx>=deck.length) return;
+// ── syncDeck: initial load + live merge every SYNC_MS ────────────────────────
+async function syncDeck(){
   const d=await j('/impossibility-deck?limit=60');
   if(!d.cards) return;
-  liveMap={}; for(const x of d.cards) liveMap[x.ticker]=x;
+  const fresh=d.cards;
+  liveMap={}; for(const x of fresh) liveMap[x.ticker]=x;
   markFresh(d.determined);
-  const cur=deck[idx];
-  if(cur && liveMap[cur.ticker]){
-    deck[idx]=Object.assign({}, liveMap[cur.ticker]);   // refresh current card's now-slice
-    if(!dragging) patchFront(deck[idx]);
+
+  if(deck.length===0){
+    // first load
+    deck=fresh; idx=0;
+    document.getElementById('end').style.display='none';
+    render(); return;
   }
+
+  const wasAtEnd=idx>=deck.length;
+  const acted=new Set(deck.slice(0,idx).map(c=>c.ticker));
+  const pending=new Set(deck.slice(idx).map(c=>c.ticker));
+  const freshSet=new Set(fresh.map(c=>c.ticker));
+
+  // 1. update prices on pending cards
+  for(let i=idx;i<deck.length;i++){
+    if(liveMap[deck[i].ticker]) deck[i]=Object.assign({},deck[i],liveMap[deck[i].ticker]);
+  }
+  // 2. inject brand-new tickers right after current position
+  const newCards=fresh.filter(c=>!acted.has(c.ticker)&&!pending.has(c.ticker));
+  if(newCards.length) deck.splice(Math.min(idx+1,deck.length),0,...newCards);
+  // 3. prune expired (not in fresh) from pending — never prune the current front
+  for(let i=deck.length-1;i>idx;i--){
+    if(!freshSet.has(deck[i].ticker)) deck.splice(i,1);
+  }
+  // 4. auto-resurface: were at end, new cards have arrived
+  if(wasAtEnd&&idx<deck.length){
+    document.getElementById('end').style.display='none';
+    render(); return;
+  }
+  if(idx>=deck.length) return;
+  // 5. patch front in place (no full re-render — preserves swipe state)
+  if(!dragging) patchFront(deck[idx]);
+  const rem=deck.length-idx;
+  document.getElementById('progress').textContent=rem>0?`${rem} of ${deck.length} · soonest first`:'';
 }
+
 function markFresh(determined){
-  const t=new Date().toISOString().slice(11,19);
-  const det=determined!=null?` · <b style="color:var(--green)">${determined} det</b>`:'';
-  document.getElementById('cFresh').innerHTML='now-slice <b>'+t+'</b>'+det;
+  lastSyncMs=Date.now(); lastDetCount=determined;
+  // pulse dot
+  const dot=document.getElementById('sdot');
+  if(dot){ dot.className='sdot live'; setTimeout(()=>{if(dot) dot.className='sdot';},600); }
+  // drain sync bar: snap to full, then animate to empty over SYNC_MS
+  const fill=document.getElementById('syncFill');
+  if(fill){
+    fill.style.transition='none'; fill.style.transform='scaleX(1)';
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{
+      fill.style.transition=`transform ${SYNC_MS}ms linear`; fill.style.transform='scaleX(0)';
+    }));
+  }
+  updateFreshnessChip();
+}
+function updateFreshnessChip(){
+  const chip=document.getElementById('cFresh'); if(!chip) return;
+  const age=lastSyncMs?Math.floor((Date.now()-lastSyncMs)/1000):null;
+  const ageStr=age==null?'—':age<2?'live':age<60?`${age}s ago`:`${Math.floor(age/60)}m ago`;
+  const det=lastDetCount!=null?` · <b style="color:var(--green)">${lastDetCount} det</b>`:'';
+  chip.innerHTML=`<span class="sdot" id="sdot"></span>${ageStr}${det}`;
 }
 
 function convColor(v){ return v>=66?'var(--green)':v>=45?'var(--amber)':'var(--text3)'; }
@@ -280,8 +329,9 @@ function render(){
   attachSwipe(document.getElementById('front'));
 }
 
-// tick the countdown every second on the front card
+// tick countdown + freshness age every second
 setInterval(()=>{
+  updateFreshnessChip();
   if(dragging||idx>=deck.length) return;
   const el=document.getElementById('front'); if(!el) return;
   const cd=fmtCountdown(deck[idx]); const c=el.querySelector('.countdown');
@@ -415,10 +465,10 @@ async function pollPaperBook(){
 }
 
 function init(){
-  loadConnection(); loadBalance(); loadDeck(); pollPaperBook();
+  loadConnection(); loadBalance(); syncDeck(); pollPaperBook();
   setInterval(loadConnection,20000);
   setInterval(loadBalance,30000);
-  setInterval(()=>{ refreshNow(); pollPaperBook(); },6000);
+  setInterval(()=>{ syncDeck(); pollPaperBook(); },SYNC_MS);
 }
 document.addEventListener('DOMContentLoaded',init);
 </script>
