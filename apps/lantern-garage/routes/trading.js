@@ -12,6 +12,7 @@ const tradingStore = require('../lib/trading-store');
 const tradingNews = require('../lib/trading-news');
 const { recordOrder, recordSignal, queryRecentTradingRecords } = tradingMemory;
 const { TradingPriceFeed } = require('../lib/trader-price-feed');
+const { getStrategyFitness } = require('../lib/strategy-performance-logger');
 
 // Shared price feed instance (caches ticks for 1 min)
 let _priceFeed = null;
@@ -1091,8 +1092,22 @@ module.exports = async function tradingRoutes(req, res, url, deps) {
         return true;
       });
 
+      // Σ₀ Fix: Add timeout protection to prevent hanging on slow Kalshi API responses
+      const MARKET_FETCH_TIMEOUT_MS = 5000;
       const mkResults = await Promise.all(
-        active.map(p => kalshi.getMarket(p.ticker || p.market_ticker).catch(() => null))
+        active.map(p => {
+          const ticker = p.ticker || p.market_ticker;
+          return new Promise(resolve => {
+            const timeoutId = setTimeout(() => {
+              console.warn(`[trading] Market fetch timeout for ${ticker} after ${MARKET_FETCH_TIMEOUT_MS}ms`);
+              resolve(null);
+            }, MARKET_FETCH_TIMEOUT_MS);
+
+            kalshi.getMarket(ticker)
+              .then(result => { clearTimeout(timeoutId); resolve(result); })
+              .catch(err => { clearTimeout(timeoutId); resolve(null); });
+          });
+        })
       );
 
       const nowMs = Date.now();
@@ -1180,6 +1195,25 @@ module.exports = async function tradingRoutes(req, res, url, deps) {
           close: (m && m.close_time) || '',
           reason, yesPct: yesCents, marketFound: m != null,
         });
+      }
+
+      // Σ₀ Phase A: Enrich cards with strategy fitness metrics (historical performance)
+      for (const card of cards) {
+        try {
+          // Infer regime from market conditions: TREND if large P&L, MEAN if small, PIVOT if near close
+          const regimeScore = Math.abs(card.pnlPct);
+          const regime = card.minsToClose !== null && card.minsToClose <= 15 ? 'PIVOT'
+            : regimeScore > 20 ? 'TREND'
+            : 'MEAN';
+
+          // Query historical performance for this strategy/regime pair
+          const fitness = getStrategyFitness(card.ticker, regime);
+          if (fitness && fitness.count > 0) {
+            card.strategy_fitness = fitness;
+          }
+        } catch (err) {
+          console.error(`[trading] Failed to load strategy fitness for ${card.ticker}:`, err.message);
+        }
       }
 
       // Stop-loss first → flatten → take-profit → worst P&L first
