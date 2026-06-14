@@ -75,10 +75,19 @@ module.exports = async function creatorEntriesRoutes(req, res, url, deps) {
         filePath: body.filePath,
       });
 
-      sendJson(res, { success: true, entry });
+      // Add formatted date and send
+      const enrichedEntry = {
+        ...entry,
+        formattedDate: entryStore.formatTimestamp(entry.createdAt),
+      };
+
+      sendJson(res, {
+        success: true,
+        entry: enrichedEntry,
+      });
       return true;
     } catch (error) {
-      console.error("[creator-entries] Create error:", error.message);
+      console.error("[creator-entries] Create error:", error.message, error.stack);
       sendJson(res, { error: error.message }, 500);
       return true;
     }
