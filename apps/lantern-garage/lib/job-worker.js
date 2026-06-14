@@ -121,6 +121,18 @@ async function processAnalyzeJob(job, repoRoot, updateProgress) {
   const captions = generateCaptions(timeline, null, "gaming");
   updateProgress(95, "Generated captions");
 
+  // V10 scoring — computed from the REAL analysis timeline (viral / gaming /
+  // retention prediction / editor grade). Every value is traceable; nothing mocked.
+  const timelineJSON = timeline.toJSON();
+  let scoreV10 = null;
+  try {
+    scoreV10 = ci.scoreVideoV10(timelineJSON, {
+      gaming: (options || {}).gaming !== false,
+    });
+  } catch (e) {
+    console.error("[job-worker] V10 scoring failed:", e.message);
+  }
+
   // Store results
   const resultsDir = path.join(repoRoot, "data", "creator", "analyses");
   if (!fs.existsSync(resultsDir)) {
@@ -132,19 +144,31 @@ async function processAnalyzeJob(job, repoRoot, updateProgress) {
     jobId: job.id,
     videoPath,
     analysisTimestamp: new Date().toISOString(),
-    timeline: timeline.toJSON(),
+    timeline: timelineJSON,
     variants: variants.map((v) => v.toJSON()),
     captions: captions.map((c) => c.toJSON()),
+    scoreV10,
   };
 
   fs.writeFileSync(resultFile, JSON.stringify(results, null, 2));
 
+  // Persist the V10 score onto the entry when this job is tied to one.
+  if (scoreV10 && job.input.entryId) {
+    try {
+      const entryStore = require("./entry-store");
+      entryStore.updateEntry(repoRoot, job.input.entryId, { scoreV10 });
+    } catch (e) {
+      console.error("[job-worker] persist scoreV10 to entry failed:", e.message);
+    }
+  }
+
   updateProgress(100, "Analysis complete");
 
   return {
-    timeline: timeline.toJSON(),
+    timeline: timelineJSON,
     variants: variants.map((v) => v.toJSON()),
     captions: captions.map((c) => c.toJSON()),
+    scoreV10,
     resultsFile: resultFile,
   };
 }

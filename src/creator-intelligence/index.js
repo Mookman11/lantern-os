@@ -14,6 +14,7 @@ const { validateExport, DEFAULTS: EXPORT_DEFAULTS } = require("./scoring/export-
 const reverseEngineer = require("./analysis/reverse-engineer");
 const learningStore = require("./training/learning-store");
 const recommend = require("./recommendations/recommend");
+const { scoreVideoV10 } = require("./scoring/score-v10");
 
 function subsystemEnabled(env) {
   return flags.isEnabled("creatorIntelligence", env);
@@ -53,6 +54,10 @@ module.exports = {
       subsystemEnabled(env) ? scoreEngine.retentionScore(features, opts) : disabledResult(),
     gameSufficiency: (game) => scoreEngine.gameSufficiency(game),
   },
+
+  // V10 per-clip structural scoring (always real — computed from the user's own
+  // analyzed video; never population claims). Returns viral/gaming/retention/grade.
+  scoreVideoV10: (analysis, opts) => scoreVideoV10(analysis, opts),
 
   // Continuous learning (first-party data — always allowed)
   training: learningStore,
