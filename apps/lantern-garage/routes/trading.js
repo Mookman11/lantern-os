@@ -506,6 +506,47 @@ module.exports = async function tradingRoutes(req, res, url, deps) {
         return sendJson(res, await cryptoSuggest.getCryptoSuggestions({ limit, collector }), 200), true;
       }
 
+      // GET — Impossibility Engine deck: constraint-elimination over short-window markets
+      // Returns same card shape as crypto-intraday + { determined, stateLabel, knowledge, trace }
+      if (url.pathname === '/api/trading/kalshi/impossibility-deck' && req.method === 'GET') {
+        const { createKalshiEngine, engineResultToCard } = require('../lib/impossibility-engine');
+        const { isShortWindowMarket } = require('../lib/kalshi-crypto-suggester');
+        const limit = q.limit ? Number(q.limit) : 20;
+        const nowMs = Date.now();
+
+        // Fetch short-window markets
+        let markets = [];
+        const collector = deps.kalshiCollector;
+        if (collector) {
+          const latest = collector.getLatestMarkets?.();
+          if (latest && latest.length > 0) {
+            markets = latest.filter(m => isShortWindowMarket(m, nowMs));
+          }
+        }
+        if (markets.length === 0) {
+          const mk = await kalshi.getMarkets({ status: 'open', limit: 500 });
+          markets = (mk.data?.markets || []).filter(m => isShortWindowMarket(m, nowMs));
+        }
+
+        if (markets.length === 0) {
+          return sendJson(res, { count: 0, cards: [], note: 'No markets closing within 6 hours' }, 200), true;
+        }
+
+        const engine = createKalshiEngine();
+        const solved = engine.solveAll(markets);
+        const cards  = solved
+          .slice(0, limit)
+          .map(({ market, result }) => engineResultToCard(market, result));
+
+        return sendJson(res, {
+          count: cards.length,
+          generatedAt: new Date().toISOString(),
+          note: 'Impossibility Engine: constraint-elimination over short-window Kalshi markets',
+          determined: cards.filter(c => c.determined).length,
+          cards,
+        }, 200), true;
+      }
+
       // GET — live market data (pass-through query: series_ticker, status, limit, event_ticker)
       if (url.pathname === '/api/trading/kalshi/live-markets' && req.method === 'GET') {
         const r = await kalshi.getMarkets(q);
