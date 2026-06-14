@@ -217,6 +217,7 @@ module.exports = async function creatorRoutes(req, res, url, deps) {
         // V10 re-encode + crop-plan options (all optional)
         entryId: body.entryId || null, // when set, persists validation+fit back to the entry
         renderKey: body.renderKey || body.variant || "highlight",
+        segments: Array.isArray(body.segments) ? body.segments : null, // variant cut-list (trim+concat)
         fit: body.fit, // pad (default) | crop | blur
         fps: body.fps,
         width: body.width,

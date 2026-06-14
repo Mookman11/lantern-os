@@ -234,4 +234,87 @@ function runFfmpeg(args, timeoutMs) {
   });
 }
 
-module.exports = { reencodeToShortForm, probeSource, DEFAULTS };
+/**
+ * Render a cut-list of source segments into a single short-form-conforming clip.
+ * Each segment is trimmed from the source, mapped to the target frame with the
+ * same fit filter, then concatenated. Produces exact target resolution, h264 +
+ * aac (silence synthesized if the source has no audio), +faststart.
+ *
+ * @param {string} inputPath
+ * @param {string} outputPath
+ * @param {Array<{start:number,end:number}>} segments  source cut-list (seconds)
+ * @param {Object} options  { width,height,fps,fit,cropRect,maxDuration }
+ * @returns {Promise<{outputPath, segments:number, durationTarget, fit, hadAudioSource}>}
+ */
+async function renderSegments(inputPath, outputPath, segments, options = {}) {
+  const cfg = { ...DEFAULTS, ...options };
+  if (!fs.existsSync(inputPath)) throw new Error(`source not found: ${inputPath}`);
+  if (!Array.isArray(segments) || segments.length === 0) throw new Error("no segments to render");
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+
+  const meta = await probeSource(inputPath);
+  const srcDur = meta.duration || Infinity;
+
+  // Sanitize segments: clamp to source, drop empties, cap total to maxDuration.
+  const clean = [];
+  let total = 0;
+  for (const s of segments) {
+    const start = Math.max(0, Number(s.start) || 0);
+    let end = Math.min(srcDur, Number(s.end) || 0);
+    if (!(end > start)) continue;
+    if (total + (end - start) > cfg.maxDuration) {
+      end = start + Math.max(0, cfg.maxDuration - total); // trim last to fit cap
+    }
+    if (end > start) { clean.push({ start, end }); total += end - start; }
+    if (total >= cfg.maxDuration) break;
+  }
+  if (clean.length === 0) throw new Error("no valid segments after clamping");
+
+  // Per-segment frame filter (reuse pad/crop; blur falls back to pad for concat).
+  const { vf } = buildVideoFilter(cfg.fit === "blur" ? "pad" : cfg.fit, cfg.width, cfg.height, cfg.fps, options.cropRect || null);
+  const hasAudio = meta.hasAudio;
+
+  const chains = [];
+  const concatInputs = [];
+  clean.forEach((s, i) => {
+    chains.push(`[0:v]trim=start=${s.start}:end=${s.end},setpts=PTS-STARTPTS,${vf}[v${i}]`);
+    if (hasAudio) {
+      chains.push(`[0:a]atrim=start=${s.start}:end=${s.end},asetpts=PTS-STARTPTS,aresample=async=1[a${i}]`);
+      concatInputs.push(`[v${i}][a${i}]`);
+    } else {
+      concatInputs.push(`[v${i}]`);
+    }
+  });
+  chains.push(
+    hasAudio
+      ? `${concatInputs.join("")}concat=n=${clean.length}:v=1:a=1[v][a]`
+      : `${concatInputs.join("")}concat=n=${clean.length}:v=1:a=0[v]`
+  );
+  const filterComplex = chains.join(";");
+
+  const args = ["-y", "-i", inputPath];
+  if (!hasAudio) args.push("-f", "lavfi", "-i", `anullsrc=channel_layout=stereo:sample_rate=${cfg.sampleRate}`);
+  args.push("-filter_complex", filterComplex, "-map", "[v]");
+  args.push("-map", hasAudio ? "[a]" : "1:a");
+  args.push(
+    "-r", String(cfg.fps),
+    "-c:v", "libx264", "-preset", cfg.preset, "-crf", String(cfg.crf), "-pix_fmt", "yuv420p",
+    "-c:a", "aac", "-b:a", cfg.audioBitrate, "-ar", String(cfg.sampleRate),
+    "-movflags", "+faststart"
+  );
+  if (!hasAudio) args.push("-shortest");
+  args.push(outputPath);
+
+  await runFfmpeg(args, cfg.timeoutMs);
+  if (!fs.existsSync(outputPath)) throw new Error("ffmpeg completed but output file was not created");
+
+  return {
+    outputPath,
+    segments: clean.length,
+    durationTarget: Number(total.toFixed(3)),
+    fit: cfg.fit === "blur" ? "pad" : cfg.fit,
+    hadAudioSource: hasAudio,
+  };
+}
+
+module.exports = { reencodeToShortForm, renderSegments, probeSource, buildVideoFilter, DEFAULTS };
