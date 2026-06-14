@@ -1,8 +1,15 @@
 # Lantern OS: 3 Key Items — Scope & Priority
 
 **Date**: 2026-06-14  
-**Status**: Work plan locked in  
+**Status**: Tier 1 COMPLETE ✅ | Tier 2 Ready to Start  
 **Approach**: Sequential priority-based execution with convergence routing
+
+**Tier 1 Completion Summary (2026-06-14 Evening)**:
+- ✅ **P2 FIXED**: Trading API endpoints added (/api/trading/ai-trader/watchlist, /zones)
+- ✅ **P1 ADDED**: Trader persona + keyword routing (market/trade/signal/P&L/zones)
+- ✅ **P3 ADDED**: Trade history logging (data/trading/trades.jsonl, signals.jsonl) + API endpoints
+- ✅ **Chat ↔ Trading Integration**: Now possible via /api/trading/history/* endpoints
+- **Unblocked**: P4-P7 (dashboard features), CREATOR MVP design
 
 ---
 
