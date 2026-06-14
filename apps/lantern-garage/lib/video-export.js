@@ -67,13 +67,31 @@ function probeSource(inputPath) {
   });
 }
 
+function isValidRect(rect) {
+  if (!rect || typeof rect !== "object") return false;
+  const { x, y, width, height } = rect;
+  for (const v of [x, y, width, height]) {
+    if (typeof v !== "number" || !Number.isFinite(v)) return false;
+  }
+  return width > 0 && height > 0 && x >= 0 && y >= 0 && x + width <= 1.0001 && y + height <= 1.0001;
+}
+
 /**
  * Build the video filtergraph for a given fit mode.
  * Returns { vf } for simple modes or { filterComplex, mapV } for blur.
+ * @param {Object|null} cropRect  normalized {x,y,width,height} on the SOURCE.
+ *   When provided in crop mode, the source is cropped to that exact window
+ *   (e.g. a SafeZoneDetectorV2 plan that avoids the facecam) before scaling,
+ *   instead of a naive center crop.
  */
-function buildVideoFilter(fit, w, h, fps) {
+function buildVideoFilter(fit, w, h, fps, cropRect) {
   const fpsEnd = `fps=${fps},format=yuv420p,setsar=1`;
   if (fit === "crop") {
+    if (cropRect && isValidRect(cropRect)) {
+      const { x, y, width, height } = cropRect;
+      // Crop the source window first (expressed against input dims), then scale.
+      return { vf: `crop=in_w*${width}:in_h*${height}:in_w*${x}:in_h*${y},scale=${w}:${h},${fpsEnd}` };
+    }
     return { vf: `scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},${fpsEnd}` };
   }
   if (fit === "blur") {
@@ -119,7 +137,9 @@ async function reencodeToShortForm(inputPath, outputPath, options = {}) {
   }
   const start = Number.isFinite(Number(options.start)) ? Number(options.start) : null;
 
-  const { vf, filterComplex, mapV } = buildVideoFilter(cfg.fit, cfg.width, cfg.height, cfg.fps);
+  const { vf, filterComplex, mapV } = buildVideoFilter(
+    cfg.fit, cfg.width, cfg.height, cfg.fps, options.cropRect || null
+  );
 
   // Assemble ffmpeg args.
   const args = ["-y"];
@@ -170,6 +190,7 @@ async function reencodeToShortForm(inputPath, outputPath, options = {}) {
     outputPath,
     durationTarget,
     fit: cfg.fit,
+    cropRect: cfg.fit === "crop" && isValidRect(options.cropRect || null) ? options.cropRect : null,
     hadAudioSource: meta.hasAudio,
     fps: cfg.fps,
     width: cfg.width,

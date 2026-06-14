@@ -348,6 +348,64 @@
       cursor: not-allowed;
     }
 
+    .validation-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+      margin-bottom: 12px;
+    }
+
+    .validation-card.pass { border-left-color: var(--green); }
+    .validation-card.fail { border-left-color: var(--danger); }
+    .validation-card.skip { border-left-color: var(--muted); }
+
+    .validation-head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .validation-verdict {
+      font-weight: 600;
+      font-size: 0.95rem;
+    }
+
+    .validation-verdict.pass { color: var(--green); }
+    .validation-verdict.fail { color: var(--danger); }
+    .validation-verdict.skip { color: var(--muted); }
+
+    .validation-chip {
+      font-size: 0.72rem;
+      color: var(--muted);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 2px 8px;
+    }
+
+    .validation-checks {
+      margin-top: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 14px;
+      font-size: 0.82rem;
+    }
+
+    .validation-checks span { color: var(--muted); }
+    .validation-checks .ck-ok::before { content: "✓ "; color: var(--green); }
+    .validation-checks .ck-bad::before { content: "✗ "; color: var(--danger); }
+    .validation-checks .ck-bad { color: var(--text); }
+
+    .validation-reasons {
+      margin: 10px 0 0;
+      padding-left: 18px;
+      color: var(--danger);
+      font-size: 0.82rem;
+    }
+
     @media (max-width: 768px) {
       .content-grid {
         grid-template-columns: 1fr;
@@ -434,6 +492,14 @@
       <h3 style="margin: 0 0 16px; font-size: 1rem;">Generated Outputs</h3>
       <div class="artifacts-grid" id="artifacts-grid">
         <p class="no-data">No artifacts yet</p>
+      </div>
+    </div>
+
+    <!-- Quality Check (ExportValidator, V10) -->
+    <div style="margin-top: 32px;" id="validation-section">
+      <h3 style="margin: 0 0 16px; font-size: 1rem;">Quality Check</h3>
+      <div id="validation-panel">
+        <p class="no-data">No quality checks yet</p>
       </div>
     </div>
 
@@ -582,6 +648,9 @@ async function loadEntry() {
 
     // Load artifacts (Phase 9)
     loadArtifacts(entry);
+
+    // Load quality-check results (ExportValidator, V10)
+    loadValidations(entry);
 
     // Load analysis
     if (analysis) {
@@ -741,6 +810,67 @@ function loadArtifacts(entry) {
   artifacts.forEach(artifact => {
     fetchFileSize(artifact.path);
   });
+}
+
+// V10: Render ExportValidator results persisted on the entry (entry.validations)
+function loadValidations(entry) {
+  const panel = document.getElementById('validation-panel');
+  if (!panel) return;
+
+  const validations = entry.validations || {};
+  const types = Object.keys(validations);
+
+  if (types.length === 0) {
+    panel.innerHTML = '<p class="no-data">No quality checks yet — runs automatically when a render is saved.</p>';
+    return;
+  }
+
+  // Friendly labels for render keys
+  const label = {
+    highlight: 'Highlight Render',
+    variantA: 'Variant A', variantB: 'Variant B', variantC: 'Variant C',
+    variantD: 'Variant D', variantE: 'Variant E',
+  };
+
+  panel.innerHTML = types.map(type => {
+    const v = validations[type] || {};
+    const skipped = v.skipped === true;
+    const state = skipped ? 'skip' : (v.ok ? 'pass' : 'fail');
+    const verdict = skipped ? 'Validation skipped' : (v.ok ? 'Passed' : 'Blocked');
+
+    // fit mode is recorded on the encode info when present
+    const fit = (v.encode && v.encode.fit) || (v.fit) || null;
+    const probedAt = v.probedAt ? new Date(v.probedAt).toLocaleString() : null;
+
+    const checks = Array.isArray(v.checks) ? v.checks.map(c => {
+      const cls = c.ok ? 'ck-ok' : 'ck-bad';
+      const actual = c.actual !== undefined ? escapeHtml(String(c.actual)) : '';
+      return `<span class="${cls}">${escapeHtml(c.name)}${actual ? ': ' + actual : ''}</span>`;
+    }).join('') : '';
+
+    const reasons = Array.isArray(v.blockedReasons) && v.blockedReasons.length
+      ? `<ul class="validation-reasons">${v.blockedReasons.map(r => `<li>${escapeHtml(r)}</li>`).join('')}</ul>`
+      : '';
+
+    return `
+      <div class="validation-card ${state}">
+        <div class="validation-head">
+          <span class="validation-verdict ${state}">${verdict}</span>
+          <span class="validation-chip">${escapeHtml(label[type] || type)}</span>
+          ${fit ? `<span class="validation-chip">fit: ${escapeHtml(fit)}</span>` : ''}
+          ${probedAt ? `<span class="validation-chip">${escapeHtml(probedAt)}</span>` : ''}
+        </div>
+        ${checks ? `<div class="validation-checks">${checks}</div>` : ''}
+        ${reasons}
+      </div>
+    `;
+  }).join('');
+}
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 // Fetch file size for display

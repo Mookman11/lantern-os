@@ -8,7 +8,8 @@ const { analyzeVideoForHighlights } = require("./highlight-engine");
 const { generateVariants } = require("./retention-engine");
 const { generateCaptions } = require("./caption-engine");
 const { detectSafeZones } = require("./safe-zone-detector");
-const { reencodeToShortForm } = require("./video-export");
+const { reencodeToShortForm, probeSource } = require("./video-export");
+const { analyzeForCrop } = require("./safe-zone-v2");
 const ci = require("../../../src/creator-intelligence");
 
 class JobWorker {
@@ -198,9 +199,36 @@ async function processExportJob(job, repoRoot, updateProgress) {
     fs.mkdirSync(exportsDir, { recursive: true });
   }
 
-  updateProgress(30, "Re-encoding to short-form (1080x1920)");
-
   const exportFile = path.join(exportsDir, `${job.id}-${format}.mp4`);
+
+  // ── SafeZoneDetectorV2 crop plan (V10) ──
+  // For crop mode, optionally compute a crop window that avoids slicing through
+  // facecam/HUD candidates. Honest fallback: if detection is unavailable or
+  // low-confidence, leave cropRect unset → naive center crop.
+  let cropRect = null;
+  let cropPlan = null;
+  const useSafeZones = job.input.useSafeZones === true || ci.isEnabled("safeZoneV2");
+  if (job.input.fit === "crop" && useSafeZones) {
+    updateProgress(20, "Detecting safe zones (facecam/HUD)");
+    try {
+      const meta = await probeSource(fullPath);
+      const plan = await analyzeForCrop(fullPath, {
+        srcWidth: meta.width || undefined,
+        srcHeight: meta.height || undefined,
+      });
+      if (plan.status === "ok" && plan.cropPlan && plan.cropPlan.mode === "horizontal") {
+        cropRect = plan.cropPlan.cropRect;
+        cropPlan = { ...plan.cropPlan, regions: plan.regions, framesSampled: plan.framesSampled };
+      } else {
+        cropPlan = { status: plan.status, note: "fell back to center crop", reason: plan.reason };
+      }
+    } catch (e) {
+      console.error("[job-worker] safe-zone crop plan failed:", e.message);
+      cropPlan = { status: "error", note: "fell back to center crop", reason: e.message };
+    }
+  }
+
+  updateProgress(30, "Re-encoding to short-form (1080x1920)");
 
   // Real re-encode to short-form spec. Mapping/fps/duration are overridable via
   // job.input; defaults produce exact 1080x1920, h264 + aac, <=60s, +faststart.
@@ -212,7 +240,9 @@ async function processExportJob(job, repoRoot, updateProgress) {
     start: job.input.start,
     duration: job.input.duration,
     maxDuration: job.input.maxDuration,
+    cropRect, // null → center crop; set → safe-zone-aware crop
   });
+  if (cropPlan) encodeInfo.cropPlan = cropPlan;
 
   updateProgress(90, "Validating output");
 
@@ -225,6 +255,21 @@ async function processExportJob(job, repoRoot, updateProgress) {
   // If the export does not meet short-form spec, block it: delete the invalid
   // file and fail the job with the concrete reasons. Honors exportValidator flag.
   const validation = await ci.validateExport(exportFile, job.input.validation || {});
+
+  // Persist verdict + encode info (fit mode, crop plan) back to the entry so the
+  // dashboard can surface it. Recorded for both pass and block.
+  if (job.input.entryId) {
+    try {
+      const entryStore = require("./entry-store");
+      entryStore.saveValidation(repoRoot, job.input.entryId, job.input.renderKey || "highlight", {
+        ...validation,
+        encode: encodeInfo,
+      });
+    } catch (e) {
+      console.error("[job-worker] persist validation failed:", e.message);
+    }
+  }
+
   if (!validation.ok && !validation.skipped) {
     try { fs.unlinkSync(exportFile); } catch { /* best-effort cleanup */ }
     const reasons = (validation.blockedReasons || []).join("; ") || "did not meet short-form spec";
