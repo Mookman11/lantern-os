@@ -406,6 +406,83 @@
       font-size: 0.82rem;
     }
 
+    .section-sub {
+      color: var(--muted);
+      font-size: 0.82rem;
+      margin-bottom: 14px;
+    }
+
+    .variant-card {
+      display: flex;
+      gap: 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 16px;
+      margin-bottom: 12px;
+      align-items: flex-start;
+    }
+
+    .variant-card.rank-1 { border-color: var(--gold); }
+
+    .variant-rank {
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: var(--muted);
+      min-width: 38px;
+      text-align: center;
+    }
+    .variant-card.rank-1 .variant-rank { color: var(--gold); }
+
+    .variant-body { flex: 1; }
+
+    .variant-head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .variant-label { font-weight: 600; font-size: 0.95rem; }
+
+    .variant-grade {
+      font-weight: 700;
+      font-size: 0.8rem;
+      padding: 2px 9px;
+      border-radius: 6px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+    }
+    .variant-grade.g-Aplus, .variant-grade.g-A { color: var(--green); border-color: var(--green); }
+    .variant-grade.g-B { color: var(--gold); border-color: var(--gold); }
+    .variant-grade.g-C { color: var(--muted); }
+    .variant-grade.g-D { color: var(--danger); border-color: var(--danger); }
+
+    .variant-metrics {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 22px;
+      margin-bottom: 8px;
+    }
+    .variant-metrics > div { display: flex; flex-direction: column; }
+    .variant-metrics span { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+    .variant-metrics b { font-size: 1rem; }
+
+    .variant-note { font-size: 0.72rem; color: var(--muted); margin-bottom: 10px; }
+
+    .variant-export-btn {
+      padding: 7px 14px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+    .variant-export-btn:hover { opacity: 0.9; }
+    .variant-export-btn:disabled { opacity: 0.5; cursor: default; }
+    .variant-status { font-size: 0.8rem; color: var(--muted); margin-left: 10px; }
+
     @media (max-width: 768px) {
       .content-grid {
         grid-template-columns: 1fr;
@@ -484,6 +561,15 @@
         <div class="video-player" id="highlight-player">
           <p class="no-data">No highlight render yet</p>
         </div>
+      </div>
+    </div>
+
+    <!-- Ranked Variants (V10 Short Selection Engine, Phase 5/9) -->
+    <div style="margin-top: 32px;" id="variants-section">
+      <h3 style="margin: 0 0 4px; font-size: 1rem;">Ranked Variants</h3>
+      <div class="section-sub">5 strategy edits, ranked by structural viral score. Predictions are structural estimates (not calibrated).</div>
+      <div id="variants-grid">
+        <p class="no-data">No variants yet — run analysis to generate them.</p>
       </div>
     </div>
 
@@ -651,6 +737,9 @@ async function loadEntry() {
 
     // Load quality-check results (ExportValidator, V10)
     loadValidations(entry);
+
+    // Load ranked variants (V10 Short Selection Engine)
+    loadVariants(entry);
 
     // Load analysis
     if (analysis) {
@@ -871,6 +960,94 @@ function escapeHtml(str) {
   return String(str)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// V10 Short Selection Engine — render the 5 ranked variants with real scores.
+let loadedEntryForVariants = null;
+let loadedVariants = {};
+
+function loadVariants(entry) {
+  loadedEntryForVariants = entry;
+  loadedVariants = {};
+  const grid = document.getElementById('variants-grid');
+  if (!grid) return;
+
+  const variants = Array.isArray(entry.variantsV10) ? entry.variantsV10 : [];
+  if (variants.length === 0) {
+    grid.innerHTML = '<p class="no-data">No variants yet — run analysis to generate them.</p>';
+    return;
+  }
+
+  const pct = (x) => (x === null || x === undefined) ? '—' : Math.round(x * 100) + '%';
+  const gradeClass = (g) => 'g-' + String(g).replace('+', 'plus');
+
+  grid.innerHTML = variants.map(v => {
+    loadedVariants[v.id] = v;
+    const viral = v.score && typeof v.score.viralScore === 'number' ? Math.round(v.score.viralScore * 100) : '—';
+    const completion = v.retention ? pct(v.retention.predictedCompletionRate) : '—';
+    const share = v.retention ? pct(v.retention.predictedShareRate) : '—';
+    const grade = v.editorGrade ? v.editorGrade.grade : '—';
+    const canExport = Array.isArray(v.segments) && v.segments.length > 0 && entry.filePath;
+    return `
+      <div class="variant-card rank-${v.rank}">
+        <div class="variant-rank">#${v.rank}</div>
+        <div class="variant-body">
+          <div class="variant-head">
+            <span class="variant-label">${escapeHtml(v.label || v.strategy || v.id)}</span>
+            <span class="variant-grade ${gradeClass(grade)}">${escapeHtml(grade)}</span>
+          </div>
+          <div class="variant-metrics">
+            <div><span>Viral Score</span><b>${viral}</b></div>
+            <div><span>Completion*</span><b>${completion}</b></div>
+            <div><span>Share*</span><b>${share}</b></div>
+            <div><span>Duration</span><b>${v.durationSec ? Math.round(v.durationSec) + 's' : '—'}</b></div>
+            <div><span>Segments</span><b>${Array.isArray(v.segments) ? v.segments.length : 0}</b></div>
+          </div>
+          <div class="variant-note">* structural estimate, not calibrated</div>
+          <button class="variant-export-btn" onclick="exportVariant('${v.id}')" ${canExport ? '' : 'disabled'}>
+            Render &amp; Export
+          </button>
+          <span class="variant-status" id="vstatus-${v.id}"></span>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+async function exportVariant(variantId) {
+  const v = loadedVariants[variantId];
+  const entry = loadedEntryForVariants;
+  if (!v || !entry || !entry.filePath) return;
+
+  const statusEl = document.getElementById(`vstatus-${variantId}`);
+  const btn = statusEl ? statusEl.previousElementSibling : null;
+  if (btn) btn.disabled = true;
+  if (statusEl) statusEl.textContent = 'Queuing…';
+
+  try {
+    const res = await fetch('/api/creator/export', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        videoPath: entry.filePath,
+        entryId: entry.id,
+        renderKey: v.id,
+        segments: v.segments,
+        format: '9:16',
+        fit: 'pad',
+      }),
+    });
+    const data = await res.json();
+    if (res.ok && data.jobId) {
+      if (statusEl) statusEl.textContent = `Queued (job ${String(data.jobId).slice(0, 8)}…). Reload to see the export when ready.`;
+    } else {
+      if (statusEl) statusEl.textContent = 'Error: ' + (data.error || res.status);
+      if (btn) btn.disabled = false;
+    }
+  } catch (err) {
+    if (statusEl) statusEl.textContent = 'Error: ' + err.message;
+    if (btn) btn.disabled = false;
+  }
 }
 
 // Fetch file size for display

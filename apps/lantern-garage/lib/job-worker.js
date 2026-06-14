@@ -5,10 +5,9 @@
 const fs = require("fs");
 const path = require("path");
 const { analyzeVideoForHighlights } = require("./highlight-engine");
-const { generateVariants } = require("./retention-engine");
 const { generateCaptions } = require("./caption-engine");
 const { detectSafeZones } = require("./safe-zone-detector");
-const { reencodeToShortForm, probeSource } = require("./video-export");
+const { reencodeToShortForm, renderSegments, probeSource } = require("./video-export");
 const { analyzeForCrop } = require("./safe-zone-v2");
 const ci = require("../../../src/creator-intelligence");
 
@@ -113,24 +112,23 @@ async function processAnalyzeJob(job, repoRoot, updateProgress) {
 
   updateProgress(70, "Analyzing highlights");
 
-  // Generate variants automatically
-  const variants = generateVariants(timeline);
-  updateProgress(85, "Generated 3 variants");
-
   // Generate captions automatically
   const captions = generateCaptions(timeline, null, "gaming");
-  updateProgress(95, "Generated captions");
+  updateProgress(85, "Generated captions");
 
-  // V10 scoring — computed from the REAL analysis timeline (viral / gaming /
-  // retention prediction / editor grade). Every value is traceable; nothing mocked.
+  // V10 scoring + variants — computed from the REAL analysis timeline. Every
+  // value is traceable to selected segments; nothing mocked (this replaces the
+  // old retention-engine variants whose metrics used Math.random()).
   const timelineJSON = timeline.toJSON();
+  const gaming = (options || {}).gaming !== false;
   let scoreV10 = null;
+  let variantsV10 = null;
   try {
-    scoreV10 = ci.scoreVideoV10(timelineJSON, {
-      gaming: (options || {}).gaming !== false,
-    });
+    scoreV10 = ci.scoreVideoV10(timelineJSON, { gaming });
+    variantsV10 = ci.generateVariantsV10(timelineJSON, { gaming });
+    updateProgress(95, `Generated ${variantsV10.variants.length} ranked variants`);
   } catch (e) {
-    console.error("[job-worker] V10 scoring failed:", e.message);
+    console.error("[job-worker] V10 scoring/variants failed:", e.message);
   }
 
   // Store results
@@ -145,20 +143,23 @@ async function processAnalyzeJob(job, repoRoot, updateProgress) {
     videoPath,
     analysisTimestamp: new Date().toISOString(),
     timeline: timelineJSON,
-    variants: variants.map((v) => v.toJSON()),
+    variants: variantsV10 ? variantsV10.variants : [],
     captions: captions.map((c) => c.toJSON()),
     scoreV10,
   };
 
   fs.writeFileSync(resultFile, JSON.stringify(results, null, 2));
 
-  // Persist the V10 score onto the entry when this job is tied to one.
-  if (scoreV10 && job.input.entryId) {
+  // Persist the V10 score + ranked variants onto the entry when tied to one.
+  if ((scoreV10 || variantsV10) && job.input.entryId) {
     try {
       const entryStore = require("./entry-store");
-      entryStore.updateEntry(repoRoot, job.input.entryId, { scoreV10 });
+      entryStore.updateEntry(repoRoot, job.input.entryId, {
+        scoreV10,
+        variantsV10: variantsV10 ? variantsV10.variants : null,
+      });
     } catch (e) {
-      console.error("[job-worker] persist scoreV10 to entry failed:", e.message);
+      console.error("[job-worker] persist V10 results to entry failed:", e.message);
     }
   }
 
@@ -166,7 +167,7 @@ async function processAnalyzeJob(job, repoRoot, updateProgress) {
 
   return {
     timeline: timelineJSON,
-    variants: variants.map((v) => v.toJSON()),
+    variants: variantsV10 ? variantsV10.variants : [],
     captions: captions.map((c) => c.toJSON()),
     scoreV10,
     resultsFile: resultFile,
@@ -252,20 +253,29 @@ async function processExportJob(job, repoRoot, updateProgress) {
     }
   }
 
-  updateProgress(30, "Re-encoding to short-form (1080x1920)");
-
-  // Real re-encode to short-form spec. Mapping/fps/duration are overridable via
-  // job.input; defaults produce exact 1080x1920, h264 + aac, <=60s, +faststart.
-  const encodeInfo = await reencodeToShortForm(fullPath, exportFile, {
-    width: job.input.width,
-    height: job.input.height,
-    fps: job.input.fps,
-    fit: job.input.fit, // pad (default) | crop | blur
-    start: job.input.start,
-    duration: job.input.duration,
-    maxDuration: job.input.maxDuration,
-    cropRect, // null → center crop; set → safe-zone-aware crop
-  });
+  // A variant export supplies a segment cut-list -> trim+concat render.
+  // Otherwise re-encode the whole clip to spec.
+  const segments = Array.isArray(job.input.segments) ? job.input.segments : null;
+  let encodeInfo;
+  if (segments && segments.length) {
+    updateProgress(30, `Rendering ${segments.length} segments to short-form (1080x1920)`);
+    encodeInfo = await renderSegments(fullPath, exportFile, segments, {
+      width: job.input.width, height: job.input.height, fps: job.input.fps,
+      fit: job.input.fit, cropRect, maxDuration: job.input.maxDuration,
+    });
+  } else {
+    updateProgress(30, "Re-encoding to short-form (1080x1920)");
+    encodeInfo = await reencodeToShortForm(fullPath, exportFile, {
+      width: job.input.width,
+      height: job.input.height,
+      fps: job.input.fps,
+      fit: job.input.fit, // pad (default) | crop | blur
+      start: job.input.start,
+      duration: job.input.duration,
+      maxDuration: job.input.maxDuration,
+      cropRect, // null → center crop; set → safe-zone-aware crop
+    });
+  }
   if (cropPlan) encodeInfo.cropPlan = cropPlan;
 
   updateProgress(90, "Validating output");

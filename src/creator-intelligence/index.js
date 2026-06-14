@@ -15,6 +15,7 @@ const reverseEngineer = require("./analysis/reverse-engineer");
 const learningStore = require("./training/learning-store");
 const recommend = require("./recommendations/recommend");
 const { scoreVideoV10 } = require("./scoring/score-v10");
+const { generateVariantsV10 } = require("./scoring/variant-engine-v10");
 
 function subsystemEnabled(env) {
   return flags.isEnabled("creatorIntelligence", env);
@@ -58,6 +59,9 @@ module.exports = {
   // V10 per-clip structural scoring (always real — computed from the user's own
   // analyzed video; never population claims). Returns viral/gaming/retention/grade.
   scoreVideoV10: (analysis, opts) => scoreVideoV10(analysis, opts),
+
+  // V10 multi-variant generator (5 ranked strategy variants, real cut-lists).
+  generateVariantsV10: (analysis, opts) => generateVariantsV10(analysis, opts),
 
   // Continuous learning (first-party data — always allowed)
   training: learningStore,
