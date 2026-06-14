@@ -192,5 +192,23 @@ module.exports = async function creatorEntriesRoutes(req, res, url, deps) {
     }
   }
 
+  // =========================================================================
+  // DELETE /api/creator-entries/:id - Delete entry
+  // =========================================================================
+  const deleteMatch = url.pathname.match(/^\/api\/creator-entries\/([^/]+)$/);
+  if (deleteMatch && req.method === "DELETE") {
+    try {
+      const entryId = deleteMatch[1];
+      entryStore.deleteEntry(repoRoot, entryId);
+
+      sendJson(res, { success: true, message: "Entry deleted" });
+      return true;
+    } catch (error) {
+      console.error("[creator-entries] Delete error:", error.message);
+      sendJson(res, { error: error.message }, 500);
+      return true;
+    }
+  }
+
   return false;
 };

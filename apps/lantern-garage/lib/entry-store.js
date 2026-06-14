@@ -192,6 +192,18 @@ function formatTimestamp(isoString) {
   }
 }
 
+function deleteEntry(repoRoot, entryId) {
+  const entryDir = getEntryDir(repoRoot, entryId);
+
+  if (!fs.existsSync(entryDir)) {
+    throw new Error(`Entry ${entryId} not found`);
+  }
+
+  // Recursively delete the entry directory
+  fs.rmSync(entryDir, { recursive: true, force: true });
+  return true;
+}
+
 module.exports = {
   generateEntryId,
   createEntry,
@@ -204,4 +216,5 @@ module.exports = {
   listEntries,
   formatTimestamp,
   getEntryDir,
+  deleteEntry,
 };
