@@ -76,11 +76,9 @@
   .zone-ladder{position:relative;height:220px;background:var(--bg0);margin:0 14px 10px;border-radius:3px;overflow:hidden;cursor:default}
   .card.state-open .zone-ladder{height:280px}
   .card.state-quiet .zone-ladder{height:130px}
-  /* Order ticket */
+  /* Order ticket trigger row */
   .order-ticket{display:flex;align-items:center;gap:6px;padding:0 14px 10px}
-  .order-ticket input{width:56px;background:var(--bg2);border:1px solid var(--border);color:var(--text0);font-family:var(--mono);font-size:10px;padding:3px 5px;border-radius:3px}
-  .order-ticket input.sltp{width:44px}
-  .order-ticket button{font-family:var(--mono);font-size:10px;font-weight:600;padding:3px 10px;border-radius:3px;cursor:pointer;border:1px solid transparent;letter-spacing:.05em}
+  .order-ticket button{flex:1;font-family:var(--mono);font-size:10px;font-weight:600;padding:5px 10px;border-radius:3px;cursor:pointer;border:1px solid transparent;letter-spacing:.05em}
   .btn-buy{background:rgba(0,212,170,.12);color:var(--green);border-color:rgba(0,212,170,.3)}
   .btn-buy:hover{background:rgba(0,212,170,.22)}
   .btn-sell{background:rgba(255,95,109,.12);color:var(--red);border-color:rgba(255,95,109,.3)}
@@ -106,6 +104,46 @@
   .fs-close:hover{color:var(--text0)}
   .fs-body{flex:1;position:relative;margin:14px}
   .fs-body .zone-ladder{position:absolute;inset:0;height:auto;margin:0}
+  /* Order ticket modal */
+  .ot-bg{position:fixed;inset:0;background:rgba(5,6,8,.85);z-index:1100;display:flex;align-items:center;justify-content:center;padding:24px}
+  .ot-bg.hidden{display:none}
+  .ot-modal{background:var(--bg1);border:1px solid var(--border);border-radius:6px;width:100%;max-width:340px;font-family:var(--mono)}
+  .ot-header{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--border)}
+  .ot-header .ot-ticker{font-size:14px;font-weight:600;flex:1}
+  .ot-close{cursor:pointer;font-size:11px;color:var(--text1);padding:4px 8px;border-radius:3px;border:1px solid var(--border);background:var(--bg2)}
+  .ot-close:hover{color:var(--text0)}
+  .ot-body{padding:12px 14px;display:flex;flex-direction:column;gap:12px}
+  .ot-side-row{display:flex;gap:6px}
+  .ot-side-btn{flex:1;text-align:center;padding:8px 6px;border-radius:3px;border:1px solid var(--border);background:var(--bg2);color:var(--text1);font-size:12px;cursor:pointer;line-height:1.6}
+  .ot-side-btn .ot-side-label{font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:var(--text2)}
+  .ot-side-btn.active.sell{background:rgba(255,95,109,.15);border-color:var(--red);color:var(--red)}
+  .ot-side-btn.active.sell .ot-side-label{color:var(--red)}
+  .ot-side-btn.active.buy{background:rgba(0,212,170,.15);border-color:var(--green);color:var(--green)}
+  .ot-side-btn.active.buy .ot-side-label{color:var(--green)}
+  .ot-spread{font-size:9px;color:var(--text2);text-align:center;margin-top:4px}
+  .ot-tabs{display:flex;gap:6px}
+  .ot-tab{flex:1;text-align:center;padding:5px 6px;border-radius:3px;border:1px solid var(--border);background:var(--bg2);color:var(--text1);font-size:10px;cursor:pointer;text-transform:uppercase;letter-spacing:.05em}
+  .ot-tab.active{background:var(--bg3);color:var(--text0);border-color:var(--text1)}
+  .ot-row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .ot-label{font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.08em}
+  .ot-field{background:var(--bg2);border:1px solid var(--border);color:var(--text0);font-family:var(--mono);font-size:12px;padding:5px 7px;border-radius:3px;width:100px;text-align:right}
+  .ot-field:disabled{opacity:.4}
+  .ot-usd{font-size:10px;color:var(--text2);text-align:right;flex:1}
+  .ot-section{border-top:1px solid var(--border);padding-top:10px;display:flex;flex-direction:column;gap:8px}
+  .ot-section-title{font-size:9px;color:var(--text2);text-transform:uppercase;letter-spacing:.15em}
+  .ot-exit-row{display:flex;flex-direction:column;gap:6px}
+  .ot-exit-head{display:flex;align-items:center;gap:6px}
+  .ot-exit-head input[type=checkbox]{accent-color:var(--blue)}
+  .ot-exit-fields{display:flex;align-items:center;gap:6px}
+  .ot-exit-fields .ot-field{flex:1;width:auto;text-align:left}
+  .ot-tick-label{font-size:9px;color:var(--text2);white-space:nowrap}
+  .ot-info-row{display:flex;justify-content:space-between;font-size:10px;color:var(--text2)}
+  .ot-info-row span:last-child{color:var(--text0)}
+  .ot-submit{font-family:var(--mono);font-size:12px;font-weight:600;padding:10px;border-radius:4px;cursor:pointer;border:1px solid transparent;letter-spacing:.05em;text-transform:uppercase;text-align:center}
+  .ot-submit.buy{background:rgba(0,212,170,.15);color:var(--green);border-color:var(--green)}
+  .ot-submit.buy:hover{background:rgba(0,212,170,.28)}
+  .ot-submit.sell{background:rgba(255,95,109,.15);color:var(--red);border-color:var(--red)}
+  .ot-submit.sell:hover{background:rgba(255,95,109,.28)}
   /* ── Footer panels ── */
   .fpanel{padding:10px 14px;overflow-y:auto;max-height:180px}
   .panel-title{font-family:var(--mono);font-size:9px;color:var(--text2);letter-spacing:.15em;text-transform:uppercase;margin-bottom:8px}
@@ -199,6 +237,80 @@
   </div>
 </div>
 
+<!-- Order ticket -->
+<div class="ot-bg hidden" id="otBg" onclick="if(event.target===this)closeOrderTicket()">
+  <div class="ot-modal">
+    <div class="ot-header">
+      <span class="ot-ticker" id="otTickerLabel">—</span>
+      <span class="ot-close" onclick="closeOrderTicket()">✕</span>
+    </div>
+    <div class="ot-body">
+      <div>
+        <div class="ot-side-row">
+          <div class="ot-side-btn sell" id="otSellBtn" onclick="setOtSide('sell')">
+            <div class="ot-side-label">Sell</div><div id="otSellPrice">—</div>
+          </div>
+          <div class="ot-side-btn buy" id="otBuyBtn" onclick="setOtSide('buy')">
+            <div class="ot-side-label">Buy</div><div id="otBuyPrice">—</div>
+          </div>
+        </div>
+        <div class="ot-spread" id="otSpread">Spread 0.00</div>
+      </div>
+
+      <div class="ot-tabs">
+        <div class="ot-tab" id="otTabMarket" onclick="setOtOrderType('market')">Market</div>
+        <div class="ot-tab" id="otTabLimit" onclick="setOtOrderType('limit')">Limit</div>
+      </div>
+
+      <div class="ot-row" id="otLimitRow" style="display:none">
+        <span class="ot-label">Limit price</span>
+        <input type="number" class="ot-field" id="otLimitPrice" step="0.01" oninput="renderOrderTicket()">
+      </div>
+
+      <div class="ot-row">
+        <span class="ot-label">Units</span>
+        <input type="number" class="ot-field" id="otQty" value="1" min="1" step="1" oninput="renderOrderTicket()">
+      </div>
+      <div class="ot-row"><span></span><span class="ot-usd" id="otUsdEquiv">≈ $0.00 USD</span></div>
+
+      <div class="ot-section">
+        <div class="ot-section-title">Exits</div>
+        <div class="ot-exit-row">
+          <div class="ot-exit-head">
+            <input type="checkbox" id="otTpEnabled" onchange="otToggleExit('Tp')">
+            <span class="ot-label">Take profit, price</span>
+          </div>
+          <div class="ot-exit-fields">
+            <input type="number" class="ot-field" id="otTpPrice" step="0.01" disabled oninput="otSyncFromPrice('tp')">
+            <span class="ot-tick-label">ticks</span>
+            <input type="number" class="ot-field" id="otTpTicks" step="1" disabled oninput="otSyncFromTicks('tp')">
+          </div>
+        </div>
+        <div class="ot-exit-row">
+          <div class="ot-exit-head">
+            <input type="checkbox" id="otSlEnabled" onchange="otToggleExit('Sl')">
+            <span class="ot-label">Stop loss, price</span>
+          </div>
+          <div class="ot-exit-fields">
+            <input type="number" class="ot-field" id="otSlPrice" step="0.01" disabled oninput="otSyncFromPrice('sl')">
+            <span class="ot-tick-label">ticks</span>
+            <input type="number" class="ot-field" id="otSlTicks" step="1" disabled oninput="otSyncFromTicks('sl')">
+          </div>
+        </div>
+      </div>
+
+      <div class="ot-section">
+        <div class="ot-section-title">Order info</div>
+        <div class="ot-info-row"><span>Tick size</span><span>$0.01</span></div>
+        <div class="ot-info-row"><span>Tick value</span><span id="otTickValue">$0.00</span></div>
+        <div class="ot-info-row"><span>Trade value</span><span id="otTradeValue">$0.00</span></div>
+      </div>
+
+      <div class="ot-submit" id="otSubmit" onclick="submitOrderTicket()">Buy 1 — MARKET</div>
+    </div>
+  </div>
+</div>
+
 <script>
 // ── State ──────────────────────────────────────────────────────────────────
 let zonesData      = {};
@@ -208,6 +320,8 @@ let barsData       = {};
 let chartType      = 'line';
 let chartTimeframe = '5m';
 let fullscreenTicker = null;
+let otTicker = null, otSide = 'buy', otOrderType = 'market';
+const TICK_SIZE = 0.01;
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 function fmt(n, d=2){ return n == null ? '—' : Number(n).toLocaleString(undefined,{minimumFractionDigits:d,maximumFractionDigits:d}); }
@@ -232,10 +346,14 @@ function zlLine(topPct, color, label, textColor){
 }
 
 // Format a bar timestamp ("2026-06-12 19:55:00+00:00") for the time axis.
-function formatBarTime(ts, tf){
+// `multiDay` (true when the visible bars span more than one calendar day,
+// e.g. a 5m chart whose 100 bars stretch across two trading sessions)
+// prefixes the date so labels don't look identical to a same-day timeframe.
+function formatBarTime(ts, tf, multiDay){
   const d = new Date(String(ts).replace(' ','T'));
   if(isNaN(d.getTime())) return '';
   if(tf==='1d' || tf==='4h') return (d.getMonth()+1)+'/'+d.getDate();
+  if(multiDay) return (d.getMonth()+1)+'/'+d.getDate()+' '+d.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit',hour12:false});
   return d.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'});
 }
 
@@ -286,9 +404,12 @@ function renderChart(canvas, bars, rMin, rMax, type, timeframe){
     ctx.textAlign = 'center';
     ctx.textBaseline = 'bottom';
     const TIME_TICKS = 4;
+    const firstD = new Date(String(bars[0].timestamp).replace(' ','T'));
+    const lastD  = new Date(String(bars[n-1].timestamp).replace(' ','T'));
+    const multiDay = !isNaN(firstD.getTime()) && !isNaN(lastD.getTime()) && firstD.toDateString() !== lastD.toDateString();
     for(let i=0;i<=TIME_TICKS;i++){
       const idx = Math.min(n-1, Math.round(i*(n-1)/TIME_TICKS));
-      const label = formatBarTime(bars[idx].timestamp, timeframe);
+      const label = formatBarTime(bars[idx].timestamp, timeframe, multiDay);
       if(!label) continue;
       ctx.fillText(label, idx*slotW + slotW/2, h-2);
     }
@@ -492,11 +613,8 @@ function buildCard(ticker, d){
     <div class="ladder-overlay" id="overlay-${ticker}"></div>
   </div>
   <div class="order-ticket">
-    <input type="number" id="qty-${ticker}" value="1" min="0" step="any" title="Quantity">
-    <input type="number" class="sltp" id="sl-${ticker}" placeholder="SL" min="0" step="any" title="Stop loss">
-    <input type="number" class="sltp" id="tp-${ticker}" placeholder="TP" min="0" step="any" title="Take profit">
-    <button class="btn-buy" onclick="placeOrder('${ticker}','buy')">BUY</button>
-    <button class="btn-sell" onclick="placeOrder('${ticker}','sell')">SELL</button>
+    <button class="btn-buy" onclick="openOrderTicket('${ticker}','buy')">BUY</button>
+    <button class="btn-sell" onclick="openOrderTicket('${ticker}','sell')">SELL</button>
   </div>
 </div>`;
 }
@@ -512,25 +630,156 @@ function renderCards(){
   sorted.forEach(t => renderZoneLadder(t, zonesData[t]||{}, getCurrentPrice(t)));
 }
 
-// ── Order placement ──────────────────────────────────────────────────────────
-async function placeOrder(ticker, side){
-  const qtyEl = document.getElementById('qty-'+ticker);
-  const slEl  = document.getElementById('sl-'+ticker);
-  const tpEl  = document.getElementById('tp-'+ticker);
-  const qty = qtyEl ? Number(qtyEl.value) : 0;
-  if(!qty || qty <= 0){ alert('Enter a quantity greater than 0'); return; }
-  const stopLoss   = slEl && slEl.value !== '' ? Number(slEl.value) : null;
-  const takeProfit = tpEl && tpEl.value !== '' ? Number(tpEl.value) : null;
+// ── Order ticket ──────────────────────────────────────────────────────────────
+function otCurrentPrice(){
+  const price = getCurrentPrice(otTicker);
+  if(otOrderType === 'limit'){
+    const lp = document.getElementById('otLimitPrice');
+    const v = lp && lp.value !== '' ? Number(lp.value) : 0;
+    return v > 0 ? v : price;
+  }
+  return price;
+}
 
-  let msg = `${side.toUpperCase()} ${qty} ${ticker} at market (paper account)?`;
-  if(stopLoss)   msg += `\nStop loss: $${stopLoss}`;
-  if(takeProfit) msg += `\nTake profit: $${takeProfit}`;
+function openOrderTicket(ticker, side){
+  otTicker    = ticker;
+  otSide      = side;
+  otOrderType = 'market';
+  const price = getCurrentPrice(ticker);
+
+  document.getElementById('otTickerLabel').textContent = ticker;
+  document.getElementById('otQty').value = 1;
+  document.getElementById('otLimitPrice').value = price ? price.toFixed(2) : '';
+  document.getElementById('otLimitRow').style.display = 'none';
+
+  ['Tp','Sl'].forEach(kind=>{
+    document.getElementById('ot'+kind+'Enabled').checked = false;
+    document.getElementById('ot'+kind+'Price').value = '';
+    document.getElementById('ot'+kind+'Ticks').value = '';
+    document.getElementById('ot'+kind+'Price').disabled = true;
+    document.getElementById('ot'+kind+'Ticks').disabled = true;
+  });
+
+  document.getElementById('otBg').classList.remove('hidden');
+  renderOrderTicket();
+}
+
+function closeOrderTicket(){
+  document.getElementById('otBg').classList.add('hidden');
+  otTicker = null;
+}
+
+function setOtSide(side){
+  if(side === otSide || !otTicker) return;
+  otSide = side;
+  if(document.getElementById('otTpEnabled').checked) otSyncFromTicks('tp');
+  if(document.getElementById('otSlEnabled').checked) otSyncFromTicks('sl');
+  renderOrderTicket();
+}
+
+function setOtOrderType(type){
+  if(!otTicker) return;
+  otOrderType = type;
+  document.getElementById('otLimitRow').style.display = type === 'limit' ? 'flex' : 'none';
+  if(document.getElementById('otTpEnabled').checked) otSyncFromTicks('tp');
+  if(document.getElementById('otSlEnabled').checked) otSyncFromTicks('sl');
+  renderOrderTicket();
+}
+
+function otToggleExit(kind){
+  const enabled = document.getElementById('ot'+kind+'Enabled').checked;
+  const priceEl = document.getElementById('ot'+kind+'Price');
+  const ticksEl = document.getElementById('ot'+kind+'Ticks');
+  priceEl.disabled = !enabled;
+  ticksEl.disabled = !enabled;
+  if(enabled && ticksEl.value === ''){
+    ticksEl.value = 50;
+    otSyncFromTicks(kind.toLowerCase());
+    return;
+  }
+  renderOrderTicket();
+}
+
+function otSyncFromTicks(kind){
+  const price   = otCurrentPrice();
+  const ticksEl = document.getElementById('ot'+(kind==='tp'?'Tp':'Sl')+'Ticks');
+  const priceEl = document.getElementById('ot'+(kind==='tp'?'Tp':'Sl')+'Price');
+  const ticks   = Number(ticksEl.value) || 0;
+  let exitPrice;
+  if(kind === 'tp'){
+    exitPrice = otSide === 'buy' ? price + ticks*TICK_SIZE : price - ticks*TICK_SIZE;
+  }else{
+    exitPrice = otSide === 'buy' ? price - ticks*TICK_SIZE : price + ticks*TICK_SIZE;
+  }
+  priceEl.value = exitPrice.toFixed(2);
+  renderOrderTicket();
+}
+
+function otSyncFromPrice(kind){
+  const price   = otCurrentPrice();
+  const ticksEl = document.getElementById('ot'+(kind==='tp'?'Tp':'Sl')+'Ticks');
+  const priceEl = document.getElementById('ot'+(kind==='tp'?'Tp':'Sl')+'Price');
+  const exitPrice = Number(priceEl.value) || 0;
+  const diff = exitPrice - price;
+  let ticks;
+  if(kind === 'tp'){
+    ticks = (otSide === 'buy' ? diff : -diff) / TICK_SIZE;
+  }else{
+    ticks = (otSide === 'buy' ? -diff : diff) / TICK_SIZE;
+  }
+  ticksEl.value = Math.round(ticks);
+  renderOrderTicket();
+}
+
+function renderOrderTicket(){
+  if(!otTicker) return;
+  const price      = getCurrentPrice(otTicker);
+  const tradePrice = otCurrentPrice();
+  const qty        = Math.max(1, Number(document.getElementById('otQty').value) || 1);
+
+  document.getElementById('otSellPrice').textContent = price ? fmt(price) : '—';
+  document.getElementById('otBuyPrice').textContent  = price ? fmt(price) : '—';
+  document.getElementById('otSpread').textContent = 'Spread 0.00';
+
+  document.getElementById('otSellBtn').classList.toggle('active', otSide === 'sell');
+  document.getElementById('otBuyBtn').classList.toggle('active', otSide === 'buy');
+  document.getElementById('otTabMarket').classList.toggle('active', otOrderType === 'market');
+  document.getElementById('otTabLimit').classList.toggle('active', otOrderType === 'limit');
+
+  document.getElementById('otUsdEquiv').textContent  = `≈ $${fmt(qty * tradePrice)} USD`;
+  document.getElementById('otTickValue').textContent = `$${fmt(TICK_SIZE * qty, 2)}`;
+  document.getElementById('otTradeValue').textContent = `$${fmt(qty * tradePrice)}`;
+
+  const submit = document.getElementById('otSubmit');
+  submit.textContent = `${otSide === 'buy' ? 'Buy' : 'Sell'} ${qty} ${otTicker} — ${otOrderType.toUpperCase()}`;
+  submit.className = 'ot-submit ' + otSide;
+}
+
+async function submitOrderTicket(){
+  if(!otTicker) return;
+  const qty = Math.max(1, Number(document.getElementById('otQty').value) || 1);
+  const body = { ticker: otTicker, side: otSide, qty, type: otOrderType };
+
+  if(otOrderType === 'limit'){
+    const lp = Number(document.getElementById('otLimitPrice').value);
+    if(!lp || lp <= 0){ alert('Enter a valid limit price'); return; }
+    body.limitPrice = lp;
+  }
+  if(document.getElementById('otTpEnabled').checked){
+    const tp = Number(document.getElementById('otTpPrice').value);
+    if(tp > 0) body.takeProfit = tp;
+  }
+  if(document.getElementById('otSlEnabled').checked){
+    const sl = Number(document.getElementById('otSlPrice').value);
+    if(sl > 0) body.stopLoss = sl;
+  }
+
+  let msg = `${otSide.toUpperCase()} ${qty} ${otTicker} ${otOrderType === 'limit' ? 'at $'+body.limitPrice : 'at market'} (paper account)?`;
+  if(body.takeProfit) msg += `\nTake profit: $${body.takeProfit}`;
+  if(body.stopLoss)   msg += `\nStop loss: $${body.stopLoss}`;
   if(!confirm(msg)) return;
 
   try{
-    const body = { ticker, side, qty, type: 'market' };
-    if(stopLoss)   body.stopLoss   = stopLoss;
-    if(takeProfit) body.takeProfit = takeProfit;
     const r = await fetch('/api/trading/orders/place', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
@@ -541,6 +790,7 @@ async function placeOrder(ticker, side){
       alert('Order failed: ' + (result.error || r.statusText));
       return;
     }
+    closeOrderTicket();
     await Promise.all([loadOrders(), loadPortfolio()]);
   }catch(e){
     alert('Order failed: ' + e.message);
@@ -590,7 +840,7 @@ function renderFullscreenChart(){
     document.getElementById('chart-fs'), document.getElementById('overlay-fs'));
 }
 
-document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeFullscreenChart(); });
+document.addEventListener('keydown', e=>{ if(e.key==='Escape'){ closeFullscreenChart(); closeOrderTicket(); } });
 
 // ── Watchlist add/remove ─────────────────────────────────────────────────────
 async function addWatchlistTicker(){
