@@ -125,6 +125,31 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .ptag.sl{color:var(--danger);border-color:var(--danger)}.ptag.tp{color:var(--green);border-color:var(--green)}
 .pclose{margin-left:auto;cursor:pointer;color:var(--muted);font-size:13px;background:none;border:none;padding:2px 4px}
 .pclose:hover{color:var(--text)}
+
+/* image gallery panel */
+.image-gallery{padding:8px 16px;border-top:1px solid var(--border);flex-shrink:0;max-height:180px;overflow-y:auto}
+.image-gallery-title{font-size:10px;letter-spacing:.1em;color:var(--muted);margin-bottom:8px;
+  display:flex;justify-content:space-between;align-items:center;text-transform:uppercase;font-weight:600}
+.image-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(60px,1fr));gap:6px}
+.image-item{position:relative;border-radius:6px;overflow:hidden;border:1px solid var(--border);
+  background:var(--surface);aspect-ratio:1;cursor:pointer;transition:all .2s}
+.image-item:hover{border-color:var(--accent);transform:scale(1.05);box-shadow:0 0 12px rgba(6,182,212,.3)}
+.image-item img{width:100%;height:100%;object-fit:cover}
+.image-item-loader{width:100%;height:100%;display:flex;align-items:center;justify-content:center;
+  color:var(--muted);font-size:24px;animation:spin .8s linear infinite}
+@keyframes spin{100%{transform:rotate(360deg)}}
+
+/* image modal */
+.image-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.8);display:flex;align-items:center;
+  justify-content:center;z-index:100;backdrop-filter:blur(4px);opacity:0;pointer-events:none;transition:opacity .2s}
+.image-modal-overlay.active{opacity:1;pointer-events:auto}
+.image-modal-content{position:relative;max-width:90vw;max-height:90vh;display:flex;flex-direction:column;gap:12px;
+  background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px}
+.image-modal-img{max-width:100%;max-height:70vh;object-fit:contain}
+.image-modal-close{position:absolute;top:8px;right:8px;background:rgba(0,0,0,.5);
+  color:var(--text);border:none;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:16px;
+  transition:background .2s}
+.image-modal-close:hover{background:rgba(0,0,0,.8)}
 </style>
 </head>
 <body>
@@ -165,6 +190,21 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 <div class="actions" role="region" aria-label="Card action buttons">
   <button class="btn-ghost" id="bPass" aria-label="Pass on current position" onclick="act('pass')" style="font-size:15px">← Pass</button>
   <button class="btn-primary" id="bTake" aria-label="Take current position" onclick="act('take')" style="font-size:15px">Take it →</button>
+</div>
+
+<div class="image-gallery" id="imageGallery" style="display:none" aria-label="Market chart and news images">
+  <div class="image-gallery-title">
+    <span>📊 Market Charts</span>
+    <button onclick="toggleGallery()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:12px">▼</button>
+  </div>
+  <div class="image-grid" id="imageGrid"></div>
+</div>
+
+<div class="image-modal-overlay" id="imageModal" onclick="closeImageModal(event)">
+  <div class="image-modal-content" onclick="event.stopPropagation()">
+    <button class="image-modal-close" onclick="closeImageModal()">✕</button>
+    <img id="modalImage" class="image-modal-img" src="" alt="Full size image">
+  </div>
 </div>
 
 <div class="toast" id="toast" role="alert" aria-live="assertive" aria-atomic="true"></div>
@@ -550,11 +590,61 @@ async function pollPaperBook(){
   document.getElementById('pbook-rows').innerHTML=rows;
 }
 
+// ── image gallery ────────────────────────────────────────────────────────────
+let imageGalleryOpen=true;
+
+async function loadImages(){
+  try{
+    const res=await fetch('/api/images');
+    const data=await res.json();
+    if(data.images&&data.images.length>0){
+      document.getElementById('imageGallery').style.display='';
+      renderImages(data.images);
+    }
+  }catch(e){
+    console.error('Failed to load images:',e);
+  }
+}
+
+function renderImages(images){
+  const grid=document.getElementById('imageGrid');
+  grid.innerHTML=images.slice(0,12).map(img=>`
+    <div class="image-item" onclick="openImageModal('${img.url||'/images/'+img.id}','${(img.filename||'image').replace(/'/g,"\\'")}')" title="${img.filename||'Image'}">
+      <img src="${img.url||'/images/'+img.id}" alt="${img.filename||'Market image'}" loading="lazy" onerror="this.parentElement.innerHTML='⚠'">
+    </div>
+  `).join('');
+}
+
+function openImageModal(url,title){
+  document.getElementById('modalImage').src=url;
+  document.getElementById('modalImage').alt=title;
+  document.getElementById('imageModal').classList.add('active');
+  document.body.style.overflow='hidden';
+}
+
+function closeImageModal(e){
+  if(e&&e.target!==document.getElementById('imageModal')) return;
+  document.getElementById('imageModal').classList.remove('active');
+  document.body.style.overflow='';
+}
+
+function toggleGallery(){
+  const gallery=document.getElementById('imageGallery');
+  const grid=document.getElementById('imageGrid');
+  imageGalleryOpen=!imageGalleryOpen;
+  grid.style.display=imageGalleryOpen?'':'none';
+}
+
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape') closeImageModal();
+});
+
 function init(){
-  loadConnection(); loadBalance(); syncDeck(); pollPaperBook();
+  loadConnection(); loadBalance(); syncDeck(); pollPaperBook(); loadImages();
   setInterval(loadConnection,20000);
   setInterval(loadBalance,30000);
   setInterval(()=>{ syncDeck(); pollPaperBook(); },SYNC_MS);
+  setInterval(loadImages,60000);
 }
 document.addEventListener('DOMContentLoaded',init);
 </script>
