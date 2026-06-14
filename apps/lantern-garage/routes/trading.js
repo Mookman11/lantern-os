@@ -1083,19 +1083,13 @@ module.exports = async function tradingRoutes(req, res, url, deps) {
 
         return sendJson(res, result, 200), true;
       }
-    } catch (error) {
-      return sendJson(res, { error: 'kalshi_api_error', details: error.message }, 502), true;
-    }
-  }
-
-  // GET /api/trading/kalshi/positions-deck?exitsOnly=true
-  // Open positions as swipe cards: entry price, current bid, P&L, exit tag.
-  // exitsOnly=true: only show positions marked for exit (STOP-LOSS/TAKE-PROFIT/CONVERGENCE)
-  // Parallel market fetches so latency = slowest single market, not sum.
-  if (url.pathname === '/api/trading/kalshi/positions-deck' && req.method === 'GET') {
-    const exitsOnly = q.exitsOnly === 'true';
-    try {
-      const kalshi = require('../lib/kalshi-api');
+      // GET /api/trading/kalshi/positions-deck?exitsOnly=true
+      // Open positions as swipe cards: entry price, current bid, P&L, exit tag.
+      // exitsOnly=true: only show positions marked for exit (STOP-LOSS/TAKE-PROFIT/CONVERGENCE)
+      // Parallel market fetches so latency = slowest single market, not sum.
+      if (url.pathname === '/api/trading/kalshi/positions-deck' && req.method === 'GET') {
+        const exitsOnly = q.exitsOnly === 'true';
+        const kalshi = require('../lib/kalshi-api');
       const posRes = await kalshi.getPositions({});
       const rawPositions = (posRes.data && posRes.data.market_positions) || [];
 
@@ -1254,8 +1248,9 @@ module.exports = async function tradingRoutes(req, res, url, deps) {
         generatedAt: new Date().toISOString(),
         cards: filtered
       }, 200), true;
+      }
     } catch (error) {
-      return sendJson(res, { error: 'positions_deck_error', details: error.message }, 502), true;
+      return sendJson(res, { error: 'kalshi_api_error', details: error.message }, 502), true;
     }
   }
 
