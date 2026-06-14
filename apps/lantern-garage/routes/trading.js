@@ -702,6 +702,32 @@ module.exports = async function tradingRoutes(req, res, url, deps) {
         }, 200), true;
       }
 
+      // POST — Start convergence enhancement loop (continuous self-improvement)
+      if (url.pathname === '/api/trading/kalshi/convergence/enhance/start' && req.method === 'POST') {
+        const { startEnhancing } = require('../lib/kalshi-convergence-enhancer');
+        startEnhancing();
+        return sendJson(res, { status: 'enhancement started' }, 200), true;
+      }
+
+      // POST — Stop convergence enhancement loop
+      if (url.pathname === '/api/trading/kalshi/convergence/enhance/stop' && req.method === 'POST') {
+        const { stopEnhancing } = require('../lib/kalshi-convergence-enhancer');
+        stopEnhancing();
+        return sendJson(res, { status: 'enhancement stopped' }, 200), true;
+      }
+
+      // GET — Get convergence enhancer status and predictions
+      if (url.pathname === '/api/trading/kalshi/convergence/enhance/status' && req.method === 'GET') {
+        const ticker = q.ticker;
+        const { getEnhancer } = require('../lib/kalshi-convergence-enhancer');
+        const enhancer = getEnhancer();
+        return sendJson(res, {
+          status: enhancer.getStatus(),
+          context: ticker ? enhancer.getContext(ticker) : null,
+          prediction: ticker ? enhancer.getPrediction(ticker) : null
+        }, 200), true;
+      }
+
       // GET — Impossibility Engine deck: constraint-elimination over short-window markets
       // Returns same card shape as crypto-intraday + { determined, stateLabel, knowledge, trace }
       if (url.pathname === '/api/trading/kalshi/impossibility-deck' && req.method === 'GET') {
