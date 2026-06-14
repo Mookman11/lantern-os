@@ -25,7 +25,7 @@ function generateEntryId() {
   return `entry-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 }
 
-async function createEntry(repoRoot, entryData) {
+function createEntry(repoRoot, entryData) {
   const entryId = generateEntryId();
   const entryDir = getEntryDir(repoRoot, entryId);
 
