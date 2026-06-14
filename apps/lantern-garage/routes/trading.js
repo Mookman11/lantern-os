@@ -728,6 +728,30 @@ module.exports = async function tradingRoutes(req, res, url, deps) {
         }, 200), true;
       }
 
+      // POST — Start LoRA fine-tuning analysis (proactive, continuous)
+      if (url.pathname === '/api/trading/kalshi/convergence/lora/start' && req.method === 'POST') {
+        const { startAnalyzing } = require('../lib/kalshi-convergence-lora');
+        startAnalyzing();
+        return sendJson(res, { status: 'LoRA analysis started' }, 200), true;
+      }
+
+      // POST — Stop LoRA analysis
+      if (url.pathname === '/api/trading/kalshi/convergence/lora/stop' && req.method === 'POST') {
+        const { stopAnalyzing } = require('../lib/kalshi-convergence-lora');
+        stopAnalyzing();
+        return sendJson(res, { status: 'LoRA analysis stopped' }, 200), true;
+      }
+
+      // GET — Get LoRA model status and training progress
+      if (url.pathname === '/api/trading/kalshi/convergence/lora/status' && req.method === 'GET') {
+        const { getLora } = require('../lib/kalshi-convergence-lora');
+        const lora = getLora();
+        return sendJson(res, {
+          model: lora.getStatus(),
+          training: lora.getTrainingSummary()
+        }, 200), true;
+      }
+
       // GET — Impossibility Engine deck: constraint-elimination over short-window markets
       // Returns same card shape as crypto-intraday + { determined, stateLabel, knowledge, trace }
       if (url.pathname === '/api/trading/kalshi/impossibility-deck' && req.method === 'GET') {

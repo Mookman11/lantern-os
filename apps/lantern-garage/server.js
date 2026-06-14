@@ -344,9 +344,11 @@ server.listen(port, host, () => {
   const { startMonitoring } = require("./lib/kalshi-position-monitor");
   const { trainModel } = require("./lib/kalshi-convergence-trainer");
   const { startEnhancing } = require("./lib/kalshi-convergence-enhancer");
-  startMonitoring();  // Start automated stop-loss monitoring
+  const { startAnalyzing } = require("./lib/kalshi-convergence-lora");
+  startMonitoring();   // Start automated stop-loss monitoring
   trainModel().catch(e => console.error("[Server] Convergence training failed:", e.message));
-  startEnhancing();   // Start continuous convergence improvement loop
+  startEnhancing();    // Start continuous convergence improvement loop
+  startAnalyzing();    // Start LoRA fine-tuning (proactive, no trades needed)
 
   // ── Crypto CIO Live Trader (15-min market observer + paper-trade signal log) ──
   // Must run continuously during market hours so resolved windows produce training data.
