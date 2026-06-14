@@ -11,7 +11,7 @@ const candidateEnvFiles = [
 for (const envPath of candidateEnvFiles) {
   if (!fs.existsSync(envPath)) continue;
   fs.readFileSync(envPath, "utf8").split("\n").forEach((line) => {
-    const m = line.match(/^([A-Z0-9_]+)\s*=\s*(.*)$/);
+    const m = line.replace(/\r$/, "").match(/^([A-Z0-9_]+)\s*=\s*(.*)$/);
     if (m && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^['"]/g, "").replace(/['"]$/g, "");
   });
 }
