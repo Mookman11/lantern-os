@@ -6,6 +6,7 @@ module.exports = async function creatorEntriesRoutes(req, res, url, deps) {
   const fs = require("fs");
   const entryStore = require("../lib/entry-store");
   const { generateProjectThumbnail } = require("../lib/thumbnail-generator");
+  const ci = require("../../../src/creator-intelligence");
 
   // =========================================================================
   // GET /api/creator-entries - List all entries
@@ -150,7 +151,40 @@ module.exports = async function creatorEntriesRoutes(req, res, url, deps) {
         return true;
       }
 
+      // ── Quality gate (Phase 7): validate the render before accepting it ──
+      // Runs real ffprobe. Blocks an out-of-spec export unless body.force is set.
+      // Result is always persisted so the verdict is traceable in the dashboard.
+      const renderFullPath = pathModule.join(repoRoot, body.filePath);
+      const validation = await ci.validateExport(renderFullPath, {
+        ...(body.validation || {}),
+        captionsExpected: body.captionsExpected === true,
+        captionBurnConfirmed: body.captionBurnConfirmed === true,
+      });
+
+      try {
+        entryStore.saveValidation(repoRoot, entryId, renderType, validation);
+      } catch (e) {
+        console.error("[creator-entries] saveValidation failed:", e.message);
+      }
+
+      if (!validation.ok && !validation.skipped && body.force !== true) {
+        // Export blocked — report the concrete reasons, do not save the render.
+        sendJson(res, {
+          error: "Export blocked by ExportValidator",
+          blocked: true,
+          validation,
+        }, 422);
+        return true;
+      }
+
       entryStore.saveRender(repoRoot, entryId, renderType, body.filePath);
+
+      // Continuous-learning: record the accepted export (first-party, non-fatal)
+      try {
+        ci.training.recordExport(entryId, { renderType, validated: validation.ok === true });
+      } catch (e) {
+        console.error("[creator-entries] recordExport failed:", e.message);
+      }
 
       // Regenerate thumbnail from highlight/render video (non-blocking)
       if (renderType === "highlight" || renderType.startsWith("variant")) {
@@ -167,7 +201,12 @@ module.exports = async function creatorEntriesRoutes(req, res, url, deps) {
         });
       }
 
-      sendJson(res, { success: true, message: `${renderType} render saved` });
+      sendJson(res, {
+        success: true,
+        message: `${renderType} render saved`,
+        validation,
+        forced: !validation.ok && body.force === true ? true : undefined,
+      });
       return true;
     } catch (error) {
       console.error("[creator-entries] Render save error:", error.message);

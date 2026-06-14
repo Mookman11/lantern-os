@@ -138,6 +138,18 @@ function saveRender(repoRoot, entryId, type, filePath) {
   }
 }
 
+function saveValidation(repoRoot, entryId, type, result) {
+  // Persist an ExportValidator result on the entry, keyed by render type.
+  // Merged (not replaced) so each render type keeps its own validation record.
+  const entry = getEntry(repoRoot, entryId);
+  if (!entry) {
+    throw new Error(`Entry ${entryId} not found`);
+  }
+  const validations = { ...(entry.validations || {}) };
+  validations[type] = result;
+  return updateEntry(repoRoot, entryId, { validations });
+}
+
 function saveThumbnail(repoRoot, entryId, filePath) {
   const entryDir = getEntryDir(repoRoot, entryId);
   const thumbnailPath = path.join(entryDir, "thumbnail.jpg");
@@ -211,6 +223,7 @@ module.exports = {
   saveAnalysis,
   getAnalysis,
   saveRender,
+  saveValidation,
   saveThumbnail,
   listEntries,
   formatTimestamp,

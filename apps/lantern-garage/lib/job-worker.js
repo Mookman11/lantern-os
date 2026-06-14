@@ -8,6 +8,7 @@ const { analyzeVideoForHighlights } = require("./highlight-engine");
 const { generateVariants } = require("./retention-engine");
 const { generateCaptions } = require("./caption-engine");
 const { detectSafeZones } = require("./safe-zone-detector");
+const ci = require("../../../src/creator-intelligence");
 
 class JobWorker {
   constructor(jobQueue, repoRoot) {
@@ -204,11 +205,21 @@ async function processExportJob(job, repoRoot, updateProgress) {
   // Simulate export by copying file (real implementation: re-encode with FFmpeg)
   fs.copyFileSync(fullPath, exportFile);
 
-  updateProgress(90, "Verifying output");
+  updateProgress(90, "Validating output");
 
   // Verify output exists
   if (!fs.existsSync(exportFile)) {
     throw new Error("Export file was not created");
+  }
+
+  // ── Quality gate (Phase 7): validate with real ffprobe before completing ──
+  // If the export does not meet short-form spec, block it: delete the invalid
+  // file and fail the job with the concrete reasons. Honors exportValidator flag.
+  const validation = await ci.validateExport(exportFile, job.input.validation || {});
+  if (!validation.ok && !validation.skipped) {
+    try { fs.unlinkSync(exportFile); } catch { /* best-effort cleanup */ }
+    const reasons = (validation.blockedReasons || []).join("; ") || "did not meet short-form spec";
+    throw new Error(`Export blocked by ExportValidator: ${reasons}`);
   }
 
   const stats = fs.statSync(exportFile);
@@ -220,6 +231,7 @@ async function processExportJob(job, repoRoot, updateProgress) {
     exportFile,
     size: stats.size,
     created: stats.birthtime,
+    validation,
   };
 }
 
