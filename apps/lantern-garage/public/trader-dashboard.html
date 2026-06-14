@@ -104,6 +104,8 @@
   .fs-close:hover{color:var(--text0)}
   .fs-body{flex:1;position:relative;margin:14px}
   .fs-body .zone-ladder{position:absolute;inset:0;height:auto;margin:0}
+  .fs-header .order-ticket{padding:0;gap:6px}
+  .fs-header .order-ticket button{flex:0 0 auto;min-width:56px}
   /* Order ticket modal */
   .ot-bg{position:fixed;inset:0;background:rgba(5,6,8,.85);z-index:1100;display:flex;align-items:center;justify-content:center;padding:24px}
   .ot-bg.hidden{display:none}
@@ -226,6 +228,22 @@
     <div class="fs-header">
       <span class="fs-ticker" id="fsTicker">—</span>
       <span class="fs-price" id="fsPrice">—</span>
+      <select id="fsChartTypeSelect" class="chart-ctrl" onchange="changeChartType(this.value)">
+        <option value="line">Line</option>
+        <option value="candle">Candles</option>
+      </select>
+      <select id="fsChartTfSelect" class="chart-ctrl" onchange="changeTimeframe(this.value)">
+        <option value="1m">1m</option>
+        <option value="5m">5m</option>
+        <option value="15m">15m</option>
+        <option value="1h">1h</option>
+        <option value="4h">4h</option>
+        <option value="1d">1d</option>
+      </select>
+      <div class="order-ticket fs-order-ticket">
+        <button class="btn-buy" onclick="openOrderTicket(fullscreenTicker,'buy')">BUY</button>
+        <button class="btn-sell" onclick="openOrderTicket(fullscreenTicker,'sell')">SELL</button>
+      </div>
       <span class="fs-close" onclick="closeFullscreenChart()">✕ Close</span>
     </div>
     <div class="fs-body">
@@ -823,6 +841,8 @@ function focusTicker(t){
 function openFullscreenChart(t){
   fullscreenTicker = t;
   document.getElementById('fsTicker').textContent = t;
+  document.getElementById('fsChartTypeSelect').value = chartType;
+  document.getElementById('fsChartTfSelect').value = chartTimeframe;
   document.getElementById('fsBg').classList.remove('hidden');
   renderFullscreenChart();
 }
@@ -840,7 +860,11 @@ function renderFullscreenChart(){
     document.getElementById('chart-fs'), document.getElementById('overlay-fs'));
 }
 
-document.addEventListener('keydown', e=>{ if(e.key==='Escape'){ closeFullscreenChart(); closeOrderTicket(); } });
+document.addEventListener('keydown', e=>{
+  if(e.key!=='Escape') return;
+  if(!document.getElementById('otBg').classList.contains('hidden')) closeOrderTicket();
+  else closeFullscreenChart();
+});
 
 // ── Watchlist add/remove ─────────────────────────────────────────────────────
 async function addWatchlistTicker(){
@@ -933,12 +957,16 @@ async function loadBars(){
 
 function changeChartType(type){
   chartType = type;
+  document.getElementById('chartTypeSelect').value = type;
+  document.getElementById('fsChartTypeSelect').value = type;
   wlPrices.forEach(t=> renderZoneLadder(t.ticker, zonesData[t.ticker]||{}, t.price));
   renderFullscreenChart();
 }
 
 function changeTimeframe(tf){
   chartTimeframe = tf;
+  document.getElementById('chartTfSelect').value = tf;
+  document.getElementById('fsChartTfSelect').value = tf;
   loadBars();
 }
 
