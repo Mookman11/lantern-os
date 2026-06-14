@@ -441,6 +441,7 @@ async function getVideoMetadata(videoPath) {
     });
   });
 }
+
 module.exports = {
   analyzeVideoForHighlights,
   HighlightTimeline,
