@@ -343,10 +343,12 @@ server.listen(port, host, () => {
   // ── Kalshi Position Monitor (10s polling) + Convergence Trainer ──
   const { startMonitoring } = require("./lib/kalshi-position-monitor");
   const { trainModel } = require("./lib/kalshi-convergence-trainer");
+  const { startEnhancing } = require("./lib/kalshi-convergence-enhancer");
   startMonitoring();  // Start automated stop-loss monitoring
   trainModel().catch(e => console.error("[Server] Convergence training failed:", e.message));
+  startEnhancing();   // Start continuous convergence improvement loop
 
-  // ── Crypto CIO Live Trainer (15-min market observer + paper-trade signal log) ──
+  // ── Crypto CIO Live Trader (15-min market observer + paper-trade signal log) ──
   // Must run continuously during market hours so resolved windows produce training data.
   // Gated by KALSHI_CRYPTO_OBSERVER env var (defaults ON when Kalshi creds are present).
   const enableCryptoObserver = process.env.KALSHI_CRYPTO_OBSERVER !== "false"
