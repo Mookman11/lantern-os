@@ -119,7 +119,9 @@ async function processAnalyzeJob(job, repoRoot, updateProgress) {
   // V10 scoring + variants — computed from the REAL analysis timeline. Every
   // value is traceable to selected segments; nothing mocked (this replaces the
   // old retention-engine variants whose metrics used Math.random()).
-  const timelineJSON = timeline.toJSON();
+  // Guard: analyzeVideoForHighlights may return either a HighlightTimeline
+  // instance (with .toJSON()) or a plain object — handle both.
+  const timelineJSON = typeof timeline.toJSON === "function" ? timeline.toJSON() : timeline;
   const gaming = (options || {}).gaming !== false;
   let scoreV10 = null;
   let variantsV10 = null;
@@ -238,15 +240,21 @@ async function processExportJob(job, repoRoot, updateProgress) {
     updateProgress(20, "Detecting safe zones (facecam/HUD)");
     try {
       const meta = await probeSource(fullPath);
-      const plan = await analyzeForCrop(fullPath, {
-        srcWidth: meta.width || undefined,
-        srcHeight: meta.height || undefined,
-      });
-      if (plan.status === "ok" && plan.cropPlan && plan.cropPlan.mode === "horizontal") {
-        cropRect = plan.cropPlan.cropRect;
-        cropPlan = { ...plan.cropPlan, regions: plan.regions, framesSampled: plan.framesSampled };
+      // Guard: if dimensions are unavailable (probe failed), the crop rect normalization
+      // base would be wrong — skip detection and fall back to naive center crop.
+      if (!meta.width || !meta.height) {
+        cropPlan = { status: "unavailable", note: "fell back to center crop", reason: "source dimensions unknown (probe failed)" };
       } else {
-        cropPlan = { status: plan.status, note: "fell back to center crop", reason: plan.reason };
+        const plan = await analyzeForCrop(fullPath, {
+          srcWidth: meta.width,
+          srcHeight: meta.height,
+        });
+        if (plan.status === "ok" && plan.cropPlan && plan.cropPlan.mode === "horizontal") {
+          cropRect = plan.cropPlan.cropRect;
+          cropPlan = { ...plan.cropPlan, regions: plan.regions, framesSampled: plan.framesSampled };
+        } else {
+          cropPlan = { status: plan.status, note: "fell back to center crop", reason: plan.reason };
+        }
       }
     } catch (e) {
       console.error("[job-worker] safe-zone crop plan failed:", e.message);
@@ -318,7 +326,10 @@ async function processExportJob(job, repoRoot, updateProgress) {
   // ── Quality gate (Phase 7): validate with real ffprobe before completing ──
   // If the export does not meet short-form spec, block it: delete the invalid
   // file and fail the job with the concrete reasons. Honors exportValidator flag.
-  const validation = await ci.validateExport(exportFile, job.input.validation || {});
+  const rawValidation = await ci.validateExport(exportFile, job.input.validation || {});
+  const validation = (rawValidation && typeof rawValidation === "object")
+    ? rawValidation
+    : { ok: false, skipped: false, blockedReasons: ["validateExport returned invalid shape"] };
 
   // Persist verdict + encode info (fit mode, crop plan) back to the entry so the
   // dashboard can surface it. Recorded for both pass and block.

@@ -146,9 +146,12 @@ async function reencodeToShortForm(inputPath, outputPath, options = {}) {
   if (start !== null) args.push("-ss", String(start));
   args.push("-i", inputPath);
 
-  // If the source has no audio, synthesize a silent track so the output has
-  // an audio stream (the validator requires one). Sized to the encode length.
-  const needSilentAudio = !meta.hasAudio;
+  // Only synthesize a silent track when the probe succeeded and confirmed the
+  // source has no audio. If the probe failed (duration===null), meta.hasAudio
+  // defaults to false but the source may still have audio — in that case skip
+  // synthesis and let the optional "-map 0:a:0?" mapping handle it safely.
+  const probeSucceeded = meta.duration !== null;
+  const needSilentAudio = probeSucceeded && !meta.hasAudio;
   if (needSilentAudio) {
     args.push("-f", "lavfi", "-i",
       `anullsrc=channel_layout=stereo:sample_rate=${cfg.sampleRate}`);

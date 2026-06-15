@@ -155,11 +155,16 @@ module.exports = async function creatorEntriesRoutes(req, res, url, deps) {
       // Runs real ffprobe. Blocks an out-of-spec export unless body.force is set.
       // Result is always persisted so the verdict is traceable in the dashboard.
       const renderFullPath = pathModule.join(repoRoot, body.filePath);
-      const validation = await ci.validateExport(renderFullPath, {
+      const rawValidation = await ci.validateExport(renderFullPath, {
         ...(body.validation || {}),
         captionsExpected: body.captionsExpected === true,
         captionBurnConfirmed: body.captionBurnConfirmed === true,
       });
+      // Normalize: ci.validateExport must always return {ok, skipped, ...}.
+      // Guard against unexpected shapes so the dashboard never receives undefined.
+      const validation = (rawValidation && typeof rawValidation === "object")
+        ? rawValidation
+        : { ok: false, skipped: false, blockedReasons: ["validateExport returned invalid shape"] };
 
       try {
         entryStore.saveValidation(repoRoot, entryId, renderType, validation);
