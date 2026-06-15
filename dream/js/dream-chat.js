@@ -9,6 +9,33 @@
   let directModeEnabled = false;
   let keystoneMcpEnabled = false; // legacy compat
   let originalAgents = [];
+  // ── ROUTE INTENT DETECTION ────────────────────────────────────────────────
+  // Returns a route intent string used to select the backend agent/surface.
+  // RP is opt-in only — general chat, code work, and GitHub work use the router.
+  const RP_OPT_IN_RE = /open.*three[-_]?doors|roleplay|role[-\s]?play|continue the scene|\bas (lantern|blinkbug|waterfall|xenon|founder)\b/i;
+  const CODING_TRIGGERS = [
+    "make changes", "make a change", "change the code", "edit the code",
+    "modify the code", "integrate this", "wire this", "wire into",
+    "add to repo", "add to the repo", "commit to", "push to",
+    "prep a pr", "prepare a pr", "create a pr", "open a pr", "fix the pr",
+    "fix latest pr", "scan the pr", "scan latest pr", "review the pr",
+    "merge the pr", "handoff to claude code", "handoff to claude",
+    "make a handoff", "claude code", "use claude code", "coding agent",
+    "code change", "code changes", "repo change", "repo changes",
+    "git change", "github change", "bug fix", "fix the bug", "fix bug",
+    "fix this bug", "refactor", "improve the code", "add tests",
+    "add a test", "fix the test", "implement", "implementation",
+    "deploy", "deployment", "pull request", "open pr", "create pr",
+  ];
+
+  function detectRouteIntent(msg) {
+    const lower = (msg || "").toLowerCase().trim();
+    if (RP_OPT_IN_RE.test(msg)) return "dream_chat";
+    if (CODING_TRIGGERS.some(t => lower.includes(t))) return "coding_change";
+    if (/\b(debug|error|broken|crash|not working|not responding)\b/i.test(lower)) return "technical_debug";
+    return "general";
+  }
+
   // Agent is contextual — Lantern is default, others triggered by name in message
   function detectAgent(msg) {
     const lower = (msg || "").toLowerCase();
@@ -60,34 +87,47 @@
       const elapsed = Math.round((Date.now() - this.sessionStart) / 1000);
       const mins = Math.floor(elapsed / 60).toString().padStart(2, "0");
       const secs = (elapsed % 60).toString().padStart(2, "0");
-      document.getElementById("dbg-session").textContent = `${mins}:${secs}`;
-      document.getElementById("dbg-messages").textContent = this.messagesSent;
-      document.getElementById("dbg-tokens").textContent = this.tokensReceived;
+      const sessionEl = document.getElementById("dbg-session");
+      if (sessionEl) sessionEl.textContent = `${mins}:${secs}`;
+      const msgEl = document.getElementById("dbg-messages");
+      if (msgEl) msgEl.textContent = this.messagesSent;
+      const tokenEl = document.getElementById("dbg-tokens");
+      if (tokenEl) tokenEl.textContent = this.tokensReceived;
       const errEl = document.getElementById("dbg-errors");
-      errEl.textContent = this.errors;
-      errEl.className = "debug-val " + (this.errors > 0 ? "err" : "ok");
+      if (errEl) {
+        errEl.textContent = this.errors;
+        errEl.className = "debug-val " + (this.errors > 0 ? "err" : "ok");
+      }
       const fbEl = document.getElementById("dbg-fallbacks");
-      fbEl.textContent = this.fallbacks;
-      fbEl.className = "debug-val " + (this.fallbacks > 0 ? "warn" : "ok");
+      if (fbEl) {
+        fbEl.textContent = this.fallbacks;
+        fbEl.className = "debug-val " + (this.fallbacks > 0 ? "warn" : "ok");
+      }
       const avg = this.latencies.length > 0
         ? Math.round(this.latencies.reduce((a, b) => a + b, 0) / this.latencies.length) + " ms"
         : "—";
-      document.getElementById("dbg-latency").textContent = avg;
-      document.getElementById("dbg-provider").textContent = this.lastProvider || "—";
-      document.getElementById("dbg-agent").textContent = this.lastAgent || "—";
+      const latEl = document.getElementById("dbg-latency");
+      if (latEl) latEl.textContent = avg;
+      const provEl = document.getElementById("dbg-provider");
+      if (provEl) provEl.textContent = this.lastProvider || "—";
+      const agentEl = document.getElementById("dbg-agent");
+      if (agentEl) agentEl.textContent = this.lastAgent || "—";
     },
   };
   setInterval(() => analytics.render(), 1000);
   function toggleDebug() {
-    document.getElementById("debug-panel").classList.toggle("open");
+    const panel = document.getElementById("debug-panel");
+    if (panel) panel.classList.toggle("open");
   }
 
   function toggleKeystoneMcp() {
     directModeEnabled = !directModeEnabled;
     keystoneMcpEnabled = directModeEnabled; // legacy compat
-    mcpToggle.classList.toggle("active", directModeEnabled);
-    document.querySelector(".app").classList.toggle("mcp-mode", directModeEnabled);
-    document.querySelector(".input-area").classList.toggle("mcp-mode", directModeEnabled);
+    if (mcpToggle) mcpToggle.classList.toggle("active", directModeEnabled);
+    const appEl = document.querySelector(".app");
+    if (appEl) appEl.classList.toggle("mcp-mode", directModeEnabled);
+    const inputArea = document.querySelector(".input-area");
+    if (inputArea) inputArea.classList.toggle("mcp-mode", directModeEnabled);
   }
   document.addEventListener("keydown", (e) => {
     if (e.key === "d" && !e.ctrlKey && !e.metaKey && !e.altKey && e.target.tagName !== "TEXTAREA" && e.target.tagName !== "INPUT") {
@@ -130,9 +170,8 @@
         const data = await r.json();
         agents = data.agents || [];
         originalAgents = agents;
-        originalAgents = agents;
-        statusDot.className = "dot online";
-        statusLabel.textContent = "online";
+        if (statusDot) statusDot.className = "dot online";
+        if (statusLabel) statusLabel.textContent = "online";
         TELEMETRY.log("agents", `Loaded ${agents.length} agents`);
         return;
       }
@@ -140,8 +179,8 @@
     } catch (err) {
       TELEMETRY.error("agents", `Failed to load agents: ${err.message}`, { serverBase });
     }
-    statusDot.className = "dot";
-    statusLabel.textContent = "offline";
+    if (statusDot) statusDot.className = "dot";
+    if (statusLabel) statusLabel.textContent = "offline";
   }
   loadAgents();
 
@@ -225,42 +264,61 @@
         });
       return;
     }
-    // !convergence runs the Lantern convergence loop + version check + auto-update
-    if (text === "!convergence") {
+    // !convergence / !convergance — loop + agent status + inspect + version
+    if (/^!converg(?:ence|ance)$/i.test(text)) {
       inputEl.value = "";
-      triggerAutoupdate("Auto-update");
       const sysRow = document.createElement("div");
       sysRow.className = "msg-row agent";
-      sysRow.innerHTML = `<div class="msg-label">System</div><div class="bubble">Running convergence loop…</div>`;
+      sysRow.innerHTML = `<div class="msg-label">Keystone</div><div class="bubble" style="font-size:13px">Running convergence loop…</div>`;
       messagesEl.appendChild(sysRow);
       scrollToBottom();
 
-      const runLoop = fetch(`${serverBase}/api/actions/run-loop`, { method: "POST" });
+      const runLoop      = fetch(`${serverBase}/api/actions/run-loop`, { method: "POST" });
       const fetchVersion = fetch(`${serverBase}/api/version`).then(r => r.ok ? r.json() : null).catch(() => null);
+      const fetchAgents  = fetch(`${serverBase}/api/dream/status/agents`).then(r => r.ok ? r.json() : null).catch(() => null);
+      const fetchInspect = fetch(`${serverBase}/api/actions/inspect`).then(r => r.ok ? r.json() : null).catch(() => null);
 
-      Promise.all([runLoop, fetchVersion])
-        .then(async ([loopR, versionD]) => {
+      Promise.all([runLoop, fetchVersion, fetchAgents, fetchInspect])
+        .then(async ([loopR, versionD, agentD, inspectD]) => {
           const d = await loopR.json();
           const rawOut = d.stdout || "";
-          const rawErr = d.stderr || "";
-          const tag = versionD?.version?.semver || versionD?.version?.tag || "unknown";
+          const tag    = versionD?.version?.semver || versionD?.version?.tag || "–";
           const commit = versionD?.version?.commit ? versionD.version.commit.slice(0, 7) : "?";
 
-          // Extract JSON from stdout (convergence loop prints it at the end)
-          let promo = "";
+          // Parse convergence score + promotion from loop JSON output
+          let score = null, promo = null;
           try {
-            const jsonMatch = rawOut.match(/\{[\s\S]*"promotion_ready"[\s\S]*\}/);
-            if (jsonMatch) {
-              const loopJson = JSON.parse(jsonMatch[0]);
-              promo = loopJson.promotion_ready ? "✓ promotion_ready" : "✗ not ready";
-            }
+            const m = rawOut.match(/\{[\s\S]*"promotion_ready"[\s\S]*?\}/);
+            if (m) { const j = JSON.parse(m[0]); score = j.convergence_score; promo = j.promotion_ready; }
           } catch {}
 
-          const out = rawOut.slice(0, 700);
-          const err = rawErr.slice(0, 300);
+          const scoreStr = score != null ? `score ${(score * 100).toFixed(0)}%` : "";
+          const promoStr = promo === true ? "✓ promotion_ready" : promo === false ? "✗ not ready" : "";
+          const header = `<b>Convergence</b> ${loopR.ok ? "✓" : "✗"} · <code>${tag}</code> <code>${commit}</code> ${scoreStr} ${promoStr}`.trim();
 
-          sysRow.querySelector(".bubble").innerHTML =
-            `<b>Convergence loop</b> ${loopR.ok ? "✓" : "✗"} <code>${tag}</code> <code>${commit}</code> ${promo}<pre style="margin-top:6px;white-space:pre-wrap;font-size:12px;opacity:0.85;">${escapeHtml(out)}${err ? "\n---stderr---\n" + escapeHtml(err) : ""}</pre>`;
+          // Agent fleet block
+          let agentBlock = "";
+          if (agentD?.text) {
+            agentBlock = `<div style="margin-top:10px;padding:8px;background:var(--surface2);border-radius:6px;font-size:12px"><b>Agent Fleet</b><pre style="margin:4px 0 0;white-space:pre-wrap;color:var(--accent);opacity:0.9;">${escapeHtml(agentD.text)}</pre></div>`;
+          } else if (agentD?.queue) {
+            const q = agentD.queue;
+            agentBlock = `<div style="margin-top:10px;padding:8px;background:var(--surface2);border-radius:6px;font-size:12px"><b>Queue</b> — ${q.pending} pending · ${q.working} working · ${q.completed} done</div>`;
+          }
+
+          // CSF-agent top issue from inspect
+          let csfBlock = "";
+          const csf = inspectD?.csf_agent;
+          if (csf) {
+            if (csf.pending_specs > 0) {
+              csfBlock = `<div style="margin-top:8px;padding:8px;background:rgba(161,139,250,0.08);border-left:2px solid var(--accent);font-size:12px"><b>CSF Agent</b> · ${csf.pending_specs} spec${csf.pending_specs > 1 ? "s" : ""} awaiting review<br><span style="opacity:0.7">${(csf.specs || []).map(s => escapeHtml(s)).join(", ")}</span></div>`;
+            } else if (csf.top_issue) {
+              const t = csf.top_issue;
+              csfBlock = `<div style="margin-top:8px;padding:8px;background:rgba(6,182,212,0.06);border-left:2px solid var(--accent);font-size:12px"><b>Top Issue</b> · #${t.number} <a href="https://github.com/alex-place/lantern-os/issues/${t.number}" target="_blank" style="color:var(--accent)">${escapeHtml(t.title)}</a><br><span style="opacity:0.6">score ${(t.score * 100).toFixed(0)}% · run loop.py --once to generate spec</span></div>`;
+            }
+          }
+
+          const bubble = sysRow.querySelector(".bubble");
+          bubble.innerHTML = header + agentBlock + csfBlock;
           scrollToBottom();
         })
         .catch((e) => {
@@ -288,6 +346,27 @@
       analytics.messagesSent++;
       analytics.record("send", "Kingdome of Hearts game started");
       startThreeDoors();
+      return;
+    }
+
+    // !convergance log an issue <title> — POST to non-stream handler
+    if (/^!converg(?:ence|ance)\s+log\s+an?\s+issue\s+/i.test(text)) {
+      if (emptyState) emptyState.style.display = "none";
+      appendUserBubble(text);
+      inputEl.value = "";
+      const sysRow = document.createElement("div");
+      sysRow.className = "msg-row agent";
+      sysRow.innerHTML = `<div class="msg-label">Keystone</div><div class="bubble">Logging issue…</div>`;
+      messagesEl.appendChild(sysRow);
+      scrollToBottom();
+      fetch(`${serverBase}/api/dream/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text }),
+      })
+        .then(r => r.json())
+        .then(d => { sysRow.querySelector(".bubble").textContent = d.reply || "Done."; scrollToBottom(); })
+        .catch(e => { sysRow.querySelector(".bubble").textContent = `Failed: ${e.message}`; scrollToBottom(); });
       return;
     }
 
@@ -326,7 +405,7 @@
   }
 
   // ── Stream agent response ───────────────────────────────────────────────────
-  function streamAgentResponse(message) {
+  async function streamAgentResponse(message) {
     stopSpeaking();
     isStreaming = true;
     sendBtn.disabled = true;
@@ -356,14 +435,18 @@
     let fullText = "";
     let hasTokens = false;
     const provider = providerSelect.value;
-    const agent = directModeEnabled ? "" : detectAgent(message);
     // POST with history for multi-turn context; history excludes current message (already appended)
     const historyToSend = conversationHistory.slice(0, -1).slice(-6); // last 6 turns before this message
 
     fetch(`${serverBase}/api/dream/chat/stream`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, provider: provider || undefined, agent: agent || undefined, history: historyToSend, mcp: directModeEnabled }),
+      body: JSON.stringify({
+        message,
+        provider: provider || undefined,
+        history: historyToSend,
+        mcp: directModeEnabled,
+      }),
     })
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -375,6 +458,8 @@
         let buf = "";
 
         let streamFinished = false;
+        let routeInfo = null;
+        let receiptInfo = null;
         function processLines(lines) {
           for (const line of lines) {
             if (!line.startsWith("data:")) continue;
@@ -382,6 +467,79 @@
             if (!raw) continue;
             try {
               const evt = JSON.parse(raw);
+              if (evt.type === "route") {
+                routeInfo = evt;
+                // Show routing card with info from actual server-side routing decision
+                if (!document.querySelector(".route-card")) {
+                  const rc = document.createElement("div");
+                  rc.className = "route-card";
+                  rc.textContent = evt.label || `${evt.agentName} · ${evt.surface}`;
+                  bubble.insertBefore(rc, cursor);
+                }
+              }
+              if (evt.type === "receipt") {
+                receiptInfo = evt;
+              }
+              if (evt.type === "image" && evt.url) {
+                // Display image in the message bubble
+                cursor.remove();
+                let imgContainer = bubble.querySelector(".bubble-images");
+                if (!imgContainer) {
+                  imgContainer = document.createElement("div");
+                  imgContainer.className = "bubble-images";
+                  bubble.appendChild(imgContainer);
+                }
+                const img = document.createElement("img");
+                img.src = evt.url;
+                img.alt = evt.alt || "Response image";
+                img.className = "bubble-image";
+                img.style.maxWidth = "100%";
+                img.style.height = "auto";
+                img.style.borderRadius = "6px";
+                img.style.marginTop = "8px";
+                img.style.cursor = "pointer";
+                img.onclick = () => {
+                  // Open image in modal on click
+                  const modal = document.createElement("div");
+                  modal.className = "image-modal-overlay";
+                  modal.style.position = "fixed";
+                  modal.style.top = "0";
+                  modal.style.left = "0";
+                  modal.style.width = "100%";
+                  modal.style.height = "100%";
+                  modal.style.background = "rgba(0,0,0,0.9)";
+                  modal.style.display = "flex";
+                  modal.style.justifyContent = "center";
+                  modal.style.alignItems = "center";
+                  modal.style.zIndex = "10000";
+                  const closeBtn = document.createElement("button");
+                  closeBtn.textContent = "✕";
+                  closeBtn.style.position = "absolute";
+                  closeBtn.style.top = "20px";
+                  closeBtn.style.right = "20px";
+                  closeBtn.style.background = "rgba(255,255,255,0.2)";
+                  closeBtn.style.border = "1px solid white";
+                  closeBtn.style.color = "white";
+                  closeBtn.style.fontSize = "24px";
+                  closeBtn.style.cursor = "pointer";
+                  closeBtn.style.padding = "10px 16px";
+                  closeBtn.style.borderRadius = "4px";
+                  closeBtn.onclick = () => modal.remove();
+                  const modalImg = document.createElement("img");
+                  modalImg.src = evt.url;
+                  modalImg.alt = evt.alt || "Expanded image";
+                  modalImg.style.maxWidth = "90%";
+                  modalImg.style.maxHeight = "90%";
+                  modalImg.style.borderRadius = "8px";
+                  modal.appendChild(closeBtn);
+                  modal.appendChild(modalImg);
+                  modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+                  document.body.appendChild(modal);
+                };
+                imgContainer.appendChild(img);
+                bubble.appendChild(cursor);
+                scrollToBottom();
+              }
               if (evt.type === "token" && evt.text) {
                 if (!hasTokens) { hasTokens = true; setThinking(false); }
                 fullText += evt.text;
@@ -391,7 +549,14 @@
                 cursor.remove();
                 // Strip [DOORS:...] tag during streaming; chips rendered on done
                 const visibleText = fullText.replace(/\[DOORS:[^\]]*\]?/i, "").replace(/\n{3,}/g, "\n\n").trimEnd();
-                bubble.textContent = visibleText;
+                // Use a dedicated text node so the route-card child isn't wiped
+                let textNode = bubble.querySelector(".bubble-text");
+                if (!textNode) {
+                  textNode = document.createElement("span");
+                  textNode.className = "bubble-text";
+                  bubble.appendChild(textNode);
+                }
+                textNode.textContent = visibleText;
                 bubble.appendChild(cursor);
                 scrollToBottom();
               }
@@ -414,7 +579,7 @@
                     suggestions = doorsMatch[1].split("|").map(s => s.trim().replace(/^[ABC]\s+/i, "").trim()).filter(Boolean);
                   }
                 }
-                finishStream(row, bubble, cursor, displayText, evt.source, evt.error, suggestions, evt.image_prompt, evt.webSuggestions, evt.actions);
+                finishStream(row, bubble, cursor, displayText, evt.source, evt.error, suggestions, evt.image_prompt, evt.webSuggestions, evt.actions, evt.routeLabel);
               }
             } catch { /* skip malformed */ }
           }
@@ -447,7 +612,7 @@
       });
   }
 
-  function finishStream(row, bubble, cursor, text, source, error, suggestions, imagePrompt, webSuggestions, actions) {
+  function finishStream(row, bubble, cursor, text, source, error, suggestions, imagePrompt, webSuggestions, actions, routeLabel) {
     cursor.remove();
     if (!text && !error) {
       bubble.textContent = bubble.textContent || "…";
@@ -467,6 +632,14 @@
       const turn = conversationHistory.filter(m => m.role === "assistant").length;
       const latStr = latency ? `${(latency / 1000).toFixed(1)}s` : null;
       const isErr = source === "failed" || source === "unavailable" || source === "error" || !!error;
+      // Route signature — who/what the user is talking to
+      if (routeLabel) {
+        const sig = document.createElement("div");
+        sig.className = "msg-route-sig";
+        sig.setAttribute("aria-label", `Active route: ${routeLabel}`);
+        sig.textContent = routeLabel;
+        row.appendChild(sig);
+      }
       const footer = document.createElement("div");
       footer.className = `msg-footer${isErr ? " offline" : source ? ` ${source}` : ""}`;
       const parts = [];
@@ -879,6 +1052,12 @@
         if (cardEl) cardEl.classList.toggle("connected", configured);
         if (inputEl2 && configured) inputEl2.placeholder = "••••••••  (set — enter new key to replace)";
         if (!configured) anyMissing = true;
+        // Sync connector-section badge (#conn-status-{id}) to match — single source of truth
+        const connBadge = document.getElementById(`conn-status-${id}`);
+        if (connBadge) {
+          connBadge.textContent = configured ? "Connected" : "No key";
+          connBadge.className = `connector-card-status ${configured ? "ok" : "err"}`;
+        }
       }
       document.getElementById("settings-btn").classList.toggle("has-error", anyMissing && data._any === false);
       // Discord Bot status
@@ -970,8 +1149,16 @@
   function renderTagChips(category) {
     const container = document.getElementById(`chips-${category}`);
     container.innerHTML = logDreamTags[category].map(v =>
-      `<span class="tag-chip active" onclick="removeTagChip('${category}','${v}')">${escapeHtml(v)} ×</span>`
+      `<span class="tag-chip active" data-category="${escapeHtml(category)}" data-value="${escapeHtml(v)}">${escapeHtml(v)} ×</span>`
     ).join("");
+    // Event delegation for tag removal (XSS fix: use data attributes instead of inline onclick)
+    container.addEventListener('click', (e) => {
+      if (e.target.classList.contains('tag-chip')) {
+        const cat = e.target.dataset.category;
+        const val = e.target.dataset.value;
+        removeTagChip(cat, val);
+      }
+    });
   }
 
   function clearLogDream() {
@@ -1084,6 +1271,7 @@
   let ctfPaletteOpen = false;
 
   function buildCtfPalette() {
+    if (!ctfPopup) return;
     ctfPopup.innerHTML = "";
     for (const [word, sym] of Object.entries(CTF)) {
       const btn = document.createElement("button");
@@ -1103,46 +1291,50 @@
   }
 
   function toggleCtfPalette() {
+    if (!ctfPopup) return;
     ctfPaletteOpen = !ctfPaletteOpen;
     ctfPopup.classList.toggle("hidden", !ctfPaletteOpen);
     if (ctfPaletteOpen && !ctfPopup.children.length) buildCtfPalette();
-    document.getElementById("ctf-btn").style.color = ctfPaletteOpen ? "var(--accent)" : "";
+    const ctfBtn = document.getElementById("ctf-btn");
+    if (ctfBtn) ctfBtn.style.color = ctfPaletteOpen ? "var(--accent)" : "";
   }
 
   // Auto-suggest CTF as you type
-  inputEl.addEventListener("input", () => {
-    const words = inputEl.value.split(/\s+/);
-    const last = words[words.length - 1];
-    if (last.length >= 3 && !ctfPaletteOpen) {
-      const matches = ctfLookup(last);
-      if (matches.length > 0) {
-        ctfPopup.classList.remove("hidden");
-        ctfPopup.innerHTML = "";
-        matches.forEach(({ word, sym }) => {
-          const btn = document.createElement("button");
-          btn.className = "ctf-sym";
-          btn.textContent = `${sym} ${word}`;
-          btn.onclick = () => {
-            const ws = inputEl.value.split(/\s+/);
-            ws[ws.length - 1] = sym;
-            inputEl.value = ws.join(" ") + " ";
-            inputEl.selectionStart = inputEl.selectionEnd = inputEl.value.length;
-            ctfPopup.classList.add("hidden");
-            inputEl.focus();
-          };
-          ctfPopup.appendChild(btn);
-        });
-        return;
+  if (ctfPopup) {
+    inputEl.addEventListener("input", () => {
+      const words = inputEl.value.split(/\s+/);
+      const last = words[words.length - 1];
+      if (last.length >= 3 && !ctfPaletteOpen) {
+        const matches = ctfLookup(last);
+        if (matches.length > 0) {
+          ctfPopup.classList.remove("hidden");
+          ctfPopup.innerHTML = "";
+          matches.forEach(({ word, sym }) => {
+            const btn = document.createElement("button");
+            btn.className = "ctf-sym";
+            btn.textContent = `${sym} ${word}`;
+            btn.onclick = () => {
+              const ws = inputEl.value.split(/\s+/);
+              ws[ws.length - 1] = sym;
+              inputEl.value = ws.join(" ") + " ";
+              inputEl.selectionStart = inputEl.selectionEnd = inputEl.value.length;
+              ctfPopup.classList.add("hidden");
+              inputEl.focus();
+            };
+            ctfPopup.appendChild(btn);
+          });
+          return;
+        }
       }
-    }
-    if (!ctfPaletteOpen) ctfPopup.classList.add("hidden");
-  });
-
-  document.addEventListener("click", (e) => {
-    if (!ctfPopup.contains(e.target) && e.target.id !== "ctf-btn" && e.target !== inputEl) {
       if (!ctfPaletteOpen) ctfPopup.classList.add("hidden");
-    }
-  });
+    });
+
+    document.addEventListener("click", (e) => {
+      if (!ctfPopup.contains(e.target) && e.target.id !== "ctf-btn" && e.target !== inputEl) {
+        if (!ctfPaletteOpen) ctfPopup.classList.add("hidden");
+      }
+    });
+  }
 
   // ════════════════════════════════════════════════════════════════
   //  Voice — STT (Web Speech API) + TTS
