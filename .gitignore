@@ -36,6 +36,10 @@ data/training/**/*.jsonl
 data/training/**/*.json
 !data/training/**/README.md
 
+# ─── Viral Pattern Research corpus (per-user runtime data) ────────────────────
+data/viral-research/**/*.jsonl
+data/viral-research/MANIFEST.json
+
 # ─── Rust ─────────────────────────────────────────────────────────────────────
 src/csf_rust/target/
 

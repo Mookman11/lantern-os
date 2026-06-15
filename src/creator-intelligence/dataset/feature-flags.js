@@ -13,6 +13,10 @@ const FLAG_DEFS = {
   // Export validation is pure ffprobe measurement and safe to run — on by default.
   exportValidator: { env: "LANTERN_CI_EXPORT_VALIDATOR", default: true },
   researchReport: { env: "LANTERN_CI_RESEARCH_REPORT", default: false },
+  // Viral Pattern Research Engine (corpus + fingerprint + reference matching).
+  // Per-clip fingerprinting is pure measurement; population claims still gate on
+  // real corpus rows. Off by default until the user opts in.
+  viralResearch: { env: "LANTERN_CI_VIRAL_RESEARCH", default: false },
 };
 
 function envTruthy(value) {

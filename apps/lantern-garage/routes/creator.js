@@ -4,6 +4,7 @@
 module.exports = async function creatorRoutes(req, res, url, deps) {
   const { sendJson, path: pathModule, repoRoot, jobQueue, collectRequestBody } = deps;
   const fs = require("fs");
+  const ci = require("../../../src/creator-intelligence");
 
   // =========================================================================
   // POST /api/creator/analyze
@@ -261,6 +262,80 @@ module.exports = async function creatorRoutes(req, res, url, deps) {
         progressMessage: j.progressMessage,
       })),
     });
+    return true;
+  }
+
+  // =========================================================================
+  // GET /api/creator/research/patterns
+  // =========================================================================
+  // Honest research view: corpus counts + mined editing/engagement patterns.
+  // Returns insufficient_data sections until enough real rows exist.
+
+  if (url.pathname === "/api/creator/research/patterns" && req.method === "GET") {
+    try {
+      sendJson(res, {
+        corpus: ci.research.corpus.counts(),
+        editingPatterns: ci.research.mineEditingPatterns(),
+        engagementPatterns: ci.research.mineEngagementPatterns(),
+        flagEnabled: ci.isEnabled("viralResearch"),
+      });
+    } catch (error) {
+      console.error("[creator] research patterns error:", error.message);
+      sendJson(res, { error: error.message }, 500);
+    }
+    return true;
+  }
+
+  // =========================================================================
+  // POST /api/creator/research/collect
+  // =========================================================================
+  // Collect PUBLIC reference metadata (views/duration/title) for high-view
+  // Shorts via the YouTube Data API. Metadata only — no video is downloaded or
+  // pixel-analyzed. Needs YOUTUBE_API_KEY + viralResearch flag; otherwise
+  // returns a clear insufficient_data result.
+
+  if (url.pathname === "/api/creator/research/collect" && req.method === "POST") {
+    try {
+      const raw = await collectRequestBody(req);
+      const body = JSON.parse(raw || "{}");
+      if (!body.query) {
+        sendJson(res, { error: "query required (e.g. 'fortnite clutch')" }, 400);
+        return true;
+      }
+      const result = await ci.research.collectYouTube({
+        query: body.query,
+        minViews: body.minViews,
+        maxResults: body.maxResults,
+        category: body.category,
+      });
+      sendJson(res, result);
+    } catch (error) {
+      console.error("[creator] research collect error:", error.message);
+      sendJson(res, { error: error.message }, 500);
+    }
+    return true;
+  }
+
+  // =========================================================================
+  // POST /api/creator/research/import
+  // =========================================================================
+  // Manually record a public reference's metadata (TikTok/Reels have no
+  // sanctioned bulk API). Editing features stay null.
+
+  if (url.pathname === "/api/creator/research/import" && req.method === "POST") {
+    try {
+      const raw = await collectRequestBody(req);
+      const body = JSON.parse(raw || "{}");
+      if (!body.platform || !body.title) {
+        sendJson(res, { error: "platform and title required" }, 400);
+        return true;
+      }
+      const result = ci.research.importMetadataRow(body);
+      sendJson(res, result);
+    } catch (error) {
+      console.error("[creator] research import error:", error.message);
+      sendJson(res, { error: error.message }, 500);
+    }
     return true;
   }
 
