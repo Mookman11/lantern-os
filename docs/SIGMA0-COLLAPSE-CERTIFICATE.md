@@ -18,7 +18,7 @@ but not present in code). Open gaps are tracked as GitHub issues and cross-linke
 here so status cannot silently drift:
 - [#504] — §6 demo driver scripts (`router_sigma0_encoder.py`, `router_reservoir_G.py`) are **MEASURED** (committed; run logs in `data/sigma0/`). *Closed.*
 - [#505] — non-normal-Jacobian handling for Theorem 1 (the conditional gap in §1).
-- [#506] — surprise↔Σ₀ anti-collapse integration is **UNIMPLEMENTED**: `engine.forward_step` does not yet consume `m.surprise_monitor`, so `surprise_spook` is never emitted; `test_surprise_monitor_integration` is `xfail` until it lands.
+- [#506] — surprise↔Σ₀ anti-collapse integration is **PARTIAL**: `engine.forward_step` now consumes `m.surprise_monitor` and emits `surprise_spook` (boosting anti-collapse proximity), and `SurpriseMonitor` exposes `sigma0_proximity()` / `anti_collapse_signal()`. But the engine self-observes (`y = x`), so during collapse the innovation `→ 0` and the canary may not fire; `test_surprise_monitor_integration` stays `xfail` until the observation model triggers spooks under collapse.
 - [#507] — real-data grounding for the demonstration.
 
 [#504]: https://github.com/alex-place/lantern-os/issues/504
