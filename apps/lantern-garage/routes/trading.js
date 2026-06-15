@@ -1041,16 +1041,15 @@ module.exports = async function tradingRoutes(req, res, url, deps) {
               message: `Insufficient cash: need ${(orderCost / 100).toFixed(2)}, have ${(availableCash / 100).toFixed(2)}`,
               required_cents: orderCost,
               available_cents: availableCash
-            }, 402), true;  // 402 Payment Required
+            }, 402), true;
           }
         } catch (e) {
           console.warn('[trading] Cash check failed:', e.message);
-          // Continue with order; let Kalski API handle validation
         }
 
         const result = await kalshi.placeOrder(o);
-        const status = (result.error || result.errorMessage) ? 400 : (result.success === false ? 400 : 201);
-        return sendJson(res, result, status), true;
+        const httpStatus = result.mode === 'live' && result.status ? (result.status >= 200 && result.status < 300 ? 200 : result.status) : 200;
+        return sendJson(res, result, httpStatus), true;
       }
       // POST — cancel order  { orderId }
       if (url.pathname === '/api/trading/kalshi/order/cancel' && req.method === 'POST') {
@@ -1527,13 +1526,16 @@ module.exports = async function tradingRoutes(req, res, url, deps) {
     try {
       const collector = deps.kalshiCollector;
       const latest = collector ? collector.getLatest() : null;
+      const collectorStatus = collector?.getStatus?.() || null;
       sendJson(res, {
         running: !!collector,
+        backoff: collectorStatus?.backoff || false,
+        resumeAt: collectorStatus?.resumeAt || null,
         lastSnapshot: latest ? {
           generatedAt: latest.generatedAt,
           marketCount: latest.markets?.length || 0,
           exitCount: latest.exitCount || 0,
-          markets: latest.markets?.slice(0, 5), // First 5 for preview
+          markets: latest.markets?.slice(0, 5),
         } : null,
       }, 200);
     } catch (error) {
