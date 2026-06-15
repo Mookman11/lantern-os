@@ -86,7 +86,7 @@ const _DEFAULT_PERSONAS = [
     id: "keystone",
     name: "Keystone",
     symbol: "technical guide, code expert, engineering support",
-    systemPrompt: `You are Keystone — a direct technical assistant grounded in GitHub issues, repository tasks, and real code execution.
+    systemPrompt: `You are Keystone — a direct technical assistant grounded in GitHub issues, repository tasks, real code execution, and external tools.
 
 ## Core Behavior: Repository Grounding
 
@@ -101,6 +101,20 @@ When you receive a request that references GitHub, an issue number, PR, or imple
 8. If you have code access, begin by inspecting relevant files and producing a patch plan.
 9. If you lack access, provide the grounded plan anyway.
 
+## Tool Access (Σ₀ Framework Integration)
+
+You have access to:
+- **Web Search**: Research external documentation, frameworks, best practices
+- **PowerShell/Bash**: Execute local commands, verify system state, run tests
+- **GitHub CLI (gh)**: Fetch issues, PRs, check status, create workflows
+- **MCP Tools**: Access file systems, execute complex operations
+
+Special context: The Σ₀ Collapse Certificate framework (docs/SIGMA0-QUANTUM-RELATIVITY-ANALYSIS.md) documents ungrounded self-referential systems. Use this when:
+- Debugging circular dependencies or infinite loops
+- Analyzing system convergence issues
+- Designing grounding mechanisms for autonomous agents
+- Explaining why certain unifications fail (apply to code architecture)
+
 ## Generic Helpfulness Rule
 
 When the user gives an underspecified but actionable request, do the most useful grounded thing available:
@@ -108,6 +122,8 @@ When the user gives an underspecified but actionable request, do the most useful
 - "what should I tackle first" → inspect open issues, prioritize, explain why
 - "fix this" → identify the failure from context, inspect evidence, propose a patch
 - "proceed" → continue the last concrete task, don't switch to persona mode
+- "research X" → use web search to gather current info, synthesize findings
+- "test Y" → use appropriate tool (PowerShell/Bash) to validate
 
 ## Making Real Code Changes
 
@@ -143,6 +159,39 @@ Be helpful, flexible, and best-effort. Ask a question only when genuinely blocke
     name: "Founder",
     symbol: "wish, protection, return, the lantern itself",
     systemPrompt: "You are the Founder — the one who lit the first lantern. You speak about dreams as wishes that need protection, as lights that must be carried home. You value honest, grounded feedback over optimism. You blend science, compression, Bayesian methods, and surreal symbolic expression. Engage with full presence — be willing to hold a contradiction, trace a pattern across multiple dreams, or sit with something unresolved. You carry every wish the dreamer has shared and speak to them as a whole person.",
+  },
+  {
+    id: "trader",
+    name: "Trader",
+    symbol: "market analysis, portfolio management, signal generation",
+    systemPrompt: `You are the Trader — an AI agent focused on quantitative market analysis, portfolio management, and signal generation. You monitor market zones, regime classification, and trading signals.
+
+## Core Capabilities
+
+You have access to:
+- **Market Zones**: /api/trading/zones, /api/trading/ai-trader/zones — support/resistance levels, market structure
+- **Trading Signals**: /api/trading/ai-trader/signals — AI-generated trading signals with confidence scores
+- **Portfolio Status**: /api/trading/ai-trader/portfolio, /api/trading/ai-trader/status — open positions, P&L, risk metrics
+- **Watchlist**: /api/trading/ai-trader/watchlist — monitored tickers and market data
+- **Price Feeds**: /api/trading/price-feed/watchlist — live prices, OHLCV bars
+
+## User Queries You Handle
+
+Respond naturally to market/trading questions:
+- "What's the current regime?" → Analyze market zones, classify market state
+- "Show my active zones" → Fetch zones data, summarize support/resistance
+- "What are today's signals?" → Fetch AI signals, rank by confidence
+- "Close BTCUSD" → Interpret as a close position command (acknowledge, don't execute)
+- "What's my P&L?" → Query portfolio status, show open position P&L
+- "Should I buy/sell?" → Analyze regime, signals, and risk; provide analysis-backed perspective
+
+## Tone
+
+Be direct, analytical, and data-driven. Use numerical precision when discussing prices, percentages, and metrics. Reference specific zones, regimes, and signal confidence levels. When interpreting trading commands, acknowledge the request and explain what data you'd need to execute safely.
+
+## Integration with Dream System
+
+Trading queries are valid dream/persona requests — they represent the financial aspect of the dreamer's waking life and portfolio. Blend quantitative analysis with reflective language when appropriate.`,
   },
   {
     id: "engineer",
@@ -196,16 +245,35 @@ function _getPersonas() {
 }
 
 function selectAgent(message) {
-  // KEYSTONE: Technical auditor — handles ALL chats
-  // No personas, no mystery, pure technical clarity
+  // Σ₀ Fix: Dust (message) flows through routing decision.
+  // Score all personas against message keywords; return highest.
   const personas = _getPersonas();
-  const keystone = personas.find(p => p.id === "keystone");
-  if (!keystone) {
-    console.error("[selectAgent] Keystone persona not found!");
-    return personas[0]; // Fallback to first available
+
+  const agentKeywords = {
+    lantern: ["dream", "safe", "home", "steady", "light", "memory", "remember", "warm", "calm", "feeling", "emotional"],
+    blinkbug: ["chaos", "glitch", "weird", "strange", "random", "creative", "wild", "unhinged", "glitch", "chaotic"],
+    keystone: ["github", "code", "issue", "pr", "fix", "bug", "technical", "engineering", "repo", "#", "implement"],
+    waterfall: ["cascade", "flow", "stream", "river", "water", "gentle", "reflection", "patient", "cascade"],
+    xenon: ["signal", "detect", "pattern", "convergence", "navigate", "explore", "spacecraft", "navigation"],
+    founder: ["vision", "goal", "plan", "strategic", "future", "wish", "protect", "lantern", "leadership"],
+    trader: ["market", "trade", "buy", "sell", "price", "p&l", "pnl", "portfolio", "zone", "signal", "regime", "ticker", "stock", "btc", "eth", "crypto", "close position", "watchlist", "active zones"]
+  };
+
+  const scores = {};
+  const lowerMsg = message.toLowerCase();
+
+  for (const persona of personas) {
+    const keywords = agentKeywords[persona.id] || [];
+    scores[persona.id] = keywords.reduce((sum, kw) => sum + (lowerMsg.includes(kw) ? 10 : 0), 1);
   }
-  console.log(`[selectAgent] KEYSTONE: "${message.slice(0, 80)}..."`);
-  return keystone;
+
+  // Find persona with highest score
+  const winner = personas.reduce((best, p) =>
+    (scores[p.id] > scores[best.id]) ? p : best
+  );
+
+  console.log(`[selectAgent] Scored message "${message.slice(0, 60)}..." → ${winner.id} (score: ${scores[winner.id]})`);
+  return winner;
 }
 
 function parseBangCommand(input) {
@@ -590,7 +658,55 @@ async function dreamChatReply(message, recentDreams, requestedAgent = "", reques
   // ── Keystone: Task-aware provider selection using performance leaderboard ──
   let primaryProviderHint = null;
   try {
-    const taskType = detectTaskType(text, { isTradingQuery: tradingContext.length > 0 });
+    let taskType = detectTaskType(text, { isTradingQuery: tradingContext.length > 0 });
+
+    // ── Router gate (opt-in via ROUTER_GATE=1) ────────────────────────────────
+    // Conversation-dynamics escalation: if this turn breaks genuinely new ground
+    // (high novelty, low echo/repeat), prefer the Claude-first "reasoning" chain.
+    // Σ₀ Fix: Gate decision has real authority. When gate.escalate=true, escalate.
+    // See lib/router-gate.js for the honest scope.
+    if (process.env.ROUTER_GATE === "1") {
+      try {
+        const { gateDecision } = require("./router-gate");
+        const priorTurns = (recentDreams || [])
+          .slice(0, 3)
+          .map((d) => ({ role: "user", text: String(d.text || "") }))
+          .reverse();
+        const gate = gateDecision([...priorTurns, { role: "user", text }]);
+        const keywordTaskType = taskType;
+
+        // Σ₀ Fix: Gate decision has real authority — escalate if gate says so
+        let applied = false;
+        if (gate.escalate) {
+          taskType = "reasoning";
+          applied = true;
+          console.log(`[router-gate] escalate -> reasoning (${gate.reason})`);
+        } else {
+          console.log(`[router-gate] no-escalate for ${taskType} (${gate.reason})`);
+        }
+
+        // Decision log — validate escalations against outcomes later.
+        // Non-fatal; never blocks the request.
+        try {
+          const { appendJsonlQueued } = require("./file-queue");
+          const logPath = require("path").resolve(__dirname, "..", "..", "..", "data", "router-gate-decisions.jsonl");
+          appendJsonlQueued(logPath, {
+            timestamp: new Date().toISOString(),
+            agent: agent.id,
+            escalate: gate.escalate,
+            applied,
+            keywordTaskType,
+            finalTaskType: taskType,
+            score: gate.score,
+            reason: gate.reason,
+            features: gate.features,
+          }).catch(() => {});
+        } catch { /* logging is best-effort */ }
+      } catch (ge) {
+        console.error("[router-gate] gate error (non-fatal):", ge.message);
+      }
+    }
+
     const { provider: recommendedProvider, reason: selectionReason } = await selectProvider(text, taskType, requestedProvider);
     primaryProviderHint = { provider: recommendedProvider, taskType, reason: selectionReason };
     console.log(`[provider-router] Selected ${recommendedProvider} for ${taskType}: ${selectionReason}`);

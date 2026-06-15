@@ -3,6 +3,7 @@
  * Maps model profiles to Ollama models and surface usage
  */
 
+// Model registry with configurations for all surfaces
 module.exports = {
   text: {
     keystone: {

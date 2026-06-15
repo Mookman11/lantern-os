@@ -12,6 +12,7 @@ const tradingStore = require('../lib/trading-store');
 const tradingNews = require('../lib/trading-news');
 const { recordOrder, recordSignal, queryRecentTradingRecords } = tradingMemory;
 const { TradingPriceFeed } = require('../lib/trader-price-feed');
+const { getStrategyFitness, logPerformance } = require('../lib/strategy-performance-logger');
 
 // Shared price feed instance (caches ticks for 1 min)
 let _priceFeed = null;
@@ -166,8 +167,8 @@ module.exports = async function tradingRoutes(req, res, url, deps) {
     }
     try {
       const scan = await traderAgent.scanMarket();
+      const signals = Array.isArray(scan.signals) ? scan.signals : [];
       if (!scan.error) {
-        const signals = Array.isArray(scan.signals) ? scan.signals : [];
         const logEntries = [
           {
             id: `scan_${scan.timestamp}_summary`,
@@ -189,7 +190,34 @@ module.exports = async function tradingRoutes(req, res, url, deps) {
           console.error('[Trading] /zones agent-log write failed:', e.message);
         });
       }
-      sendJson(res, { zones: scan.zones || {} }, 200);
+
+      // Reshape into the per-ticker shape trader-dashboard.html expects:
+      // { zones: [...], position, last_signal, confidence, direction, catalyst }
+      let positions = [];
+      try {
+        const posData = await traderAgent.getPositions();
+        positions = (posData && posData.positions) || [];
+      } catch (e) {
+        console.error('[Trading] /zones positions fetch failed:', e.message);
+      }
+      const reshaped = {};
+      const tickers = new Set([
+        ...Object.keys(scan.zones || {}),
+        ...signals.map((s) => s.symbol || s.ticker).filter(Boolean),
+      ]);
+      for (const ticker of tickers) {
+        const sig = signals.find((s) => (s.symbol || s.ticker) === ticker) || null;
+        const pos = positions.find((p) => p.symbol === ticker) || null;
+        reshaped[ticker] = {
+          zones: scan.zones && scan.zones[ticker] ? [scan.zones[ticker]] : [],
+          position: pos ? { entry: pos.avg_entry_price, current: pos.current_price, qty: pos.qty, pnl_pct: pos.pnl_pct } : null,
+          last_signal: sig,
+          confidence: (sig && sig.confidence) || 0,
+          direction: (sig && sig.direction) || 'NEUTRAL',
+          catalyst: (sig && sig.catalyst) || '',
+        };
+      }
+      sendJson(res, { zones: reshaped }, 200);
     } catch (error) {
       console.error('[Trading] /zones error:', error.message);
       sendJson(res, { zones: {}, error: error.message }, 500);
@@ -209,6 +237,26 @@ module.exports = async function tradingRoutes(req, res, url, deps) {
     } catch (error) {
       console.error('[Trading] /watchlist-prices error:', error.message);
       sendJson(res, [], 500);
+    }
+    return true;
+  }
+
+  // GET /api/trading/bars-multi?timeframe=5m
+  // OHLCV bars for the whole watchlist in one subprocess call — used to
+  // draw the candlestick/line charts on the trader dashboard.
+  if (url.pathname === '/api/trading/bars-multi' && req.method === 'GET') {
+    if (!traderAgent) {
+      return sendJson(res, { bars: {} }, 503);
+    }
+    const ALLOWED_TIMEFRAMES = new Set(['1m', '5m', '15m', '1h', '4h', '1d']);
+    const timeframeParam = url.searchParams.get('timeframe') || '5m';
+    const timeframe = ALLOWED_TIMEFRAMES.has(timeframeParam) ? timeframeParam : '5m';
+    try {
+      const result = await traderAgent.getBarsMulti(traderAgent.watchlist, timeframe);
+      sendJson(res, result, 200);
+    } catch (error) {
+      console.error('[Trading] /bars-multi error:', error.message);
+      sendJson(res, { bars: {}, timeframe, error: error.message }, 500);
     }
     return true;
   }
@@ -347,6 +395,85 @@ module.exports = async function tradingRoutes(req, res, url, deps) {
     return true;
   }
 
+  // POST /api/trading/orders/place
+  // Place a manual paper order (buy/sell) via Alpaca, routed through the
+  // local TraderAgent → cli.py → Alpaca paper account.
+  if (url.pathname === '/api/trading/orders/place' && req.method === 'POST') {
+    if (!traderAgent) {
+      return sendJson(res, { status: 'error', error: 'TraderAgent not initialized' }, 503);
+    }
+    try {
+      const body = await collectRequestBody(req);
+      const payload = body ? JSON.parse(body) : {};
+      const { ticker, side, qty, type, limitPrice, timeInForce, stopLoss, takeProfit } = payload;
+      if (!ticker || !['buy', 'sell'].includes(String(side || '').toLowerCase()) || !qty || Number(qty) <= 0) {
+        return sendJson(res, { status: 'error', error: 'ticker, side (buy/sell), and positive qty are required' }, 400);
+      }
+      if (stopLoss != null && Number(stopLoss) <= 0) {
+        return sendJson(res, { status: 'error', error: 'stopLoss must be a positive number' }, 400);
+      }
+      if (takeProfit != null && Number(takeProfit) <= 0) {
+        return sendJson(res, { status: 'error', error: 'takeProfit must be a positive number' }, 400);
+      }
+      const result = await traderAgent.placeOrder({ ticker, side, qty, type, limitPrice, timeInForce, stopLoss, takeProfit });
+      if (result && result.status === 'placed') {
+        await tradingMemory.recordNewOrders([{
+          id: result.order_id,
+          symbol: result.ticker,
+          side: result.side,
+          qty: result.qty,
+          status: 'submitted',
+          order_type: result.type,
+        }]);
+        sendJson(res, result, 201);
+      } else {
+        sendJson(res, result || { status: 'error', error: 'Unknown error' }, 400);
+      }
+    } catch (error) {
+      sendJson(res, { status: 'error', error: error.message }, 500);
+    }
+    return true;
+  }
+
+  // GET /api/trading/watchlist
+  if (url.pathname === '/api/trading/watchlist' && req.method === 'GET') {
+    if (!traderAgent) {
+      return sendJson(res, { watchlist: [] }, 503);
+    }
+    sendJson(res, { watchlist: traderAgent.watchlist }, 200);
+    return true;
+  }
+
+  // POST /api/trading/watchlist
+  // Body: { ticker } — add a ticker to the persisted watchlist
+  if (url.pathname === '/api/trading/watchlist' && req.method === 'POST') {
+    if (!traderAgent) {
+      return sendJson(res, { watchlist: [], error: 'TraderAgent not initialized' }, 503);
+    }
+    try {
+      const body = await collectRequestBody(req);
+      const payload = body ? JSON.parse(body) : {};
+      const watchlist = traderAgent.addTicker(payload.ticker);
+      sendJson(res, { watchlist }, 200);
+    } catch (error) {
+      sendJson(res, { error: error.message }, 400);
+    }
+    return true;
+  }
+
+  // DELETE /api/trading/watchlist/:ticker — remove a ticker from the watchlist
+  if (req.method === 'DELETE') {
+    const watchlistMatch = url.pathname.match(/^\/api\/trading\/watchlist\/([A-Za-z]{1,10})$/);
+    if (watchlistMatch) {
+      if (!traderAgent) {
+        return sendJson(res, { watchlist: [], error: 'TraderAgent not initialized' }, 503);
+      }
+      const watchlist = traderAgent.removeTicker(watchlistMatch[1]);
+      sendJson(res, { watchlist }, 200);
+      return true;
+    }
+  }
+
   // POST /api/trading/agent-log
   // Body: a single agent-log entry, `{ logs: [...] }` / `{ agentLog: [...] }`
   // / `{ agent_log: [...] }`, or a bare array of entries. Entries without a
@@ -457,6 +584,674 @@ module.exports = async function tradingRoutes(req, res, url, deps) {
       sendJson(res, { error: 'Failed to fetch KALSHI events', details: error.message }, 503);
     }
     return true;
+  }
+
+  // GET /api/trading/kalshi/markets
+  // Returns the CIO collector's recorded Kalshi odds (read-only, from snapshots)
+  if (url.pathname === '/api/trading/kalshi/markets' && req.method === 'GET') {
+    try {
+      const stats = require('../lib/kalshi-stats').getKalshiStats();
+      sendJson(res, stats, 200);
+    } catch (error) {
+      sendJson(res, { error: 'Kalshi stats unavailable', details: error.message }, 503);
+    }
+    return true;
+  }
+
+  // ── Full Kalshi v2 API surface (for the on-dashboard terminal) ────────────
+  // Read endpoints are public; portfolio + orders are RSA-signed & gated.
+  if (url.pathname.startsWith('/api/trading/kalshi/') &&
+      url.pathname !== '/api/trading/kalshi/events' &&
+      url.pathname !== '/api/trading/kalshi/markets') {
+    const kalshi = require('../lib/kalshi-api');
+    const q = Object.fromEntries(url.searchParams.entries());
+    try {
+      // GET — connection & safety snapshot
+      if (url.pathname === '/api/trading/kalshi/connection' && req.method === 'GET') {
+        return sendJson(res, await kalshi.getConnection(), 200), true;
+      }
+      // GET — CIO suggestion deck (the "Tinder of trading" cards)
+      if (url.pathname === '/api/trading/kalshi/suggestions' && req.method === 'GET') {
+        const suggest = require('../lib/kalshi-suggest');
+        const limit = q.limit ? Number(q.limit) : 60;
+        const collector = deps.kalshiCollector || null;
+        return sendJson(res, await suggest.getSuggestions({ limit, collector }), 200), true;
+      }
+
+      // GET — Convergence-optimized games (ideal time window + conviction + momentum)
+      if (url.pathname === '/api/trading/kalshi/convergence-ranked' && req.method === 'GET') {
+        const suggest = require('../lib/kalshi-suggest');
+        const scorer = require('../lib/kalshi-convergence-scorer');
+        const limit = q.limit ? Number(q.limit) : 12;
+        const collector = deps.kalshiCollector || null;
+        const suggestions = await suggest.getSuggestions({ limit: 200, collector });
+        const ranked = scorer.rankByConvergence(suggestions.cards || [], limit);
+        return sendJson(res, {
+          count: ranked.length,
+          note: 'Games ranked by convergence fitness: ideal time window (1-6h) + high conviction + strong momentum',
+          cards: ranked
+        }, 200), true;
+      }
+
+      // GET — Crypto intraday markets (15m, 1h, daily predictions)
+      if (url.pathname === '/api/trading/kalshi/crypto-intraday' && req.method === 'GET') {
+        const cryptoSuggest = require('../lib/kalshi-crypto-suggester');
+        const limit = q.limit ? Number(q.limit) : 20;
+        const collector = deps.kalshiCollector || null;
+        return sendJson(res, await cryptoSuggest.getCryptoSuggestions({ limit, collector }), 200), true;
+      }
+
+      // GET — Win rate stats (Phase 1 profitability data)
+      if (url.pathname === '/api/trading/kalshi/winrate-stats' && req.method === 'GET') {
+        const { computeWinRate } = require('../lib/kalshi-winrate-tracker');
+        return sendJson(res, computeWinRate(), 200), true;
+      }
+
+      // POST — Start position monitor (automated stop-losses)
+      if (url.pathname === '/api/trading/kalshi/monitor/start' && req.method === 'POST') {
+        const { getMonitor } = require('../lib/kalshi-position-monitor');
+        getMonitor().start();
+        return sendJson(res, { status: 'monitoring started' }, 200), true;
+      }
+
+      // POST — Stop position monitor
+      if (url.pathname === '/api/trading/kalshi/monitor/stop' && req.method === 'POST') {
+        const { getMonitor } = require('../lib/kalshi-position-monitor');
+        getMonitor().stop();
+        return sendJson(res, { status: 'monitoring stopped' }, 200), true;
+      }
+
+      // GET — Get monitored positions
+      if (url.pathname === '/api/trading/kalshi/monitor/positions' && req.method === 'GET') {
+        const { getMonitor } = require('../lib/kalshi-position-monitor');
+        const monitor = getMonitor();
+        return sendJson(res, {
+          monitoring: monitor.monitoring,
+          positions: monitor.getMonitoredPositions(),
+          readyToClose: monitor.getReadyToClose(),
+          stats: monitor.getStats()
+        }, 200), true;
+      }
+
+      // POST — Train convergence model from trade logs
+      if (url.pathname === '/api/trading/kalshi/convergence/train' && req.method === 'POST') {
+        const { trainModel } = require('../lib/kalshi-convergence-trainer');
+        const result = await trainModel();
+        return sendJson(res, result, 200), true;
+      }
+
+      // GET — Get convergence model and stats
+      if (url.pathname === '/api/trading/kalshi/convergence/model' && req.method === 'GET') {
+        const { getTrainer } = require('../lib/kalshi-convergence-trainer');
+        const trainer = getTrainer();
+        return sendJson(res, {
+          model: trainer.getModel(),
+          summary: trainer.getSummary()
+        }, 200), true;
+      }
+
+      // GET — Get convergence accuracy for a ticker
+      if (url.pathname === '/api/trading/kalshi/convergence/accuracy' && req.method === 'GET') {
+        const ticker = q.ticker;
+        if (!ticker) return sendJson(res, { error: 'ticker required' }, 400), true;
+        const { getTrainer } = require('../lib/kalshi-convergence-trainer');
+        const trainer = getTrainer();
+        return sendJson(res, {
+          ticker,
+          accuracy: trainer.getAccuracy(ticker),
+          multiplier: trainer.getTypeMultiplier(trainer.getMarketType(ticker))
+        }, 200), true;
+      }
+
+      // POST — Start convergence enhancement loop (continuous self-improvement)
+      if (url.pathname === '/api/trading/kalshi/convergence/enhance/start' && req.method === 'POST') {
+        const { startEnhancing } = require('../lib/kalshi-convergence-enhancer');
+        startEnhancing();
+        return sendJson(res, { status: 'enhancement started' }, 200), true;
+      }
+
+      // POST — Stop convergence enhancement loop
+      if (url.pathname === '/api/trading/kalshi/convergence/enhance/stop' && req.method === 'POST') {
+        const { stopEnhancing } = require('../lib/kalshi-convergence-enhancer');
+        stopEnhancing();
+        return sendJson(res, { status: 'enhancement stopped' }, 200), true;
+      }
+
+      // GET — Get convergence enhancer status and predictions
+      if (url.pathname === '/api/trading/kalshi/convergence/enhance/status' && req.method === 'GET') {
+        const ticker = q.ticker;
+        const { getEnhancer } = require('../lib/kalshi-convergence-enhancer');
+        const enhancer = getEnhancer();
+        return sendJson(res, {
+          status: enhancer.getStatus(),
+          context: ticker ? enhancer.getContext(ticker) : null,
+          prediction: ticker ? enhancer.getPrediction(ticker) : null
+        }, 200), true;
+      }
+
+      // POST — Start LoRA fine-tuning analysis (proactive, continuous)
+      if (url.pathname === '/api/trading/kalshi/convergence/lora/start' && req.method === 'POST') {
+        const { startAnalyzing } = require('../lib/kalshi-convergence-lora');
+        startAnalyzing();
+        return sendJson(res, { status: 'LoRA analysis started' }, 200), true;
+      }
+
+      // POST — Stop LoRA analysis
+      if (url.pathname === '/api/trading/kalshi/convergence/lora/stop' && req.method === 'POST') {
+        const { stopAnalyzing } = require('../lib/kalshi-convergence-lora');
+        stopAnalyzing();
+        return sendJson(res, { status: 'LoRA analysis stopped' }, 200), true;
+      }
+
+      // GET — Get LoRA model status and training progress
+      if (url.pathname === '/api/trading/kalshi/convergence/lora/status' && req.method === 'GET') {
+        const { getLora } = require('../lib/kalshi-convergence-lora');
+        const lora = getLora();
+        return sendJson(res, {
+          model: lora.getStatus(),
+          training: lora.getTrainingSummary()
+        }, 200), true;
+      }
+
+      // GET — Dashboard: Complete progress report
+      if (url.pathname === '/api/trading/kalshi/dashboard/progress' && req.method === 'GET') {
+        const { getReport } = require('../lib/kalshi-progress-report');
+        const report = getReport().getReport();
+        return sendJson(res, report, 200), true;
+      }
+
+      // GET — Dashboard: Quick overview
+      if (url.pathname === '/api/trading/kalshi/dashboard/overview' && req.method === 'GET') {
+        const { getReport } = require('../lib/kalshi-progress-report');
+        const { getEnhancer } = require('../lib/kalshi-convergence-enhancer');
+        const { getLora } = require('../lib/kalshi-convergence-lora');
+
+        const report = getReport().getReport();
+        const overview = {
+          projectName: report.projectName,
+          phases: Object.keys(report.phases).length,
+          loops: Object.keys(report.trainingLoops).length,
+          enhancerStatus: getEnhancer().getStatus(),
+          loraStatus: getLora().getStatus(),
+          generatedAt: new Date().toISOString()
+        };
+        return sendJson(res, overview, 200), true;
+      }
+
+      // GET — Impossibility Engine deck: constraint-elimination over short-window markets
+      // Returns same card shape as crypto-intraday + { determined, stateLabel, knowledge, trace }
+      if (url.pathname === '/api/trading/kalshi/impossibility-deck' && req.method === 'GET') {
+        const { createKalshiEngine, engineResultToCard } = require('../lib/impossibility-engine');
+        const { isShortWindowMarket } = require('../lib/kalshi-crypto-suggester');
+        const limit = q.limit ? Number(q.limit) : 20;
+        const nowMs = Date.now();
+
+        // Fetch short-window markets
+        let markets = [];
+        const collector = deps.kalshiCollector;
+        if (collector) {
+          const latest = collector.getLatestMarkets?.();
+          if (latest && latest.length > 0) {
+            markets = latest.filter(m => isShortWindowMarket(m, nowMs));
+          }
+        }
+        if (markets.length === 0) {
+          const mk = await kalshi.getMarkets({ status: 'open', limit: 500 });
+          markets = (mk.data?.markets || []).filter(m => isShortWindowMarket(m, nowMs));
+        }
+
+        if (markets.length === 0) {
+          return sendJson(res, { count: 0, cards: [], note: 'No markets closing within 6 hours' }, 200), true;
+        }
+
+        const engine = createKalshiEngine();
+        const solved = engine.solveAll(markets);
+        const cards  = solved
+          .slice(0, limit)
+          .map(({ market, result }) => engineResultToCard(market, result));
+
+        return sendJson(res, {
+          count: cards.length,
+          generatedAt: new Date().toISOString(),
+          note: 'Impossibility Engine: constraint-elimination over short-window Kalshi markets',
+          determined: cards.filter(c => c.determined).length,
+          cards,
+        }, 200), true;
+      }
+
+      // GET — Decisive Deck: ONE action per market (buy or sell, not both)
+      // Consolidates all positions + suggestions into high-conviction trades only
+      // WITH regime detection + strategy fitness scoring (Phase C MVP)
+      if (url.pathname === '/api/trading/kalshi/decisive-deck' && req.method === 'GET') {
+        const suggest = require('../lib/kalshi-suggest');
+        const { createKalshiEngine, engineResultToCard } = require('../lib/impossibility-engine');
+        const { isShortWindowMarket } = require('../lib/kalshi-crypto-suggester');
+        const cryptoSuggest = require('../lib/kalshi-crypto-suggester');
+        const RegimeDetector = require('../lib/regime-detector');
+        const performanceLogger = require('../lib/strategy-performance-logger');
+        const strategyRegistry = require('../lib/strategy-registry');
+        const collector = deps.kalshiCollector || null;
+        const nowMs = Date.now();
+
+        try {
+          // Initialize regime detector
+          const regimeDetector = new RegimeDetector();
+
+          // Step 1: Get all suggestions in parallel
+          const [suggestions, ieCards, cryptoCards] = await Promise.all([
+            suggest.getSuggestions({ limit: 100, collector }),
+            (async () => {
+              let markets = [];
+              if (collector) {
+                const latest = collector.getLatestMarkets?.();
+                if (latest?.length > 0) markets = latest.filter(m => isShortWindowMarket(m, nowMs));
+              }
+              if (markets.length === 0) {
+                const mk = await kalshi.getMarkets({ status: 'open', limit: 500 });
+                markets = (mk.data?.markets || []).filter(m => isShortWindowMarket(m, nowMs));
+              }
+              if (markets.length === 0) return [];
+              const engine = createKalshiEngine();
+              const solved = engine.solveAll(markets);
+              return solved.slice(0, 20).map(({ market, result }) => engineResultToCard(market, result));
+            })(),
+            cryptoSuggest.getCryptoSuggestions({ limit: 15, collector }).catch(() => ({ cards: [] })),
+          ]);
+
+          // Step 2: Extract cards from suggestions (already includes exits + entries)
+          const existingCards = suggestions.cards || [];
+          const cryptoCardsList = cryptoCards.cards || [];
+          const allSignals = [...existingCards, ...ieCards, ...cryptoCardsList];
+
+          // Step 3: Detect regime + score strategies per market
+          const activeStrategies = strategyRegistry.getActiveStrategies();
+          const strategyIds = activeStrategies.map(s => s.strategy_id);
+
+          // Enrich cards with regime detection + strategy fitness
+          const enrichedCards = allSignals.map(card => {
+            // Detect regime for this market
+            const regime = regimeDetector.detect(card.market || {});
+
+            // Score available strategies for this regime
+            const bestStrategy = performanceLogger.getBestStrategyForRegime(regime, strategyIds);
+
+            return {
+              ...card,
+              regime,
+              best_strategy: bestStrategy.strategy_id,
+              strategy_fitness: bestStrategy.fitness,
+              strategy_score: bestStrategy.score,
+            };
+          });
+
+          // Step 4: Consolidate: one action per ticker (exits take priority)
+          const decisiveMap = new Map();
+
+          // Sort so exits come first, then by strategy fitness + conviction
+          enrichedCards.sort((a, b) => {
+            const aIsExit = a.kind === 'exit' ? 0 : 1;
+            const bIsExit = b.kind === 'exit' ? 0 : 1;
+            if (aIsExit !== bIsExit) return aIsExit - bIsExit;
+
+            // Tie-breaker: strategy fitness score
+            const aStrategyScore = a.strategy_score || 0;
+            const bStrategyScore = b.strategy_score || 0;
+            if (Math.abs(aStrategyScore - bStrategyScore) > 0.1) {
+              return bStrategyScore - aStrategyScore;
+            }
+
+            // Final tie-breaker: conviction
+            return (b.conviction || 0) - (a.conviction || 0);
+          });
+
+          // Take first action per ticker (exits first, then highest fitness strategy + conviction entry)
+          for (const card of enrichedCards) {
+            if (!decisiveMap.has(card.ticker)) {
+              // Only add entries if conviction > 70% OR strategy has positive recent fitness
+              const hasPositiveFitness = card.strategy_fitness?.pnl > 0;
+              if (card.kind === 'exit' || (card.conviction || 0) >= 70 || hasPositiveFitness) {
+                decisiveMap.set(card.ticker, card);
+              }
+            }
+          }
+
+          // Step 5: Rank by conviction × time-weight × strategy fitness
+          const allCards = Array.from(decisiveMap.values());
+          allCards.forEach(card => {
+            const timeWeight = (card.minsToClose ?? 60) < 60 ? 1.2 : (card.minsToClose ?? 60) < 240 ? 1.0 : 0.7;
+            const strategyWeight = Math.min(1.5, 1.0 + (card.strategy_fitness?.stability || 0.5) * 0.5);
+            card.decisionScore = (card.conviction || 0) * timeWeight * strategyWeight;
+          });
+          allCards.sort((a, b) => (b.decisionScore || 0) - (a.decisionScore || 0));
+
+          // Step 6: Return top 6 trades (focused, decisive deck)
+          const decisive = allCards.slice(0, 6);
+
+          return sendJson(res, {
+            count: decisive.length,
+            generatedAt: new Date().toISOString(),
+            note: 'Decisive Deck: ONE action per market (regime-aware strategy selection)',
+            regime_stats: {
+              regimes_detected: [...new Set(decisive.map(c => c.regime))],
+              strategies_active: strategyIds,
+            },
+            cards: decisive.map(c => ({
+              ...c,
+              // Expose regime + strategy info to human for validation
+              regime: c.regime,
+              best_strategy: c.best_strategy,
+              strategy_fitness: c.strategy_fitness,
+            })),
+          }, 200), true;
+        } catch (error) {
+          console.error('[Decisive Deck] error:', error.message);
+          return sendJson(res, { count: 0, cards: [], error: error.message }, 500), true;
+        }
+      }
+
+      // GET — Observer Engine frontier over current short-window markets
+      // Returns KnowabilityFrontier + TemporalBand + ConvergenceStateField snapshot
+      if (url.pathname === '/api/trading/kalshi/observer-frontier' && req.method === 'GET') {
+        const { createKalshiEngine } = require('../lib/impossibility-engine');
+        const { isShortWindowMarket } = require('../lib/kalshi-crypto-suggester');
+        const { buildKalshiObserver, ConvergenceStateField } = require('../lib/observer-engine');
+        const limit = q.limit ? Number(q.limit) : 50;
+
+        let markets = [];
+        const collector = deps.kalshiCollector;
+        if (collector) {
+          const latest = collector.getLatestMarkets?.();
+          if (latest && latest.length > 0) markets = latest.filter(m => isShortWindowMarket(m, Date.now()));
+        }
+        if (markets.length === 0) {
+          const mk = await kalshi.getMarkets({ status: 'open', limit: 500 });
+          markets = (mk.data?.markets || []).filter(m => isShortWindowMarket(m, Date.now()));
+        }
+
+        // Run IE first — results feed Observer Engine frontier classification
+        const engine = createKalshiEngine();
+        const ieResults = engine.solveAll(markets).map(({ result }) => result);
+
+        const observer = buildKalshiObserver(markets.slice(0, limit), ieResults);
+        const band = observer.emit_band();
+        const csf = new ConvergenceStateField([band]);
+
+        return sendJson(res, {
+          generatedAt: new Date().toISOString(),
+          marketCount: markets.length,
+          frontier: observer.frontier.toJSON(),
+          band: band.toJSON(),
+          csf: csf.toJSON(),
+          summary: {
+            known:        observer.frontier.known.size,
+            recallable:   observer.frontier.recallable.size,
+            observable:   observer.frontier.observable.size,
+            reachable:    observer.frontier.reachable.size,
+            inferable:    observer.frontier.inferable.size,
+            discoverable: observer.frontier.discoverable.size,
+          },
+        }, 200), true;
+      }
+
+      // GET — live market data (pass-through query: series_ticker, status, limit, event_ticker)
+      if (url.pathname === '/api/trading/kalshi/live-markets' && req.method === 'GET') {
+        const r = await kalshi.getMarkets(q);
+        return sendJson(res, r.data || { error: r.error }, r.status || 200), true;
+      }
+      if (url.pathname === '/api/trading/kalshi/events-list' && req.method === 'GET') {
+        const r = await kalshi.getEvents(q);
+        return sendJson(res, r.data || { error: r.error }, r.status || 200), true;
+      }
+      // GET — order book for one market  (?ticker=...&depth=...)
+      if (url.pathname === '/api/trading/kalshi/orderbook' && req.method === 'GET') {
+        const r = await kalshi.getOrderbook(q.ticker, q.depth ? Number(q.depth) : 10);
+        return sendJson(res, r.data || { error: r.error }, r.status || 200), true;
+      }
+      // GET — authenticated portfolio (balance / positions / orders / fills)
+      if (url.pathname === '/api/trading/kalshi/balance' && req.method === 'GET') {
+        const r = await kalshi.getBalance();
+        return sendJson(res, r.error ? { error: r.error } : r.data, r.status || 200), true;
+      }
+      if (url.pathname === '/api/trading/kalshi/positions' && req.method === 'GET') {
+        const r = await kalshi.getPositions(q);
+        return sendJson(res, r.error ? { error: r.error } : r.data, r.status || 200), true;
+      }
+      if (url.pathname === '/api/trading/kalshi/portfolio-orders' && req.method === 'GET') {
+        const r = await kalshi.getOrders(q);
+        return sendJson(res, r.error ? { error: r.error } : r.data, r.status || 200), true;
+      }
+      if (url.pathname === '/api/trading/kalshi/fills' && req.method === 'GET') {
+        const r = await kalshi.getFills(q);
+        return sendJson(res, r.error ? { error: r.error } : r.data, r.status || 200), true;
+      }
+      // POST — place order (dry-run / kill-switch gated inside placeOrder)
+      if (url.pathname === '/api/trading/kalshi/order' && req.method === 'POST') {
+        const body = await collectRequestBody(req);
+        const o = body ? JSON.parse(body) : {};
+        return sendJson(res, await kalshi.placeOrder(o), 200), true;
+      }
+      // POST — cancel order  { orderId }
+      if (url.pathname === '/api/trading/kalshi/order/cancel' && req.method === 'POST') {
+        const body = await collectRequestBody(req);
+        const { orderId } = body ? JSON.parse(body) : {};
+        return sendJson(res, await kalshi.cancelOrder(orderId), 200), true;
+      }
+
+      // ── Paper trading ledger (dry-run position tracking) ───────────────────
+      // POST — open a paper position (called after each dry-run "take")
+      if (url.pathname === '/api/trading/kalshi/paper-trade' && req.method === 'POST') {
+        const paperLedger = require('../lib/kalshi-paper-ledger');
+        const body = await collectRequestBody(req);
+        const o = body ? JSON.parse(body) : {};
+        return sendJson(res, paperLedger.openPosition(o), 201), true;
+      }
+      // GET — poll open paper positions with live P&L + auto-exit signals
+      if (url.pathname === '/api/trading/kalshi/paper-positions' && req.method === 'GET') {
+        const paperLedger = require('../lib/kalshi-paper-ledger');
+        const positions = await paperLedger.pollOpen();
+        return sendJson(res, { count: positions.length, positions }, 200), true;
+      }
+      // POST — close a paper position  { id, exitTag?, exitPriceCents?, pnlPct? }
+      if (url.pathname === '/api/trading/kalshi/paper-close' && req.method === 'POST') {
+        const paperLedger = require('../lib/kalshi-paper-ledger');
+        const body = await collectRequestBody(req);
+        const { id, exitTag, exitPriceCents, pnlPct } = body ? JSON.parse(body) : {};
+        if (!id) return sendJson(res, { error: 'id required' }, 400), true;
+
+        const result = paperLedger.closePosition(id, { exitTag, exitPriceCents, pnlPct });
+
+        // Σ₀ Phase A: Log trade performance metrics for strategy fitness aggregation
+        if (result && result.position) {
+          const pos = result.position;
+          try {
+            // Infer regime from exit tag
+            const regime = exitTag === 'STOP-LOSS' ? 'MEAN' : exitTag === 'TAKE-PROFIT' ? 'TREND' : 'PIVOT';
+            await logPerformance({
+              strategy_id: pos.ticker || pos.market_ticker || 'unknown',
+              regime,
+              pnl: pnlPct ?? pos.pnlPct ?? 0,
+              drawdown: pos.maxDrawdown ?? 0,
+              stability: pos.stability ?? 0.5,
+              position_id: id,
+              market: pos.ticker || pos.market_ticker || 'unknown',
+              is_live: false // paper trading
+            });
+          } catch (err) {
+            console.error(`[trading] Failed to log performance for position ${id}:`, err.message);
+          }
+        }
+
+        return sendJson(res, result, 200), true;
+      }
+      // GET /api/trading/kalshi/positions-deck?exitsOnly=true
+      // Open positions as swipe cards: entry price, current bid, P&L, exit tag.
+      // exitsOnly=true: only show positions marked for exit (STOP-LOSS/TAKE-PROFIT/CONVERGENCE)
+      // Parallel market fetches so latency = slowest single market, not sum.
+      if (url.pathname === '/api/trading/kalshi/positions-deck' && req.method === 'GET') {
+        const exitsOnly = q.exitsOnly === 'true';
+        const kalshi = require('../lib/kalshi-api');
+      const posRes = await kalshi.getPositions({});
+      const rawPositions = (posRes.data && posRes.data.market_positions) || [];
+
+      // Kalshi v2 API returns position:0 (integer) even when position_fp is non-zero
+      // (fractional contracts). Fall through to position_fp when the integer rounds to 0.
+      const rawCount = p => {
+        const pos = p.position;
+        if (pos != null && pos !== 0) return parseFloat(pos);
+        return parseFloat(p.position_fp ?? p.quantity_fp ?? 0);
+      };
+
+      const active = rawPositions.filter(p => {
+        const n = rawCount(p);
+        if (!Number.isFinite(n) || n === 0) return false;
+        // Skip multi-game parlay positions — they can't be individually exited
+        const t = p.ticker || p.market_ticker || '';
+        if (t.includes('MVESPORTS') || t.includes('MVECROSS') || t.includes('MULTIGAME')) return false;
+        return true;
+      });
+
+      // Σ₀ Fix: Add timeout protection to prevent hanging on slow Kalshi API responses
+      const MARKET_FETCH_TIMEOUT_MS = 5000;
+      const mkResults = await Promise.all(
+        active.map(p => {
+          const ticker = p.ticker || p.market_ticker;
+          return new Promise(resolve => {
+            const timeoutId = setTimeout(() => {
+              console.warn(`[trading] Market fetch timeout for ${ticker} after ${MARKET_FETCH_TIMEOUT_MS}ms`);
+              resolve(null);
+            }, MARKET_FETCH_TIMEOUT_MS);
+
+            kalshi.getMarket(ticker)
+              .then(result => { clearTimeout(timeoutId); resolve(result); })
+              .catch(err => { clearTimeout(timeoutId); resolve(null); });
+          });
+        })
+      );
+
+      const nowMs = Date.now();
+      const num = v => { const f = parseFloat(v); return Number.isFinite(f) ? f : null; };
+
+      function entryCents(p, qty) {
+        const expD = num(p.market_exposure_dollars);
+        if (expD != null && qty > 0) return Math.round((Math.abs(expD) / qty) * 100);
+        const exp = num(p.market_exposure);
+        if (exp != null && qty > 0) return Math.round(Math.abs(exp) / qty);
+        const avg = num(p.average_price_dollars) ?? num(p.avg_price_dollars);
+        if (avg != null) return Math.round(avg * 100);
+        return null;
+      }
+
+      // Kalshi taker fee: round_up(0.07 × C × P × (1-P)) in cents.
+      // INX / NASDAQ100 markets use the 0.035 rate per fee schedule (Feb 5, 2026).
+      function kalshiFee(contracts, priceCents, ticker = '') {
+        const pc = Math.max(1, Math.min(99, priceCents));
+        const P = pc / 100;
+        const rate = (ticker.startsWith('INX') || ticker.startsWith('NASDAQ100')) ? 0.035 : 0.07;
+        return Math.ceil(rate * contracts * P * (1 - P) * 100); // cents
+      }
+
+      const cards = [];
+      for (let i = 0; i < active.length; i++) {
+        const p = active[i];
+        const m = mkResults[i] && mkResults[i].data && mkResults[i].data.market;
+        const ticker = p.ticker || p.market_ticker;
+        const count = rawCount(p);
+        const heldSide = count > 0 ? 'yes' : 'no';
+        const absCount = Math.abs(count);
+        // Display qty: round fractional positions up to 1 so the card reads "1 contract"
+        const qty = absCount < 1 ? 1 : Math.abs(Math.round(count));
+        // Entry price: use raw fractional count so exposure/count gives the correct per-contract cost
+        const entry = entryCents(p, absCount || 1) || 50;
+        const bidCents = m ? (heldSide === 'yes'
+          ? (m.yes_bid ?? Math.round((num(m.yes_bid_dollars) || 0) * 100))
+          : (m.no_bid  ?? Math.round((num(m.no_bid_dollars)  || 0) * 100))) : entry;
+
+        const pnlCents = bidCents - entry;
+        const pnlPct   = Math.round((pnlCents / entry) * 100);
+        const maxPayout = qty * 100; // $1 per contract in cents
+
+        // Fee impact: exit fee you'd pay to sell now; entry fee already paid at open
+        const exitFeeCents  = kalshiFee(qty, bidCents, ticker);
+        const entryFeeCents = kalshiFee(qty, entry, ticker);
+        const grossPnlCents = pnlCents * qty;
+        const netPnlCents   = grossPnlCents - entryFeeCents - exitFeeCents;
+        const costBasis     = entry * qty + entryFeeCents;
+        const netPnlPct     = costBasis > 0 ? Math.round((netPnlCents / costBasis) * 100) : 0;
+
+        const minsToClose = m && m.close_time
+          ? Math.round((new Date(m.close_time).getTime() - nowMs) / 60000) : null;
+
+        const yesCents = (m && m.yes_ask != null) ? m.yes_ask : null;
+        const conviction = yesCents != null ? Math.min(99, Math.round(
+          heldSide === 'yes' ? yesCents * 1.1 : (100 - yesCents) * 1.1
+        )) : 50;
+
+        const exitTag = pnlPct <= -30 ? 'STOP-LOSS'
+          : pnlPct >= 40 ? 'TAKE-PROFIT'
+          : (minsToClose !== null && minsToClose <= 30 && minsToClose >= 0) ? 'FLATTEN'
+          : null;
+
+        const pnlSign    = pnlPct >= 0 ? '+' : '';
+        const netPnlSign = netPnlPct >= 0 ? '+' : '';
+        const reason = `entry ${entry}¢ · bid ${bidCents}¢ · gross ${pnlSign}${pnlPct}% · fee −${exitFeeCents}¢ · net ${netPnlSign}${netPnlPct}%`;
+
+        cards.push({
+          kind: 'position', action: 'sell',
+          ticker,
+          title: (m && m.title) || ticker,
+          yesLabel: (m && m.yes_sub_title) || 'YES',
+          noLabel:  (m && m.no_sub_title)  || 'NO',
+          favSide: heldSide,
+          favLabel: heldSide === 'yes' ? ((m && m.yes_sub_title) || 'YES') : ((m && m.no_sub_title) || 'NO'),
+          favAsk: bidCents,
+          qty, entryCents: entry, currentBidCents: bidCents,
+          pnlCents: grossPnlCents, pnlPct,
+          netPnlCents, netPnlPct,
+          exitFeeCents, entryFeeCents,
+          maxPayoutCents: maxPayout,
+          conviction, exitTag, minsToClose,
+          close: (m && m.close_time) || '',
+          reason, yesPct: yesCents, marketFound: m != null,
+        });
+      }
+
+      // Σ₀ Phase A: Enrich cards with strategy fitness metrics (historical performance)
+      for (const card of cards) {
+        try {
+          // Infer regime from market conditions: TREND if large P&L, MEAN if small, PIVOT if near close
+          const regimeScore = Math.abs(card.pnlPct);
+          const regime = card.minsToClose !== null && card.minsToClose <= 15 ? 'PIVOT'
+            : regimeScore > 20 ? 'TREND'
+            : 'MEAN';
+
+          // Query historical performance for this strategy/regime pair
+          const fitness = getStrategyFitness(card.ticker, regime);
+          if (fitness && fitness.count > 0) {
+            card.strategy_fitness = fitness;
+          }
+        } catch (err) {
+          console.error(`[trading] Failed to load strategy fitness for ${card.ticker}:`, err.message);
+        }
+      }
+
+      // Stop-loss first → flatten → take-profit → worst P&L first
+      const urgency = t => t === 'STOP-LOSS' ? 0 : t === 'FLATTEN' ? 1 : t === 'TAKE-PROFIT' ? 2 : 3;
+      cards.sort((a, b) => urgency(a.exitTag) - urgency(b.exitTag) || a.pnlPct - b.pnlPct);
+
+      // Filter: show only positions marked for exit if exitsOnly is true
+      const filtered = exitsOnly ? cards.filter(c => c.exitTag) : cards;
+
+      return sendJson(res, {
+        count: filtered.length,
+        totalPositions: cards.length,
+        exitsOnly,
+        generatedAt: new Date().toISOString(),
+        cards: filtered
+      }, 200), true;
+      }
+    } catch (error) {
+      return sendJson(res, { error: 'kalshi_api_error', details: error.message }, 502), true;
+    }
   }
 
   // GET /api/trading/alpaca/account
@@ -598,6 +1393,30 @@ module.exports = async function tradingRoutes(req, res, url, deps) {
     return true;
   }
 
+  // GET /api/trading/ai-trader/watchlist
+  // Get AI trader's current watchlist
+  if (url.pathname === '/api/trading/ai-trader/watchlist' && req.method === 'GET') {
+    try {
+      const result = await callAITrader('/api/watchlist');
+      sendJson(res, result.data, result.status);
+    } catch (error) {
+      sendJson(res, { error: 'Watchlist fetch failed', details: error.message }, 500);
+    }
+    return true;
+  }
+
+  // GET /api/trading/ai-trader/zones
+  // Get AI trader's detected market zones
+  if (url.pathname === '/api/trading/ai-trader/zones' && req.method === 'GET') {
+    try {
+      const result = await callAITrader('/api/zones');
+      sendJson(res, result.data, result.status);
+    } catch (error) {
+      sendJson(res, { error: 'Zones fetch failed', details: error.message }, 500);
+    }
+    return true;
+  }
+
   // GET /api/trading/memory/recent?limit=20&kind=order|signal
   // Trading Phase 2 (#323): recent orders/signals persisted into CSF memory
   // queryable by dream-chat and other agents. Newest first.
@@ -673,6 +1492,27 @@ module.exports = async function tradingRoutes(req, res, url, deps) {
       sendJson(res, { ok: true, relation: `${newsId} → ${orderId}` }, 201);
     } catch (error) {
       sendJson(res, { error: 'Link failed', details: error.message }, 400);
+    }
+    return true;
+  }
+
+  // GET /api/trading/kalshi/collector-status
+  // Get tight-band collector status and latest snapshot
+  if (url.pathname === '/api/trading/kalshi/collector-status' && req.method === 'GET') {
+    try {
+      const collector = deps.kalshiCollector;
+      const latest = collector ? collector.getLatest() : null;
+      sendJson(res, {
+        running: !!collector,
+        lastSnapshot: latest ? {
+          generatedAt: latest.generatedAt,
+          marketCount: latest.markets?.length || 0,
+          exitCount: latest.exitCount || 0,
+          markets: latest.markets?.slice(0, 5), // First 5 for preview
+        } : null,
+      }, 200);
+    } catch (error) {
+      sendJson(res, { error: 'Collector status check failed', details: error.message }, 500);
     }
     return true;
   }
@@ -964,6 +1804,136 @@ module.exports = async function tradingRoutes(req, res, url, deps) {
       sendJson(res, results);
     } catch (err) {
       sendJson(res, { error: err.message }, 500);
+    }
+    return true;
+  }
+
+  // ── Crypto Collector Routes ──────────────────────────────────────────────────
+  // Real-time crypto pricing and news from Kalshi markets + CoinGecko
+
+  // GET /api/trading/crypto/prices
+  // Returns latest crypto prices (BTC, ETH, SOL, XRP, DOGE) from Kalshi prediction markets
+  if (url.pathname === '/api/trading/crypto/prices' && req.method === 'GET') {
+    try {
+      const cryptoCollector = deps.cryptoCollector;
+      if (!cryptoCollector) {
+        return sendJson(res, { error: 'Crypto collector not initialized' }, 503), true;
+      }
+      const prices = cryptoCollector.getLatestPrices();
+      sendJson(res, { timestamp: new Date().toISOString(), prices }, 200);
+    } catch (error) {
+      sendJson(res, { error: 'Failed to fetch crypto prices', details: error.message }, 500);
+    }
+    return true;
+  }
+
+  // GET /api/trading/kalshi/observer-status
+  // Reports live crypto_live_trader.py observer health and today's snapshot count
+  if (url.pathname === '/api/trading/kalshi/observer-status' && req.method === 'GET') {
+    try {
+      const { fs: dfs, path: dpath, repoRoot: root } = deps;
+      const obs = deps.cryptoObserver;
+      const today = new Date().toISOString().slice(0, 10);
+      const snapshotFile = dpath.join(root, 'data', `crypto-tight-band-${today}.jsonl`);
+      let snapshotCount = 0;
+      let lastSnapshot = null;
+      if (dfs.existsSync(snapshotFile)) {
+        const lines = dfs.readFileSync(snapshotFile, 'utf8').split('\n').filter(Boolean);
+        snapshotCount = lines.length;
+        try { lastSnapshot = JSON.parse(lines[lines.length - 1]).timestamp || null; } catch {}
+      }
+      const alive = obs ? obs.process.exitCode === null : false;
+      sendJson(res, {
+        alive,
+        pid: obs?.pid || null,
+        startedAt: obs?.startedAt || null,
+        today,
+        snapshotCount,
+        lastSnapshot,
+        snapshotFile: snapshotFile.replace(root, ''),
+      });
+    } catch (error) {
+      sendJson(res, { error: 'Observer status check failed', details: error.message }, 500);
+    }
+    return true;
+  }
+
+  // GET /api/trading/crypto/news
+  // Returns latest crypto news from CoinGecko trending endpoint
+  if (url.pathname === '/api/trading/crypto/news' && req.method === 'GET') {
+    try {
+      const cryptoCollector = deps.cryptoCollector;
+      if (!cryptoCollector) {
+        return sendJson(res, { error: 'Crypto collector not initialized' }, 503), true;
+      }
+      const news = cryptoCollector.getLatestNews();
+      sendJson(res, { timestamp: new Date().toISOString(), news }, 200);
+    } catch (error) {
+      sendJson(res, { error: 'Failed to fetch crypto news', details: error.message }, 500);
+    }
+    return true;
+  }
+
+  // GET /api/trading/crypto/prices/historical?limit=100
+  // Returns historical crypto price snapshots (JSONL-based time series)
+  if (url.pathname === '/api/trading/crypto/prices/historical' && req.method === 'GET') {
+    try {
+      const cryptoCollector = deps.cryptoCollector;
+      if (!cryptoCollector) {
+        return sendJson(res, { error: 'Crypto collector not initialized' }, 503), true;
+      }
+      const limitParam = url.searchParams.get('limit');
+      const limit = limitParam ? Number(limitParam) : 100;
+      const prices = cryptoCollector.getHistoricalPrices(limit);
+      sendJson(res, { timestamp: new Date().toISOString(), count: prices.length, prices }, 200);
+    } catch (error) {
+      sendJson(res, { error: 'Failed to fetch historical prices', details: error.message }, 500);
+    }
+    return true;
+  }
+
+  // ── Trade History Persistence (P3) ──────────────────────────────────
+  // GET /api/trading/history/trades?symbol=BTCUSD&limit=20
+  // Returns completed trades with entry, exit, and P&L
+  if (url.pathname === '/api/trading/history/trades' && req.method === 'GET') {
+    try {
+      const tradingHistory = require('../lib/trading-history-logger');
+      const symbol = url.searchParams.get('symbol');
+      const limit = parseInt(url.searchParams.get('limit') || '20', 10);
+      const trades = tradingHistory.getTradeHistory({ symbol, limit });
+      sendJson(res, { trades, count: trades.length }, 200);
+    } catch (error) {
+      sendJson(res, { error: 'Failed to fetch trade history', details: error.message }, 500);
+    }
+    return true;
+  }
+
+  // GET /api/trading/history/signals?symbol=BTCUSD&limit=20&min_confidence=0.7
+  // Returns generated trading signals with confidence scores
+  if (url.pathname === '/api/trading/history/signals' && req.method === 'GET') {
+    try {
+      const tradingHistory = require('../lib/trading-history-logger');
+      const symbol = url.searchParams.get('symbol');
+      const limit = parseInt(url.searchParams.get('limit') || '20', 10);
+      const minConfidence = parseFloat(url.searchParams.get('min_confidence') || '0');
+      const signals = tradingHistory.getSignalHistory({ symbol, limit, min_confidence: minConfidence });
+      sendJson(res, { signals, count: signals.length }, 200);
+    } catch (error) {
+      sendJson(res, { error: 'Failed to fetch signal history', details: error.message }, 500);
+    }
+    return true;
+  }
+
+  // GET /api/trading/history/stats?symbol=BTCUSD
+  // Returns trade statistics (win rate, average P&L, etc.)
+  if (url.pathname === '/api/trading/history/stats' && req.method === 'GET') {
+    try {
+      const tradingHistory = require('../lib/trading-history-logger');
+      const symbol = url.searchParams.get('symbol');
+      const stats = tradingHistory.getTradeStats({ symbol });
+      sendJson(res, { timestamp: new Date().toISOString(), stats }, 200);
+    } catch (error) {
+      sendJson(res, { error: 'Failed to compute trade statistics', details: error.message }, 500);
     }
     return true;
   }

@@ -11,7 +11,7 @@ const candidateEnvFiles = [
 for (const envPath of candidateEnvFiles) {
   if (!fs.existsSync(envPath)) continue;
   fs.readFileSync(envPath, "utf8").split("\n").forEach((line) => {
-    const m = line.match(/^([A-Z0-9_]+)\s*=\s*(.*)$/);
+    const m = line.replace(/\r$/, "").match(/^([A-Z0-9_]+)\s*=\s*(.*)$/);
     if (m && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^['"]/g, "").replace(/['"]$/g, "");
   });
 }
@@ -96,6 +96,7 @@ const routes = [
   require("./routes/dreams"),
   require("./routes/keystone"),
   require("./routes/image"),
+  require("./routes/web-images"),
   require("./routes/three-doors-image-pool"),
   require("./routes/flourishing"),
   require("./routes/claims"),
@@ -105,11 +106,13 @@ const routes = [
   require("./routes/trading"),
   require("./routes/agent-performance"),
   require("./routes/leaderboard"),
-  require("./routes/surfaces"),
+  require("./routes/agent-status"),
   require("./routes/self-edit"),
+  require("./routes/creator"),
+  require("./routes/creator-entries"),
+  require("./routes/surfaces"),
   require("./routes/features"),
   require("./routes/personal-cube"),
-  require("./routes/agent-status"),
   require("./routes/pr-review"),
 ];
 
@@ -314,6 +317,12 @@ function shutdown(signal) {
   if (cloudflaredProcess && !cloudflaredProcess.killed) {
     cloudflaredProcess.kill("SIGTERM");
   }
+  if (deps.kalshiCollector) {
+    deps.kalshiCollector.stop();
+  }
+  if (deps.newsCollector) {
+    deps.newsCollector.stop();
+  }
   prWatcher.stop();
   server.close(() => {
     process.exit(0);
@@ -324,6 +333,63 @@ process.on("SIGINT", () => shutdown("SIGINT"));
 
 server.listen(port, host, () => {
   console.log(`Lantern Garage app listening on ${host}:${port}`);
+
+  // ── Kalshi Tight-Band Collector (6s polling) ──
+  const kalshiCollector = require("./lib/kalshi-collector");
+  kalshiCollector.start();
+  deps.kalshiCollector = kalshiCollector; // Make available to routes
+
+  // ── Crypto Price & News Collector (30s polling) ──
+  const CryptoCollector = require("./lib/crypto-collector");
+  const cryptoCollector = new CryptoCollector();
+  cryptoCollector.start(30000); // 30s interval
+  deps.cryptoCollector = cryptoCollector; // Make available to routes
+
+  // ── Market News Collector (10-min polling, watchlist + broad market RSS) ──
+  const NewsCollector = require("./lib/news-collector");
+  const newsCollector = new NewsCollector();
+  newsCollector.start(600000); // 10-min interval
+  deps.newsCollector = newsCollector; // Make available to routes
+
+  // ── Kalshi Position Monitor (10s polling) + Convergence Trainer ──
+  const { startMonitoring } = require("./lib/kalshi-position-monitor");
+  const { trainModel } = require("./lib/kalshi-convergence-trainer");
+  const { startEnhancing } = require("./lib/kalshi-convergence-enhancer");
+  const { startAnalyzing } = require("./lib/kalshi-convergence-lora");
+  startMonitoring();   // Start automated stop-loss monitoring
+  trainModel().catch(e => console.error("[Server] Convergence training failed:", e.message));
+  startEnhancing();    // Start continuous convergence improvement loop
+  startAnalyzing();    // Start LoRA fine-tuning (proactive, no trades needed)
+
+  // ── Crypto CIO Live Trader (15-min market observer + paper-trade signal log) ──
+  // Must run continuously during market hours so resolved windows produce training data.
+  // Gated by KALSHI_CRYPTO_OBSERVER env var (defaults ON when Kalshi creds are present).
+  const enableCryptoObserver = process.env.KALSHI_CRYPTO_OBSERVER !== "false"
+    && !!(process.env.KALSHI_API_KEY_ID || process.env.KALSHI_PRIVATE_KEY || process.env.KALSHI_PRIVATE_KEY_PATH);
+  const cryptoObserverScript = path.join(repoRoot, "experiments", "crypto_live_trader.py");
+  let cryptoObserverProcess = null;
+  if (enableCryptoObserver && fs.existsSync(cryptoObserverScript)) {
+    const pythonExe = process.platform === "win32" ? "python" : "python3";
+    const logDir = path.join(repoRoot, "logs");
+    if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
+    const observerLogFd = fs.openSync(path.join(logDir, "crypto-observer.log"), "a");
+    cryptoObserverProcess = spawn(pythonExe, [cryptoObserverScript, "--interval", "10", "--edge", "0.06"], {
+      cwd: repoRoot,
+      stdio: ["ignore", observerLogFd, observerLogFd],
+    });
+    cryptoObserverProcess.on("error", (err) => console.error(`[CryptoObserver] Failed to start: ${err.message}`));
+    cryptoObserverProcess.on("exit", (code) => console.warn(`[CryptoObserver] Exited with code ${code} — training data gap from this point`));
+    deps.cryptoObserver = {
+      pid: cryptoObserverProcess.pid,
+      startedAt: new Date().toISOString(),
+      process: cryptoObserverProcess,
+    };
+    console.log("[CryptoObserver] Started — logging to logs/crypto-observer.log");
+  } else if (enableCryptoObserver) {
+    console.warn(`[CryptoObserver] Script not found: ${cryptoObserverScript}`);
+  } else {
+    console.log("[CryptoObserver] Disabled (set KALSHI_CRYPTO_OBSERVER=false to suppress, or add Kalshi creds to enable)");
+  }
 
   // Auto-register this node to the mesh
   (async () => {
