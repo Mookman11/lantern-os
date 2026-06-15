@@ -410,6 +410,8 @@ def rollout(model: CIO_SDE, x0: Tensor, sigma0: Tensor, steps: int,
                 xdot_norm=xdot.norm().item(),
                 cost=model.stage_cost(x, info["u"]).mean().item(),
                 anti_collapse_p=float(info.get("anti_collapse_p", 0.0)),
+                sigma0_proximity=float(info.get("sigma0_proximity", 0.0)),
+                surprise_spook=bool(info.get("surprise_spook", False)),
             )
         x, sigma = x_next, sigma_next
 
