@@ -615,7 +615,7 @@
 
   <header>
     <div>
-      <h1 id="entry-title">Loading...</h1>
+      <h1 id="entry-title" title="Click to rename" style="cursor: text;" onclick="startTitleEdit()">Loading...</h1>
       <div class="entry-meta">
         <span id="entry-date"></span>
       </div>
@@ -858,6 +858,7 @@ async function loadEntry() {
     // Update page title
     document.getElementById("entry-title").textContent = entry.title;
     document.getElementById("entry-date").textContent = formattedCreated;
+    document.title = (entry.title || "Entry") + " — Lantern OS";
 
     // Update overview tab
     document.getElementById("entry-created").textContent = formattedCreated;
@@ -918,6 +919,14 @@ async function loadEntry() {
     } else {
       statusBadge.className = "badge badge-processing";
       statusBadge.textContent = "📥 Uploaded";
+    }
+
+    // Auto-analyze when arriving from the dashboard's "Analyze" quick action
+    // (Phase 8: Upload → project opens → analyze). Strip the param so a refresh
+    // doesn't re-trigger, and only fire if there's a video and we're not already running.
+    if (params.get("autoanalyze") === "1" && entry.filePath && entry.status !== "analyzing") {
+      history.replaceState({}, "", `/entry.html?id=${encodeURIComponent(entryId)}`);
+      if (typeof runAnalyze === "function") runAnalyze();
     }
   } catch (err) {
     console.error("Error loading entry:", err);
@@ -1339,6 +1348,48 @@ async function runRegenCaptions() {
     waStatus(`Captions regenerated (${(d.captions || []).length}).`); await loadEntry();
   } catch (e) { waStatus('Error: ' + e.message); }
   finally { waBusy(false); }
+}
+
+// Inline title rename (Phase 3): click the title → input → save on Enter/blur.
+let titleEditing = false;
+function startTitleEdit() {
+  if (titleEditing) return;
+  titleEditing = true;
+  const h1 = document.getElementById('entry-title');
+  const cur = (currentProject && currentProject.title) || h1.textContent || '';
+  const input = document.createElement('input');
+  input.type = 'text'; input.value = cur; input.id = 'entry-title-input';
+  input.style.cssText = 'font-size:1.5rem;font-weight:600;background:var(--surface2);color:var(--text);border:1px solid var(--accent);border-radius:8px;padding:4px 10px;width:100%;max-width:520px;font-family:inherit;';
+  h1.replaceWith(input);
+  input.focus(); input.select();
+
+  const restoreH1 = (text) => {
+    const newH1 = document.createElement('h1');
+    newH1.id = 'entry-title'; newH1.title = 'Click to rename';
+    newH1.style.cursor = 'text'; newH1.setAttribute('onclick', 'startTitleEdit()');
+    newH1.textContent = text;
+    input.replaceWith(newH1);
+  };
+  const commit = async () => {
+    if (!titleEditing) return;
+    titleEditing = false;
+    const title = input.value.trim();
+    restoreH1(title || cur);
+    if (title && title !== cur) {
+      try {
+        await fetch(`/api/creator-entries/${entryId}`, {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title })
+        });
+        if (currentProject) currentProject.title = title;
+        document.title = title + ' — Lantern OS';
+      } catch (e) { console.error('rename failed', e); }
+    }
+  };
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+    else if (e.key === 'Escape') { titleEditing = false; restoreH1(cur); }
+  });
+  input.addEventListener('blur', commit);
 }
 
 function loadAnalysisStatus(entry) {
