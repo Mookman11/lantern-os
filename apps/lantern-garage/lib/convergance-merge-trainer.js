@@ -24,7 +24,7 @@ class ConverganceMergeTrainer {
    * Main entry point: analyze resolver and generate insights
    * Called by Keystone technical coordinator via !convergance
    */
-  async analyzeAndImprove() {
+  analyzeAndImprove() {
     const analysis = {
       timestamp: new Date().toISOString(),
       currentMetrics: this.resolver.patterns.successMetrics,
@@ -282,7 +282,7 @@ Please analyze and confirm which recommendations to apply.`,
   /**
    * Process Keystone response with approved improvements
    */
-  processKeystone Response(keystoneAnalysis) {
+  processKeystoneResponse(keystoneAnalysis) {
     // keystoneAnalysis: { approved: [], rejected: [], insights: [] }
     const result = {
       timestamp: new Date().toISOString(),
