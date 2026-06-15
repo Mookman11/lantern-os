@@ -99,13 +99,13 @@
   </a>
   <div class="nav-links">
     <a href="/dream-chat.html">Journal</a>
-    <a href="/three-doors.html" data-prod-hidden>Kingdome</a>
-    <a href="/create.html">✏️ Create</a>
+    <a href="/trader-dashboard.html">Trader</a>
+    <a href="/create.html">Create</a>
+    <a href="/explore.html" class="active">Explore</a>
     <a href="/knowledgecenter.html">Help</a>
   </div>
   <div class="nav-actions">
-    <button class="nav-btn" id="theme-toggle" title="Toggle light / dark mode">☀</button>
-    <a class="nav-cta" href="/dream-chat.html">Open Journal</a>
+    <button class="nav-btn" id="theme-toggle" title="Toggle light / dark mode" aria-label="Toggle light or dark mode">☀</button>
   </div>
 </nav>
 
@@ -123,7 +123,7 @@
     <div class="explore-section">
       <p class="explore-section-title">🎭 Dreams & Stories</p>
       <div class="explore-panels">
-        <a class="panel" href="/three-doors.html" data-prod-hidden>
+        <a class="panel" href="/three-doors.html">
           <span class="panel-icon">🏰</span>
           <span class="panel-label">Adventure</span>
           <h2>Kingdome of Hearts</h2>
@@ -131,12 +131,12 @@
           <span class="panel-arrow">Enter Kingdome →</span>
         </a>
 
-        <a class="panel" href="/dream-journal-archive.html" data-prod-hidden>
-          <span class="panel-icon">📚</span>
-          <span class="panel-label">Archive</span>
-          <h2>Full Journal Archive</h2>
-          <p>Browse complete dream history with full-text search, themes, and convergence insights. Filter by date, mood, or agent persona.</p>
-          <span class="panel-arrow">View Archive →</span>
+        <a class="panel" href="/wish-door.html">
+          <span class="panel-icon">🚪</span>
+          <span class="panel-label">Story</span>
+          <h2>The Wish Door</h2>
+          <p>Step through the Wish Door for a guided, dreamlike encounter. A reflective interactive story that responds to what you bring it.</p>
+          <span class="panel-arrow">Open the Door →</span>
         </a>
       </div>
     </div>
@@ -145,20 +145,20 @@
     <div class="explore-section">
       <p class="explore-section-title">⚙️ Work & Operations</p>
       <div class="explore-panels">
-        <a class="panel" href="/agent-operations.html" data-prod-hidden>
+        <a class="panel" href="/operations.html">
           <span class="panel-icon">🤖</span>
           <span class="panel-label">Operations</span>
           <h2>Agent Operations</h2>
-          <p>Monitor active agents, view dispatch queue, and manage convergence loop tasks. Real-time status on memory processing and reasoning chains.</p>
+          <p>Monitor active agents, view the dispatch queue, and manage convergence-loop tasks. Real-time status on memory processing and reasoning chains.</p>
           <span class="panel-arrow">View Operations →</span>
         </a>
 
-        <a class="panel" href="/work-queue.html" data-prod-hidden>
+        <a class="panel" href="/orchestration.html">
           <span class="panel-icon">📋</span>
           <span class="panel-label">Tasks</span>
-          <h2>Work Queue</h2>
-          <p>Track autonomous tasks, streaming work sessions, and convergence records. Manage what you want done and verify when it completes.</p>
-          <span class="panel-arrow">View Queue →</span>
+          <h2>Work Dashboard</h2>
+          <p>Track autonomous tasks, streaming work sessions, and convergence records. See what's queued, in progress, and verified complete.</p>
+          <span class="panel-arrow">Open Dashboard →</span>
         </a>
       </div>
     </div>
@@ -172,14 +172,14 @@
           <span class="panel-label">Open Source</span>
           <h2>GitHub Repository</h2>
           <p>Star the project, report issues, or contribute improvements. Lantern OS is built in the open — join the community of dreamers and builders.</p>
-          <span class="panel-arrow">Visit GitHub →</span>
+          <span class="panel-arrow">Visit GitHub ↗</span>
         </a>
 
         <a class="panel" href="/knowledgecenter.html">
           <span class="panel-icon">❓</span>
           <span class="panel-label">Help</span>
           <h2>Help & Documentation</h2>
-          <p>Learn how to use all features of Lantern OS. Guides, FAQ, troubleshooting, and best practices for journaling and trading.</p>
+          <p>Learn how to use every feature of Lantern OS. Guides, FAQ, troubleshooting, and best practices for journaling and trading.</p>
           <span class="panel-arrow">Get Help →</span>
         </a>
       </div>
@@ -189,20 +189,20 @@
     <div class="explore-section">
       <p class="explore-section-title">⚡ Settings & Configuration</p>
       <div class="explore-panels">
-        <a class="panel" href="/settings.html" data-prod-hidden>
-          <span class="panel-icon">🔧</span>
+        <a class="panel" href="/api-keys-settings.html">
+          <span class="panel-icon">🔑</span>
           <span class="panel-label">Settings</span>
-          <h2>Preferences & API Keys</h2>
-          <p>Configure AI providers (Claude, OpenAI, Gemini), manage API keys, adjust theme and language, and export your local data.</p>
-          <span class="panel-arrow">Manage Settings →</span>
+          <h2>API Keys & Providers</h2>
+          <p>Configure AI providers (Claude, OpenAI, Gemini) and manage your API keys. All optional — Lantern OS runs locally with or without keys.</p>
+          <span class="panel-arrow">Manage Keys →</span>
         </a>
 
-        <a class="panel" href="/system-status.html" data-prod-hidden>
+        <a class="panel" href="/dashboard.html">
           <span class="panel-icon">📊</span>
           <span class="panel-label">Status</span>
-          <h2>System Status & Diagnostics</h2>
-          <p>View real-time system health: kernel readiness, memory usage, convergence record status, and validation results.</p>
-          <span class="panel-arrow">View Status →</span>
+          <h2>System Dashboard</h2>
+          <p>View real-time system health: kernel readiness, memory queries, convergence-record status, and validation results.</p>
+          <span class="panel-arrow">Open Dashboard →</span>
         </a>
       </div>
     </div>
@@ -260,26 +260,23 @@ document.addEventListener('DOMContentLoaded', () => {
   const $ = id => document.getElementById(id);
 
   async function checkStatus() {
+    const dot = $('status-dot');
+    const label = $('status-label');
+    if (!dot) return;
     try {
-      const r = await fetch('/api/dream/status', { cache: 'no-store', signal: AbortSignal.timeout(2000) });
-      const online = r.ok;
-      const dot = $('status-dot');
-      if (online) {
-        dot.className = 'dot online';
-        $('status-label').textContent = 'Online';
-      } else {
-        dot.className = 'dot offline';
-        $('status-label').textContent = 'Offline';
-      }
+      const r = await fetch('/api/health', { cache: 'no-store', signal: AbortSignal.timeout(3000) });
+      const data = r.ok ? await r.json() : null;
+      const online = !!(data && data.ok);
+      dot.className = online ? 'dot online' : 'dot offline';
+      if (label) label.textContent = online ? 'Server online' : 'Server unreachable';
     } catch {
-      const dot = $('status-dot');
       dot.className = 'dot offline';
-      $('status-label').textContent = 'Offline';
+      if (label) label.textContent = 'Server unreachable';
     }
   }
 
   checkStatus();
-  setInterval(checkStatus, 10000);
+  setInterval(checkStatus, 30000);
 })();
 </script>
 </body>
