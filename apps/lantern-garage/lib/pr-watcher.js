@@ -181,6 +181,17 @@ class PrWatcher {
   async _reviewPr(entry) {
     const { number, title } = entry;
     const reviewSha = entry.headSha;
+
+    // Cross-instance idempotency: if another fleet host already posted a review for
+    // THIS exact commit, don't duplicate it (and skip the diff fetch + chat).
+    if (await this._reviewExistsRemotely(number, reviewSha)) {
+      entry.reviewedSha = reviewSha;
+      entry.reviewedAt = Date.now();
+      this._saveState();
+      console.log(`[PR Watcher] PR #${number}@${String(reviewSha).slice(0, 7)} already reviewed by another host — skipping`);
+      return { ok: true, skipped: true };
+    }
+
     console.log(`[PR Watcher] Fetching diff for PR #${number}`);
 
     let diff, prMeta;
@@ -232,7 +243,7 @@ class PrWatcher {
     try {
       await this._gh(
         "pr", "comment", String(number),
-        "--body", `🤖 **Fleet Auto-Review** *(idle for ${Math.round(this.idleMs / 60000)}min — triggered automatically)*\n\n${review.text}`
+        "--body", `🤖 **Fleet Auto-Review** *(idle for ${Math.round(this.idleMs / 60000)}min — triggered automatically)*\n\n${review.text}\n\n<!-- fleet-auto-review:${reviewSha} -->`
       );
       console.log(`[PR Watcher] Review posted on PR #${number}`);
     } catch (err) {
@@ -248,6 +259,18 @@ class PrWatcher {
     entry.lastAttemptAt = Date.now();
     this._saveState();
     return { ok: true, number, reviewText: review.text };
+  }
+
+  /** True if a Fleet Auto-Review comment for this exact SHA already exists (any host). */
+  async _reviewExistsRemotely(number, sha) {
+    if (!sha) return false;
+    try {
+      const data = await this._ghJson("pr", "view", String(number), "--json", "comments");
+      const marker = `fleet-auto-review:${sha}`;
+      return (data.comments || []).some((c) => (c.body || "").includes(marker));
+    } catch {
+      return false; // best-effort; fall through to normal (SHA-gated) review
+    }
   }
 
   _keystoneChat(message) {
