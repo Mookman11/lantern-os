@@ -783,7 +783,10 @@ async function dreamChatReply(message, recentDreams, requestedAgent = "", reques
       const payload = JSON.stringify({
         model: process.env.ANTHROPIC_MODEL || "claude-haiku-4-5-20251001",
         max_tokens: 512,
-        system: agent.systemPrompt,
+        // Cache the (stable) persona system prompt. Engages only when the prefix
+        // clears the model's min cacheable length (4096 tok for Haiku 4.5); a
+        // silent no-op otherwise. Helps repeated large-context callers (PR watcher).
+        system: [{ type: "text", text: agent.systemPrompt, cache_control: { type: "ephemeral" } }],
         messages: [{ role: "user", content: userPrompt }],
       });
       const reply = await new Promise((resolve, reject) => {
