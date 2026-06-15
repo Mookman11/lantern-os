@@ -80,7 +80,51 @@ function normalizeEntry(data) {
     },
     renderRecords: Array.isArray(data.renderRecords) ? data.renderRecords : [],
     stages: (data.stages && typeof data.stages === "object") ? data.stages : {},
+    analysisRuns: Array.isArray(data.analysisRuns) ? data.analysisRuns : [],
+    analysisError: data.analysisError || null,
   };
+}
+
+// Persist a structured analysis failure (stage + reason) so the dashboard can
+// show exactly what went wrong instead of a silent hang. Also appends a failed
+// run to the audit trail.
+function recordAnalysisError(repoRoot, entryId, info) {
+  const entry = getEntry(repoRoot, entryId);
+  if (!entry) return null;
+  const runs = [...(entry.analysisRuns || []), {
+    jobId: info.jobId || null,
+    status: "failed",
+    stage: info.stage || null,
+    error: info.error || "unknown error",
+    finishedAt: info.at || new Date().toISOString(),
+  }].slice(-20); // keep the last 20 runs
+  return updateEntry(repoRoot, entryId, {
+    analysisError: { stage: info.stage || null, error: info.error || "unknown error", at: info.at || new Date().toISOString() },
+    analysisRuns: runs,
+    status: "failed",
+  });
+}
+
+function clearAnalysisError(repoRoot, entryId) {
+  const entry = getEntry(repoRoot, entryId);
+  if (!entry || !entry.analysisError) return entry;
+  return updateEntry(repoRoot, entryId, { analysisError: null });
+}
+
+// Append a run to the analysis audit trail (most-recent-last, capped at 20).
+function addAnalysisRun(repoRoot, entryId, run) {
+  const entry = getEntry(repoRoot, entryId);
+  if (!entry) return null;
+  const runs = [...(entry.analysisRuns || []), {
+    jobId: run.jobId || null,
+    status: run.status || "complete",
+    startedAt: run.startedAt || null,
+    finishedAt: run.finishedAt || new Date().toISOString(),
+    highlightCount: typeof run.highlightCount === "number" ? run.highlightCount : null,
+    durationSec: typeof run.durationSec === "number" ? run.durationSec : null,
+    analysisCapped: !!run.analysisCapped,
+  }].slice(-20);
+  return updateEntry(repoRoot, entryId, { analysisRuns: runs });
 }
 
 function getEntry(repoRoot, entryId) {
@@ -262,6 +306,29 @@ function listEntries(repoRoot) {
   return entries.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
 
+// Scan every project, write back the normalized metadata shape (so projects
+// created before newer fields existed are repaired on disk), and report any
+// whose source video is missing. Idempotent and safe to run repeatedly.
+function repairAllProjects(repoRoot) {
+  const entries = listEntries(repoRoot); // normalized in-memory
+  const report = { scanned: 0, repaired: 0, missingVideo: [], missingThumbnail: [] };
+  for (const e of entries) {
+    report.scanned++;
+    if (e.filePath && !fs.existsSync(path.join(repoRoot, e.filePath))) report.missingVideo.push(e.id);
+    if (e.thumbnail && !fs.existsSync(path.join(repoRoot, e.thumbnail))) report.missingThumbnail.push(e.id);
+    try {
+      // Persist the normalized fields so they physically exist in metadata.json.
+      updateEntry(repoRoot, e.id, {
+        tags: e.tags, status: e.status, renders: e.renders,
+        renderRecords: e.renderRecords, stages: e.stages,
+        analysisRuns: e.analysisRuns, analysisError: e.analysisError,
+      });
+      report.repaired++;
+    } catch { /* skip unreadable entry */ }
+  }
+  return report;
+}
+
 function formatTimestamp(isoString) {
   try {
     const date = new Date(isoString);
@@ -299,6 +366,10 @@ module.exports = {
   touchStages,
   addRenderRecord,
   removeRenderRecord,
+  recordAnalysisError,
+  clearAnalysisError,
+  addAnalysisRun,
+  repairAllProjects,
   saveAnalysis,
   getAnalysis,
   saveRender,
