@@ -114,6 +114,7 @@ const routes = [
   require("./routes/features"),
   require("./routes/personal-cube"),
   require("./routes/pr-review"),
+  require("./routes/auto-merge"),
 ];
 
 async function route(req, res) {
