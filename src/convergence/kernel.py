@@ -14,6 +14,7 @@ Reference: CONVERGANCE-SIGMA0-BRIEFING.md, convergence-core-mapping.md
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 import json
+import uuid
 from pathlib import Path
 
 from .objects import Memory, Task, Tool, ConvergenceRecord, TaskStatus
@@ -131,7 +132,7 @@ class Kernel:
         Returns: Memory object representing the observation
         """
         memory = Memory(
-            id=f"mem-{datetime.now().timestamp()}",
+            id=f"mem-{datetime.now().timestamp()}-{uuid.uuid4().hex[:6]}",
             timestamp=datetime.now(),
             source=source,
             confidence=confidence,
@@ -215,7 +216,7 @@ class Kernel:
         Returns: ConvergenceRecord capturing the reasoning
         """
         record = ConvergenceRecord(
-            id=f"rec-{datetime.now().timestamp()}",
+            id=f"rec-{datetime.now().timestamp()}-{uuid.uuid4().hex[:6]}",
             hypothesis=hypothesis,
             evidence_ids=evidence_ids,
             result=None,  # Will be set by Act stage
