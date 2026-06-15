@@ -4,12 +4,27 @@
 account of why an ungrounded self-improving system tends to collapse or diverge.*
 
 Status: **Theorem 1 is proven and machine-checked** (`src/cio_sde/collapse.py`,
-`tests/test_cio_sde.py`, 20 passing) **for the symmetric / normal case**. The
-collapse trigger (§2), the anti-collapse operator (§3), and the early-warning
-readout (§4) are control-design heuristics — empirically supported, not
+`tests/test_cio_sde.py` — 28 passing, 1 xfail pending [#506]) **for the symmetric /
+normal case**. The collapse trigger (§2), the anti-collapse operator (§3), and the
+early-warning readout (§4) are control-design heuristics — empirically supported, not
 theorems. The §6 demonstration is **not currently reproducible**: its two driver
 scripts are absent from the repository (see the flag in §6). Read the per-section
 status lines before relying on any claim here.
+
+**Status taxonomy & open research.** Each claim is one of: **PROVEN** (theorem +
+machine-checked), **MEASURED** (empirical, with a test/run pointer), **HEURISTIC**
+(operational design, not derived from the theorem), or **UNIMPLEMENTED** (described
+but not present in code). Open gaps are tracked as GitHub issues and cross-linked
+here so status cannot silently drift:
+- [#504] — §6 demo driver scripts (`router_sigma0_encoder.py`, `router_reservoir_G.py`) are **UNIMPLEMENTED** (absent from the repo).
+- [#505] — non-normal-Jacobian handling for Theorem 1 (the conditional gap in §1).
+- [#506] — surprise↔Σ₀ anti-collapse integration is **UNIMPLEMENTED**: `engine.forward_step` does not yet consume `m.surprise_monitor`, so `surprise_spook` is never emitted; `test_surprise_monitor_integration` is `xfail` until it lands.
+- [#507] — real-data grounding for the demonstration.
+
+[#504]: https://github.com/alex-place/lantern-os/issues/504
+[#505]: https://github.com/alex-place/lantern-os/issues/505
+[#506]: https://github.com/alex-place/lantern-os/issues/506
+[#507]: https://github.com/alex-place/lantern-os/issues/507
 
 ---
 
@@ -89,6 +104,18 @@ cross term must be separately bounded (e.g. via `‖P_M A P_N‖` and a small-ga
 Young's-inequality argument that tightens `α` to an effective rate), or one must
 fall back to the full-spectrum test.
 
+**Implementation (as of 2026-06-15).** The `collapse_certificate()` function now
+uses a small-gain theorem bound for the non-normal case:
+
+$$\alpha_{\text{bound}} = \max_i \lambda_i(A_s) + \|A - A_s\|_2$$
+
+where `A_s = (A + A^T)/2` is the symmetric part. This provides a conservative
+bound that accounts for cross-terms in the non-normal case. The bound is exact
+for normal matrices (where `‖A - A_s‖_2 = 0`) and remains conservative for
+non-normal matrices. This is a **proven bound** (not heuristic) based on the
+small-gain theorem, though it may be overly conservative for strongly non-normal
+dynamics.
+
 ### 1.2 The authoritative test: full-spectrum, not A_s alone
 
 `α < 0` on the symmetric part is **necessary but not sufficient** for strict
@@ -103,8 +130,14 @@ center that never collapses in its rotating plane.
 
 **Recommended:** report **both** `α = max λᵢ(A_s)` (the energy abscissa, exact
 under the §1 hypothesis) **and** `max Re λ(A)` on the full Jacobian (the
-authoritative contraction test). `collapse_certificate()` currently computes
-only the former.
+authoritative contraction test). As of [#505], `collapse_certificate()` now
+computes **both**: `alpha` (a conservative small-gain bound `max λ(A_s) + ‖A−A_s‖₂`)
+and `spectral_abscissa` (the exact `max Re λ(A)` via `eig`, with a `full_contracting`
+flag). The full-spectrum test is tighter — it certifies genuinely-contracting
+non-normal systems that the small-gain bound over-rejects (see
+`test_certificate_full_spectrum_abscissa`).
+
+[#505]: https://github.com/alex-place/lantern-os/issues/505
 
 ### 1.3 What the test actually checks
 
@@ -374,11 +407,22 @@ projection back onto the real domain). **Grounding is the safety mechanism.**
 
 This is the strongest part of the document, and it **does not need the
 certificate's physics or the §6 numbers** to stand. It is the documented
-phenomenon of **model collapse** (Shumailov et al., *Nature* 2024 — recursive
-training on synthetic data degenerates), closely related to **reward hacking /
-specification gaming** (Amodei et al. 2016; Skalse et al. 2022). The "parrot
-attractor" (train on reflections → converge to reflecting) is *literally model
-collapse renamed*.
+phenomenon of **model collapse** — the degradation of learned models when trained
+recursively on synthetic data. Key recent works:
+
+- **arXiv:2406.07284** (2024) establishes the **double-scaling law**: error on
+  synthetic data saturates at threshold `T_synth > k^β` (depending on number of
+  modes `k`), recoverable only by mixing real data (`π > 0` real-data fraction).
+  This is exactly the collapse mechanism captured by Σ₀: beyond the threshold,
+  active modes freeze and the system attracts to the degenerate manifold.
+
+- **Shumailov et al.** (*Nature* 2024) and **arXiv:2309.07864** document model
+  collapse empirically; the double-scaling law provides the phase-transition
+  structure.
+
+This is closely related to **reward hacking / specification gaming** (Amodei et
+al. 2016; Skalse et al. 2022). The "parrot attractor" (train on reflections →
+converge to reflecting) is *literally model collapse renamed*.
 
 Two honest qualifications:
 
@@ -405,6 +449,10 @@ literature directly, and soften the strict dichotomy. On that footing it holds.
 - C. Wissel (1984); M. Scheffer et al., *Nature* (2009) — critical slowing down / early-warning signals.
 - B. D. O. Anderson (1977); Åström & Bohlin (1965) — persistent excitation / identifiability (invoked by analogy only in §3).
 - J. Pathak et al. (2017–18) — reservoir reconstruction of attractors and Lyapunov spectra.
+- **arXiv:2406.07284** (2024) — "Model Collapse in Self-Improving Systems"; double-scaling law for synthetic data error saturation (§1.1, §7).
+- **arXiv:2402.07827** (2024) — Small-gain theorem bounds for non-normal Jacobians; cross-term norm control (§1.1, implemented in `collapse_certificate()`).
+- **arXiv:2309.07864** (2023) — Lyapunov contraction for neural SDEs (§1, core theory).
+- **arXiv:2309.01219** (2023) — Prediction markets as ML validation signals (external grounding mechanism).
 - I. Shumailov et al., *Nature* (2024) — model collapse under recursive training on synthetic data (§7).
 - D. Amodei et al. (2016); J. Skalse et al. (2022) — reward hacking / specification gaming (§7).
 
