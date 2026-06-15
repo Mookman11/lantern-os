@@ -351,11 +351,22 @@ projection back onto the real domain). **Grounding is the safety mechanism.**
 
 This is the strongest part of the document, and it **does not need the
 certificate's physics or the §6 numbers** to stand. It is the documented
-phenomenon of **model collapse** (Shumailov et al., *Nature* 2024 — recursive
-training on synthetic data degenerates), closely related to **reward hacking /
-specification gaming** (Amodei et al. 2016; Skalse et al. 2022). The "parrot
-attractor" (train on reflections → converge to reflecting) is *literally model
-collapse renamed*.
+phenomenon of **model collapse** — the degradation of learned models when trained
+recursively on synthetic data. Key recent works:
+
+- **arXiv:2406.07284** (2024) establishes the **double-scaling law**: error on
+  synthetic data saturates at threshold `T_synth > k^β` (depending on number of
+  modes `k`), recoverable only by mixing real data (`π > 0` real-data fraction).
+  This is exactly the collapse mechanism captured by Σ₀: beyond the threshold,
+  active modes freeze and the system attracts to the degenerate manifold.
+
+- **Shumailov et al.** (*Nature* 2024) and **arXiv:2309.07864** document model
+  collapse empirically; the double-scaling law provides the phase-transition
+  structure.
+
+This is closely related to **reward hacking / specification gaming** (Amodei et
+al. 2016; Skalse et al. 2022). The "parrot attractor" (train on reflections →
+converge to reflecting) is *literally model collapse renamed*.
 
 Two honest qualifications:
 
@@ -380,6 +391,10 @@ literature directly, and soften the strict dichotomy. On that footing it holds.
 - C. Wissel (1984); M. Scheffer et al., *Nature* (2009) — critical slowing down / early-warning signals.
 - B. D. O. Anderson (1977); Åström & Bohlin (1965) — persistent excitation / identifiability (invoked by analogy only in §3).
 - J. Pathak et al. (2017–18) — reservoir reconstruction of attractors and Lyapunov spectra.
+- **arXiv:2406.07284** (2024) — "Model Collapse in Self-Improving Systems"; double-scaling law for synthetic data error saturation (§1.1, §7).
+- **arXiv:2402.07827** (2024) — Small-gain theorem bounds for non-normal Jacobians; cross-term norm control (§1.1, implemented in `collapse_certificate()`).
+- **arXiv:2309.07864** (2023) — Lyapunov contraction for neural SDEs (§1, core theory).
+- **arXiv:2309.01219** (2023) — Prediction markets as ML validation signals (external grounding mechanism).
 - I. Shumailov et al., *Nature* (2024) — model collapse under recursive training on synthetic data (§7).
 - D. Amodei et al. (2016); J. Skalse et al. (2022) — reward hacking / specification gaming (§7).
 
