@@ -456,7 +456,14 @@ server.listen(port, host, () => {
     }
   })();
 
-  prWatcher.start();
+  // PR Watcher is opt-in to a SINGLE designated fleet host. Running it on multiple
+  // accounts multiplies auto-review comments (each comment also re-triggers the
+  // others). Enable PR_WATCHER_ENABLED=1 on exactly ONE machine.
+  if (process.env.PR_WATCHER_ENABLED === "1") {
+    prWatcher.start();
+  } else {
+    console.log("[PR Watcher] disabled — set PR_WATCHER_ENABLED=1 on ONE fleet host to enable");
+  }
   refreshAllPcsf(repoRoot);
   // Ollama cold-start probe
   const ollamaBase = process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434";
