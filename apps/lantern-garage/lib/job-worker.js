@@ -133,6 +133,31 @@ async function processAnalyzeJob(job, repoRoot, updateProgress) {
     console.error("[job-worker] V10 scoring/variants failed:", e.message);
   }
 
+  // Viral Pattern Research Engine (V10): the structural fingerprint is pure
+  // measurement of this clip and is always computed. Recording it into the
+  // corpus as a measured exemplar and matching against other exemplars are
+  // gated by the viralResearch flag (honest insufficient_data when empty).
+  let researchV10 = null;
+  try {
+    const fp = ci.research.fingerprint(timelineJSON); // { fingerprint, viral }
+    researchV10 = { fingerprint: fp ? fp.fingerprint : null };
+    if (ci.isEnabled("viralResearch")) {
+      const category = (options || {}).category || "gaming";
+      if (job.input.entryId) {
+        ci.research.recordOwnClip({ entryId: job.input.entryId, analysis: timelineJSON, category });
+      }
+      const bundle = ci.research.analyzeClip(timelineJSON, {
+        excludeId: job.input.entryId ? `own_${job.input.entryId}` : undefined,
+      });
+      if (bundle && bundle.status !== "insufficient_data") {
+        researchV10.similar = bundle.similar || null;
+        researchV10.corpus = bundle.corpus || null;
+      }
+    }
+  } catch (e) {
+    console.error("[job-worker] viral research failed:", e.message);
+  }
+
   // Store results
   const resultsDir = path.join(repoRoot, "data", "creator", "analyses");
   if (!fs.existsSync(resultsDir)) {
@@ -148,6 +173,7 @@ async function processAnalyzeJob(job, repoRoot, updateProgress) {
     variants: variantsV10 ? variantsV10.variants : [],
     captions: captions.map((c) => c.toJSON()),
     scoreV10,
+    researchV10,
   };
 
   fs.writeFileSync(resultFile, JSON.stringify(results, null, 2));
@@ -160,6 +186,7 @@ async function processAnalyzeJob(job, repoRoot, updateProgress) {
         scoreV10: scoreV10 || undefined,
         variantsV10: variantsV10 ? variantsV10.variants : undefined,
         captions: captions.map((c) => c.toJSON()),
+        researchV10: researchV10 || undefined,
       });
     } catch (e) {
       console.error("[job-worker] persist V10 results to entry failed:", e.message);
@@ -173,6 +200,7 @@ async function processAnalyzeJob(job, repoRoot, updateProgress) {
     variants: variantsV10 ? variantsV10.variants : [],
     captions: captions.map((c) => c.toJSON()),
     scoreV10,
+    researchV10,
     resultsFile: resultFile,
   };
 }

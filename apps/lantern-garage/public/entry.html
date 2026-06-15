@@ -517,6 +517,31 @@
 
     .scorev10-disclaimer { font-size: 0.72rem; color: var(--muted); margin: 6px 0 0; }
 
+    /* Viral Research Analysis */
+    .research-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 20px;
+    }
+    .fp-grid { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+    .fp-row { display: grid; grid-template-columns: 130px 1fr 38px; align-items: center; gap: 10px; }
+    .fp-label { font-size: 0.78rem; color: var(--muted); }
+    .fp-bar { height: 8px; background: var(--surface2); border-radius: 5px; overflow: hidden; }
+    .fp-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--green)); }
+    .fp-val { font-size: 0.78rem; font-weight: 700; text-align: right; }
+
+    .sim-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 0; border-top: 1px solid var(--border); font-size: 0.85rem;
+    }
+    .sim-pct { font-weight: 700; color: var(--accent); min-width: 44px; }
+    .sim-chip {
+      font-size: 0.7rem; color: var(--muted); background: var(--surface2);
+      border: 1px solid var(--border); border-radius: 5px; padding: 1px 7px;
+    }
+    .research-disclaimer { font-size: 0.72rem; color: var(--muted); margin: 10px 0 0; }
+
     .variant-export-btn {
       padding: 7px 14px;
       background: var(--accent);
@@ -627,6 +652,15 @@
       <div class="section-sub">Structural estimates from your actual highlight timeline. Calibration activates after ≥100 labeled outcomes.</div>
       <div id="scorev10-panel">
         <p class="no-data">No analysis yet — run analysis to generate scores.</p>
+      </div>
+    </div>
+
+    <!-- Viral Research Analysis (V10 Viral Pattern Research Engine) -->
+    <div style="margin-top: 32px;" id="research-section">
+      <h3 style="margin: 0 0 4px; font-size: 1rem;">Viral Research Analysis</h3>
+      <div class="section-sub">Structural fingerprint of your clip, and its closest exemplars in your own research corpus. Learns patterns — does not clone creators.</div>
+      <div id="research-panel">
+        <p class="no-data">No analysis yet — run analysis to compute the fingerprint.</p>
       </div>
     </div>
 
@@ -800,6 +834,9 @@ async function loadEntry() {
 
     // Load V10 overall score + predictions panel
     loadScoreV10(entry);
+
+    // Load Viral Research Analysis (fingerprint + corpus similarity)
+    loadResearch(entry);
 
     // Load analysis
     if (analysis) {
@@ -1129,6 +1166,65 @@ function loadScoreV10(entry) {
         </div>
       </div>
       <p class="scorev10-disclaimer">Structural estimates — not calibrated against real outcome data.</p>
+    </div>
+  `;
+}
+
+function loadResearch(entry) {
+  const panel = document.getElementById('research-panel');
+  if (!panel) return;
+
+  const r = entry.researchV10;
+  const fp = r && r.fingerprint;
+  if (!fp) {
+    panel.innerHTML = '<p class="no-data">No fingerprint yet — run analysis to compute it.</p>';
+    return;
+  }
+
+  // 6-dimension structural fingerprint (each 0..100, measured from your clip)
+  const dims = [
+    ['Hook strength', 'hookStrength'],
+    ['Payoff strength', 'payoffStrength'],
+    ['Caption density', 'captionDensity'],
+    ['Motion intensity', 'motionIntensity'],
+    ['Curiosity gap', 'curiosityGap'],
+    ['Loopability', 'loopability'],
+  ];
+  const bars = dims.map(([label, key]) => {
+    const v = Number.isFinite(fp[key]) ? Math.round(fp[key]) : 0;
+    return `
+      <div class="fp-row">
+        <span class="fp-label">${escapeHtml(label)}</span>
+        <div class="fp-bar"><div class="fp-fill" style="width:${v}%"></div></div>
+        <span class="fp-val">${v}</span>
+      </div>`;
+  }).join('');
+
+  // Closest exemplars in the corpus (or an honest empty state)
+  let simHtml;
+  const similar = r.similar;
+  if (similar && similar.status === 'ok' && Array.isArray(similar.matches) && similar.matches.length) {
+    simHtml = `
+      <div style="margin-top:14px;">
+        <div style="font-size:0.82rem;font-weight:600;margin-bottom:4px;">Closest structural matches in your corpus</div>
+        ${similar.matches.map(m => `
+          <div class="sim-row">
+            <span class="sim-pct">${Math.round((m.similarity || 0) * 100)}%</span>
+            <span>${escapeHtml(m.title || m.id)}</span>
+            <span class="sim-chip">${escapeHtml(m.platform || '')}</span>
+            <span class="sim-chip">${escapeHtml(m.category || '')}</span>
+          </div>`).join('')}
+      </div>`;
+  } else {
+    const corpusSize = (r.corpus && typeof r.corpus.measured === 'number') ? r.corpus.measured : 0;
+    simHtml = `<p class="research-disclaimer">No measured exemplars to compare against yet (${corpusSize} in corpus). The corpus grows from every clip you analyze — matches appear once it has measured exemplars. Enable with <code>LANTERN_CI_VIRAL_RESEARCH=1</code>.</p>`;
+  }
+
+  panel.innerHTML = `
+    <div class="research-card">
+      <div class="fp-grid">${bars}</div>
+      ${simHtml}
+      <p class="research-disclaimer">Fingerprint is measured from your clip's real highlight structure. Similarity is structural (pacing/hook/payoff shape) — it learns patterns, it does not copy creators.</p>
     </div>
   `;
 }

@@ -17,6 +17,14 @@ const recommend = require("./recommendations/recommend");
 const { scoreVideoV10 } = require("./scoring/score-v10");
 const { generateVariantsV10 } = require("./scoring/variant-engine-v10");
 
+// Viral Pattern Research Engine
+const researchCorpus = require("./research-corpus/corpus-store");
+const { mineEditingPatterns, mineEngagementPatterns } = require("./research-corpus/pattern-miner");
+const { fingerprintFromAnalysis } = require("./research-corpus/fingerprint");
+const { findSimilar } = require("./research-corpus/reference-engine");
+const { recordOwnClip, analyzeClip } = require("./research-corpus/own-content");
+const { collectYouTube, importMetadataRow } = require("./research-corpus/collect-youtube");
+
 function subsystemEnabled(env) {
   return flags.isEnabled("creatorIntelligence", env);
 }
@@ -69,6 +77,45 @@ module.exports = {
   // Recommendations (per-video always real; population path honest)
   recommendations: {
     forVideo: (analysis) => recommend.forVideo(analysis),
+  },
+
+  // Viral Pattern Research Engine — learns reusable editing PATTERNS, never
+  // clones creators. Per-clip fingerprint/similarity is always real (measured
+  // from the user's own analyzed clip). Population mining + collection are gated
+  // by the viralResearch flag and honestly return insufficient_data when empty.
+  research: {
+    // Always real: structural fingerprint of the user's own clip.
+    fingerprint: (analysis) => fingerprintFromAnalysis(analysis || {}),
+    // Read-only bundle (fingerprint + nearest exemplars + corpus counts).
+    analyzeClip: (analysis, opts, env) =>
+      flags.isEnabled("viralResearch", env)
+        ? analyzeClip(analysis, opts)
+        : disabledResult("viralResearch_flag_off"),
+    // Continuous-learning: record an analyzed own clip as a measured exemplar.
+    recordOwnClip: (args, env) =>
+      flags.isEnabled("viralResearch", env)
+        ? recordOwnClip(args)
+        : { status: "skipped", reason: "viralResearch_flag_off" },
+    findSimilar: (fingerprint, opts) => findSimilar(fingerprint, opts),
+    // Corpus counts are always honest, even when the flag is off.
+    corpus: {
+      counts: () => researchCorpus.counts(),
+      refreshManifest: () => researchCorpus.refreshManifest(),
+    },
+    // Pattern mining over real rows (insufficient_data until enough exist).
+    mineEditingPatterns: (env) =>
+      flags.isEnabled("viralResearch", env) ? mineEditingPatterns() : disabledResult("viralResearch_flag_off"),
+    mineEngagementPatterns: (env) =>
+      flags.isEnabled("viralResearch", env) ? mineEngagementPatterns() : disabledResult("viralResearch_flag_off"),
+    // Public reference collection (metadata only; needs YOUTUBE_API_KEY).
+    collectYouTube: (opts, env) =>
+      flags.isEnabled("viralResearch", env)
+        ? collectYouTube(opts)
+        : Promise.resolve(disabledResult("viralResearch_flag_off")),
+    importMetadataRow: (entry, env) =>
+      flags.isEnabled("viralResearch", env)
+        ? importMetadataRow(entry)
+        : { status: "skipped", reason: "viralResearch_flag_off" },
   },
 
   // Export validation (real ffprobe; flag on by default)
