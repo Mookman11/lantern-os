@@ -19,9 +19,67 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 These documents are non-negotiable for safe, compliant contributions.
 
+## ⚠️ Architectural Convergence Constraint — READ FIRST
+
+**START HERE:** [!CONVERGANCE Σ₀ BRIEFING](docs/CONVERGANCE-SIGMA0-BRIEFING.md) — immutable North Star.
+
+**THEN:** [Research Canon](docs/RESEARCH-CANON.md) — living references organized by Convergence 12 component.
+
+**THEN:** [Convergence Core Mapping](docs/convergence-core-mapping.md) — how existing code aligns with architecture.
+
+---
+
+**THE ENTIRE PROJECT IS ONE LOOP:**
+
+```
+Observe → Remember → Reason → Act → Verify → Converge
+```
+
+Every feature must strengthen ONE stage of this loop. Nothing else.
+
+**FOUR CORE OBJECTS (everything else is implementation):**
+- **Memory** — append-only JSONL logs + CSF archive
+- **Task** — goal + constraints + status
+- **Tool** — name + input + output + success
+- **Convergence Record** — hypothesis + evidence + result + confidence
+
+**FORBIDDEN:**
+- Separate dream engine (use reasoning strategy: high exploration + mandatory verification)
+- Multiple memory systems (one JSONL append + one CSF archive)
+- Independent agent ecosystems (all agents use Convergence Core)
+- Digital twin / BCI / mind-uploading concepts (persistence ≠ simulation)
+- Top-level subsystems that don't improve the loop
+
+**MODELS ARE INTERCHANGEABLE.**
+The Convergence Core never assumes a specific LLM. All models plug in as replacements.
+
+**PERSISTENT LEARNING, NOT WEIGHT MODIFICATION.**
+Store experience (memories + convergence records). Improve via retrieval and reasoning, not retraining.
+
+**EXTERNAL REALITY RULE** (non-negotiable):
+```
+Nothing is accepted without evidence.
+Every important claim must have: [claim, evidence, confidence, source]
+```
+
+**Feature Gate:**
+| What | Allowed? | Reason |
+|-----|----------|--------|
+| Better memory retrieval | ✓ Yes | Improves Remember stage |
+| Better planning / routing | ✓ Yes | Improves Reason stage |
+| Better verification / grounding | ✓ Yes | Improves Verify stage |
+| Better tool execution / observability | ✓ Yes | Improves Act stage |
+| Better convergence metrics | ✓ Yes | Improves Converge stage |
+| Separate dream engine | ✗ No | Architectural sprawl |
+| Multiple memory systems | ✗ No | Coordination nightmare |
+| Swarm agents / ecosystems | ✗ No | Anti-convergence |
+| Digital personality simulation | ✗ No | Scope creep |
+
+Reject architectural sprawl. Prefer extension over addition. Maintain a single Convergence Core.
+
 ## Project Overview
 
-Lantern OS is a local-first OS cockpit built by a solo developer (Alex Place). The primary deliverable is a **Dream Journal** — a freeform RP chat interface backed by a Node.js server, with a Python MCP server and optional Discord bot.
+Lantern OS is a **persistent local-first reasoning system** built by a solo developer (Alex Place). The primary user interface is **dream-chat.html** — a freeform chat backed by a Convergence Core that remembers, reasons, acts, and verifies.
 
 ## Quickstart (Read QUICKSTART.md First)
 
