@@ -99,6 +99,61 @@ function cellEdges(frame) {
 }
 
 // ---------------------------------------------------------------------------
+// Facecam cues (honest heuristics, NOT face recognition):
+//   skin   — fraction of skin-tone pixels (a webcam usually frames a person)
+//   border — gradient energy along the block's INNER edges (overlay box frame)
+//   temporal — sustained locally-distinct motion (computed in detectRegions)
+// Each is a real pixel measurement; they're blended into a measured confidence
+// and reported individually so the value is auditable.
+// ---------------------------------------------------------------------------
+
+// Classic Kovac RGB skin rule (uncalibrated; a cue, not a guarantee).
+function isSkin(r, g, b) {
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+  return r > 95 && g > 40 && b > 20 && (mx - mn) > 15 &&
+    Math.abs(r - g) > 15 && r > g && r > b;
+}
+
+// Pixel rect for a grid corner block.
+function cornerPixels(b) {
+  const cellW = SAMPLE_W / GRID_COLS, cellH = SAMPLE_H / GRID_ROWS;
+  return {
+    px0: Math.round(b.c0 * cellW), px1: Math.round(b.c1 * cellW),
+    py0: Math.round(b.r0 * cellH), py1: Math.round(b.r1 * cellH),
+  };
+}
+
+function skinFraction(frame, p) {
+  let skin = 0, total = 0;
+  for (let y = p.py0; y < p.py1; y++) {
+    for (let x = p.px0; x < p.px1; x++) {
+      const i = (y * SAMPLE_W + x) * 3;
+      if (isSkin(frame[i], frame[i + 1], frame[i + 2])) skin++;
+      total++;
+    }
+  }
+  return total ? skin / total : 0;
+}
+
+// Mean gradient along the block's INNER borders (the lines where an overlay box
+// would meet gameplay). cornerName picks which two inner edges to sample.
+function borderEdgeScore(frame, b, cornerName) {
+  const p = cornerPixels(b);
+  const lum = (x, y) => {
+    const i = (Math.max(0, Math.min(SAMPLE_H - 1, y)) * SAMPLE_W + Math.max(0, Math.min(SAMPLE_W - 1, x))) * 3;
+    return (frame[i] + frame[i + 1] + frame[i + 2]) / 3;
+  };
+  const innerX = cornerName.includes("left") ? p.px1 : p.px0; // vertical inner edge
+  const innerY = cornerName.includes("top") ? p.py1 : p.py0;  // horizontal inner edge
+  let vSum = 0, vN = 0;
+  for (let y = p.py0; y < p.py1; y++) { vSum += Math.abs(lum(innerX, y) - lum(innerX - 1, y)); vN++; }
+  let hSum = 0, hN = 0;
+  for (let x = p.px0; x < p.px1; x++) { hSum += Math.abs(lum(x, innerY) - lum(x, innerY - 1)); hN++; }
+  const vMean = vN ? vSum / vN : 0, hMean = hN ? hSum / hN : 0;
+  return Math.max(vMean, hMean); // a box needs at least one strong straight inner edge
+}
+
+// ---------------------------------------------------------------------------
 // Region detection
 // ---------------------------------------------------------------------------
 
@@ -142,8 +197,15 @@ function detectRegions(frames) {
     globalPerTransition[f - 1] = cells ? sum / cells : 0;
   }
 
-  // For each corner, confidence = fraction of transitions where the corner's
-  // local activity is clearly above the scene's (a sustained distinct overlay).
+  // Representative raw frames for the per-pixel cues (skin/border).
+  const repIdx = [...new Set([0, Math.floor(n / 2), n - 1])].filter((i) => i >= 0 && i < n);
+  const repFrames = repIdx.map((i) => frames[i]);
+
+  // For each corner, blend three honest cues into a measured facecam confidence:
+  //   temporal — fraction of transitions where the corner is clearly more active
+  //              than the scene (a sustained distinct overlay)
+  //   skin     — mean skin-tone fraction (a webcam usually frames a person)
+  //   border   — gradient along the block's inner edges (an overlay box frame)
   const regions = [];
   let bestCorner = null;
   for (const [name, b] of Object.entries(corners)) {
@@ -156,20 +218,37 @@ function detectRegions(frames) {
       const global = globalPerTransition[f - 1] || 0;
       if (local > 3 && local > 1.3 * (global + 0.001)) fires++;
     }
-    const confidence = transitions ? fires / transitions : 0;
-    if (!bestCorner || confidence > bestCorner.confidence) {
-      bestCorner = { name, b, confidence, framesSeen: fires };
-    }
+    const temporal = transitions ? fires / transitions : 0;
+    const p = cornerPixels(b);
+    const skinRaw = repFrames.reduce((s, fr) => s + skinFraction(fr, p), 0) / (repFrames.length || 1);
+    const borderRaw = borderEdgeScore(repFrames[Math.floor(repFrames.length / 2)] || frames[0], b, name);
+
+    // Normalize cues to 0..1 (uncalibrated but bounded).
+    const skin = Math.min(1, skinRaw / 0.20);     // ~20% skin in the box saturates
+    const border = Math.min(1, borderRaw / 60);   // strong straight inner edge
+    // Skin is the most facecam-SPECIFIC cue (a HUD/minimap/kill-feed is not
+    // skin-coloured), so it dominates; temporal + border are supporting.
+    const confidence = 0.55 * skin + 0.25 * temporal + 0.20 * border;
+
+    const cand = { name, b, confidence, framesSeen: fires, cues: { temporal: round3(temporal), skin: round3(skin), border: round3(border) } };
+    if (!bestCorner || confidence > bestCorner.confidence) bestCorner = cand;
   }
-  if (bestCorner && bestCorner.confidence >= 0.4) {
+
+  // Honest tiers: >=0.4 emit a facecam region; 0.2..0.4 emit a low-confidence
+  // candidate flagged needsDeclaration (UI should ask the user to confirm/place
+  // the facecam); <0.2 emit nothing. We never report a bare detected:true.
+  if (bestCorner && bestCorner.confidence >= 0.2) {
     const b = bestCorner.b;
+    const lowConf = bestCorner.confidence < 0.4;
     regions.push({
       type: "facecam",
       candidate: true,
       corner: bestCorner.name,
       bounds: { x: round3(b.x), y: round3(b.y), width: round3((b.c1 - b.c0) / GRID_COLS), height: round3((b.r1 - b.r0) / GRID_ROWS) },
       confidence: round3(bestCorner.confidence),
+      cues: bestCorner.cues,
       framesSeen: bestCorner.framesSeen,
+      needsDeclaration: lowConf,
       priority: 1,
     });
   }
@@ -206,7 +285,10 @@ function detectRegions(frames) {
 // Crop planner (9:16 by default)
 // ---------------------------------------------------------------------------
 
-const PRIORITY_WEIGHT = { facecam: 4, crosshair: 3, hud: 2, minimap: 1 };
+// Weighted importance (spec ordering): facecam must override motion. Only
+// facecam + hud are actually detected today; the rest are here for when/if their
+// detectors exist, so the crop solver already ranks them correctly.
+const PRIORITY_WEIGHT = { facecam: 10, crosshair: 9, killfeed: 7.5, minimap: 7, hud: 6, combat: 6, motion: 4 };
 
 function horizCoverage(region, winX, winW) {
   const rX = region.bounds.x, rW = region.bounds.width;
@@ -288,10 +370,53 @@ async function analyzeForCrop(videoPath, opts = {}) {
 
 function round3(n) { return Number(Number(n).toFixed(3)); }
 
+// ---------------------------------------------------------------------------
+// Debug overlay — draw the detected region boxes onto a real frame so the user
+// can VISUALLY verify the detections (this is how they judge if it's right).
+// ---------------------------------------------------------------------------
+
+const OVERLAY_COLORS = { facecam: "red", hud: "cyan", crosshair: "yellow", minimap: "lime", killfeed: "orange" };
+
+/**
+ * Burn the detected region boxes onto a representative frame -> JPG.
+ * @returns {Promise<{ok:boolean, outPath?:string, reason?:string}>}
+ */
+function renderSafeZoneOverlay(videoPath, regions, outPath, opts = {}) {
+  return new Promise((resolve) => {
+    if (!fs.existsSync(videoPath)) return resolve({ ok: false, reason: "source not found" });
+    const at = Number.isFinite(opts.at) ? opts.at : 1;
+    const boxes = (regions || [])
+      .filter((r) => r && r.bounds)
+      .map((r) => {
+        const { x, y, width, height } = r.bounds;
+        const color = OVERLAY_COLORS[r.type] || "white";
+        // thickness 4; low-confidence facecam drawn thinner/dashed-ish (t=2)
+        const t = r.needsDeclaration ? 2 : 4;
+        return `drawbox=x=iw*${x}:y=ih*${y}:w=iw*${width}:h=ih*${height}:color=${color}@0.9:t=${t}`;
+      });
+    const vf = (boxes.length ? boxes.join(",") + "," : "") + "format=yuvj420p";
+    let proc;
+    try {
+      proc = spawn("ffmpeg", ["-y", "-ss", String(at), "-i", videoPath, "-vf", vf, "-frames:v", "1", outPath],
+        { stdio: ["ignore", "ignore", "ignore"] });
+    } catch (e) {
+      return resolve({ ok: false, reason: e.message });
+    }
+    const timer = setTimeout(() => { try { proc.kill("SIGKILL"); } catch {} resolve({ ok: false, reason: "overlay render timed out" }); }, 60000);
+    proc.on("error", (e) => { clearTimeout(timer); resolve({ ok: false, reason: e.message }); });
+    proc.on("close", (code) => {
+      clearTimeout(timer);
+      resolve(code === 0 && fs.existsSync(outPath) ? { ok: true, outPath } : { ok: false, reason: `ffmpeg exited ${code}` });
+    });
+  });
+}
+
 module.exports = {
   analyzeForCrop,
   detectRegions,
   planCrop,
   sampleFrames,
+  renderSafeZoneOverlay,
   TARGET_ASPECT_9_16,
+  PRIORITY_WEIGHT,
 };

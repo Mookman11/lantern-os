@@ -576,6 +576,14 @@
     .run-dot.fail { background: var(--danger); }
     .run-meta { color: var(--muted); margin-left: auto; }
 
+    /* Safe zones panel */
+    .research-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px 20px; }
+    .research-disclaimer { font-size: 0.72rem; color: var(--muted); margin: 10px 0 0; }
+    .sz-list { display: flex; flex-direction: column; gap: 8px; }
+    .sz-row { font-size: 0.88rem; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .sz-dot { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+    .sz-cues { width: 100%; font-size: 0.74rem; color: var(--muted); padding-left: 18px; }
+
     .variant-export-btn {
       padding: 7px 14px;
       background: var(--accent);
@@ -697,6 +705,15 @@
       <div class="section-sub">Rendered exports for this project. Persist across refresh and restart.</div>
       <div class="render-grid" id="render-grid">
         <p class="no-data">No renders yet — use Render Shorts or a variant's Render &amp; Export.</p>
+      </div>
+    </div>
+
+    <!-- Safe Zones (facecam/HUD heuristic detection + overlay) -->
+    <div style="margin-top: 32px;" id="safezones-section">
+      <h3 style="margin: 0 0 4px; font-size: 1rem;">Safe Zones</h3>
+      <div class="section-sub">Heuristic facecam/HUD detection (measured confidence — not face recognition). Renders use crop that avoids slicing these.</div>
+      <div id="safezones-panel">
+        <p class="no-data">No safe-zone detection yet — run "Detect Safe Zones".</p>
       </div>
     </div>
 
@@ -896,6 +913,7 @@ async function loadEntry() {
     loadStages(entry);
     loadRenderViewer(entry);
     loadAnalysisStatus(entry);
+    loadSafeZones(entry);
 
     // Load analysis
     if (analysis) {
@@ -1391,6 +1409,46 @@ function startTitleEdit() {
     else if (e.key === 'Escape') { titleEditing = false; restoreH1(cur); }
   });
   input.addEventListener('blur', commit);
+}
+
+function loadSafeZones(entry) {
+  const panel = document.getElementById('safezones-panel'); if (!panel) return;
+  const sz = entry.safezones;
+  if (!sz) {
+    panel.innerHTML = '<p class="no-data">No safe-zone detection yet — run "Detect Safe Zones" above.</p>';
+    return;
+  }
+  if (sz.status !== 'ok') {
+    panel.innerHTML = `<p class="no-data">Detection unavailable: ${escapeHtml(sz.reason || 'could not analyze')}.</p>`;
+    return;
+  }
+  const regions = Array.isArray(sz.regions) ? sz.regions : [];
+  const face = regions.find(r => r.type === 'facecam');
+  const hud = regions.filter(r => r.type === 'hud');
+
+  const pct = (x) => Math.round((x || 0) * 100) + '%';
+  const rows = [];
+  if (face) {
+    const conf = pct(face.confidence);
+    const cueStr = face.cues ? `skin ${pct(face.cues.skin)} · motion ${pct(face.cues.temporal)} · border ${pct(face.cues.border)}` : '';
+    rows.push(`<div class="sz-row"><span class="sz-dot" style="background:red"></span><b>Facecam</b> · ${escapeHtml(face.corner || '')} · <b>${conf}</b> confidence ${face.needsDeclaration ? '<span class="status-pill gray" style="margin-left:6px;">low — confirm</span>' : ''}<div class="sz-cues">${escapeHtml(cueStr)}</div></div>`);
+  } else {
+    rows.push('<div class="sz-row"><span class="sz-dot" style="background:#555"></span><b>Facecam</b> · not detected (declare it if there is one)</div>');
+  }
+  rows.push(`<div class="sz-row"><span class="sz-dot" style="background:cyan"></span><b>HUD bands</b> · ${hud.length ? hud.length + ' detected' : 'none detected'}</div>`);
+
+  const overlay = sz.overlay ? `<img src="/media/${escapeHtml(sz.overlay)}" alt="safe-zone overlay" style="width:100%;max-width:360px;border-radius:10px;border:1px solid var(--border);margin-top:12px;">` : '';
+  const declareNote = (face && face.needsDeclaration) || !face
+    ? '<p class="research-disclaimer">Low confidence — this is a heuristic, not face recognition. If the box is wrong, declare the facecam position (coming next) and renders will preserve it deterministically.</p>'
+    : '';
+
+  panel.innerHTML = `
+    <div class="research-card">
+      <div class="sz-list">${rows.join('')}</div>
+      ${overlay}
+      ${declareNote}
+      <div style="margin-top:12px;"><button class="wa-btn" onclick="runSafeZones()">Re-run Detection</button></div>
+    </div>`;
 }
 
 function loadAnalysisStatus(entry) {
