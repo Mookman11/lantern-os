@@ -464,6 +464,24 @@ async function processSafeZonesJob(job, repoRoot, updateProgress) {
     result = plan; // { status, regions, cropPlan, framesSampled, ... } — honest "unavailable" when detection fails
   }
 
+  // Render a debug overlay (detected boxes drawn on a real frame) so the user
+  // can VISUALLY verify the detections. Persisted into the project, served via /media.
+  let overlayRel = null;
+  if (result.status === "ok" && Array.isArray(result.regions) && job.input.entryId) {
+    try {
+      const { renderSafeZoneOverlay } = require("./safe-zone-v2");
+      const entryStore = require("./entry-store");
+      const dir = entryStore.getEntryDir(repoRoot, job.input.entryId);
+      fs.mkdirSync(dir, { recursive: true });
+      const outAbs = path.join(dir, "safezone-overlay.jpg");
+      updateProgress(75, "Rendering safe-zone overlay");
+      const ov = await renderSafeZoneOverlay(fullPath, result.regions, outAbs, { at: 1 });
+      if (ov.ok) overlayRel = path.relative(repoRoot, outAbs).split(path.sep).join("/");
+    } catch (e) {
+      console.error("[job-worker] safezone overlay render failed:", e.message);
+    }
+  }
+
   updateProgress(85, "Persisting safe zones");
 
   // Persist onto the project so crop previews reload after a refresh.
@@ -471,7 +489,7 @@ async function processSafeZonesJob(job, repoRoot, updateProgress) {
     try {
       const entryStore = require("./entry-store");
       entryStore.updateEntry(repoRoot, job.input.entryId, {
-        safezones: { ...result, computedAt: new Date().toISOString() },
+        safezones: { ...result, overlay: overlayRel, computedAt: new Date().toISOString() },
       });
       entryStore.touchStages(repoRoot, job.input.entryId, ["safezones"]);
     } catch (e) {
