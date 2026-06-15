@@ -1282,7 +1282,9 @@ async function analyzeHighlights() {
 }
 
 async function pollJobProgress(jobId, panelType) {
-  const maxAttempts = 300;
+  // 1200 × 500ms = 10 min — longer than the backend idle watchdog (5 min), so
+  // the UI never gives up before the job reaches a terminal state.
+  const maxAttempts = 1200;
   let attempts = 0;
 
   const pollInterval = setInterval(async () => {

@@ -46,53 +46,66 @@ class JobWorker {
   async executeJob(job) {
     this.currentJob = job;
 
+    // Idle watchdog — if a job emits no progress for idleMs it is considered
+    // wedged (e.g. a hung ffmpeg). We fail it with a timeout and release the
+    // worker so one stuck job can never poison the whole queue forever.
+    const idleMs = Number(process.env.LANTERN_JOB_IDLE_TIMEOUT_MS) || 5 * 60 * 1000;
+    let lastProgressAt = Date.now();
+    let watchdog = null;
+
+    const onProgress = (percent, msg) => {
+      lastProgressAt = Date.now();
+      job.setProgress(percent, msg);
+      this.jobQueue.updateJob(job);
+    };
+
     try {
       job.start();
       this.jobQueue.updateJob(job);
-
       console.log(`[job-worker] Processing job ${job.id} (${job.type})`);
 
-      let result;
+      const watchdogPromise = new Promise((_, reject) => {
+        watchdog = setInterval(() => {
+          if (Date.now() - lastProgressAt > idleMs) {
+            clearInterval(watchdog); watchdog = null;
+            reject(new Error(`timeout: no progress for ${Math.round(idleMs / 60000)} min`));
+          }
+        }, 15000);
+      });
 
-      switch (job.type) {
-        case "analyze":
-          result = await processAnalyzeJob(job, this.repoRoot, (percent, msg) => {
-            job.setProgress(percent, msg);
-            this.jobQueue.updateJob(job);
-          });
-          break;
+      const handlerPromise = (async () => {
+        switch (job.type) {
+          case "analyze": return processAnalyzeJob(job, this.repoRoot, onProgress);
+          case "caption": return processCaptionJob(job, this.repoRoot, onProgress);
+          case "export": return processExportJob(job, this.repoRoot, onProgress);
+          case "safezones": return processSafeZonesJob(job, this.repoRoot, onProgress);
+          default: throw new Error(`Unknown job type: ${job.type}`);
+        }
+      })();
 
-        case "caption":
-          result = await processCaptionJob(job, this.repoRoot, (percent, msg) => {
-            job.setProgress(percent, msg);
-            this.jobQueue.updateJob(job);
-          });
-          break;
-
-        case "export":
-          result = await processExportJob(job, this.repoRoot, (percent, msg) => {
-            job.setProgress(percent, msg);
-            this.jobQueue.updateJob(job);
-          });
-          break;
-
-        case "safezones":
-          result = await processSafeZonesJob(job, this.repoRoot, (percent, msg) => {
-            job.setProgress(percent, msg);
-            this.jobQueue.updateJob(job);
-          });
-          break;
-
-        default:
-          throw new Error(`Unknown job type: ${job.type}`);
-      }
-
+      const result = await Promise.race([handlerPromise, watchdogPromise]);
       job.complete(result);
       console.log(`[job-worker] Completed job ${job.id}`);
     } catch (error) {
       job.fail(error);
       console.error(`[job-worker] Failed job ${job.id}:`, error.message);
+      // Persist a structured failure on the project so the dashboard can show
+      // exactly which stage failed and why, instead of a silent hang.
+      if (job.type === "analyze" && job.input && job.input.entryId) {
+        try {
+          const entryStore = require("./entry-store");
+          entryStore.recordAnalysisError(this.repoRoot, job.input.entryId, {
+            stage: job.progressMessage || "unknown",
+            error: error.message,
+            at: new Date().toISOString(),
+            jobId: job.id,
+          });
+        } catch (e) {
+          console.error("[job-worker] persist analysis error failed:", e.message);
+        }
+      }
     } finally {
+      if (watchdog) clearInterval(watchdog);
       this.jobQueue.updateJob(job);
       this.currentJob = null;
     }
@@ -112,12 +125,20 @@ async function processAnalyzeJob(job, repoRoot, updateProgress) {
     throw new Error(`Video file not found: ${videoPath}`);
   }
 
-  updateProgress(10, "Starting video analysis");
+  updateProgress(5, "Queued — starting analysis");
 
-  // Run highlight analysis
-  const timeline = await analyzeVideoForHighlights(fullPath, options || {});
+  // Mark the project as analyzing so a reopened project reflects live state.
+  if (job.input.entryId) {
+    try { require("./entry-store").updateEntry(repoRoot, job.input.entryId, { status: "analyzing" }); } catch {}
+  }
 
-  updateProgress(70, "Analyzing highlights");
+  // Run highlight analysis — streams real sub-stage progress (8→66%) so the bar
+  // never sits at a single number.
+  const timeline = await analyzeVideoForHighlights(fullPath, options || {}, (percent, statusKey, message) => {
+    updateProgress(percent, message || statusKey);
+  });
+
+  updateProgress(70, "Scoring highlights");
 
   // Generate captions automatically
   const captions = generateCaptions(timeline, null, "gaming");
@@ -178,6 +199,17 @@ async function processAnalyzeJob(job, repoRoot, updateProgress) {
       if (variantsV10 && variantsV10.variants && variantsV10.variants.length) stages.push("variants");
       if (captions && captions.length) stages.push("captions");
       entryStore.touchStages(repoRoot, job.input.entryId, stages);
+      // Audit trail + clear any prior failure now that analysis succeeded.
+      entryStore.addAnalysisRun(repoRoot, job.input.entryId, {
+        jobId: job.id,
+        status: "complete",
+        startedAt: job.startedAt,
+        finishedAt: new Date().toISOString(),
+        highlightCount: Array.isArray(timelineJSON.highlights) ? timelineJSON.highlights.length : 0,
+        durationSec: timelineJSON.duration || null,
+        analysisCapped: !!(timelineJSON.metadata && timelineJSON.metadata.analysisCapped),
+      });
+      entryStore.clearAnalysisError(repoRoot, job.input.entryId);
     } catch (e) {
       console.error("[job-worker] persist V10 results to entry failed:", e.message);
     }
