@@ -41,122 +41,48 @@
     <p class="sub"><span id="hero-edition">Orion Edition</span> · <span data-version-badge="">v—</span> · <span id="hero-git"></span></p>
   </div>
 
-  <!-- ── Primary panel ── -->
-  <p class="section-label no-margin-top">Start here</p>
-  <div class="panels-primary">
+  <!-- ── Hero Features (3 primary experiences) ── -->
+  <p class="section-label no-margin-top">Core Experiences</p>
+  <div class="panels panels-margin-bottom">
     <a class="panel-full" href="/dream-chat.html">
       <span class="panel-full-icon">💬</span>
       <div class="panel-full-body">
-        <div class="tag">Journal</div>
-        <h2>Write & reflect</h2>
+        <div class="tag">Work</div>
+        <h2>Dream Chat</h2>
         <p id="panel-chat-desc">Record thoughts and reflections, chat with an AI, and discover patterns. Everything stays on your device.</p>
       </div>
       <span class="panel-full-arrow">Open Journal →</span>
     </a>
   </div>
 
-  <!-- ── Secondary panels ── -->
-  <p class="section-label">Explore</p>
   <div class="panels panels-margin-bottom">
-    <a class="panel" href="/three-doors.html" data-prod-hidden>
-      <span class="panel-icon">🏯</span>
-      <span class="panel-label">Dream Journey</span>
-      <h2>Kingdome of Hearts</h2>
-      <p>A seven-stage dream journey. Three doors each scene — no wrong choices. Lantern guides you. Each loop is different.</p>
-      <span class="panel-arrow">Enter the Kingdome →</span>
-    </a>
-    <a class="panel" href="/dream-journal/index.html" data-prod-hidden>
-      <span class="panel-icon">📓</span>
-      <span class="panel-label">Members Only</span>
-      <h2>Full Journal</h2>
-      <p id="panel-journal-desc">Deep archive and advanced synthesis for Patreon supporters.</p>
-      <span class="panel-arrow">View archive →</span>
-    </a>
-
     <a class="panel" href="/trader-dashboard.html">
       <span class="panel-icon">📈</span>
-      <span class="panel-label">Trading</span>
+      <span class="panel-label">Trade</span>
       <h2>Lantern Trader</h2>
       <p>Trading hub for stock trading, prediction markets, and market news — all in one place.</p>
       <span class="panel-arrow">Open Trader →</span>
     </a>
 
-    <a class="panel" href="/operations.html" data-prod-hidden>
-      <span class="panel-icon">⚙️</span>
-      <span class="panel-label">Ops</span>
-      <h2>Agent Operations</h2>
-      <p>Queue status, agent lanes, leaderboard, and provider health — unified ops hub for the Keystone orchestration system.</p>
-      <span class="panel-arrow">Open Ops →</span>
-    </a>
-
-    <a class="panel patreon" href="https://www.patreon.com/c/lanterndreamjournal" target="_blank" rel="noopener" data-prod-hidden>
-      <span class="panel-icon">✦</span>
-      <span class="panel-label">Community</span>
-      <h2>Join the Guild</h2>
-      <p id="panel-patreon-desc">Support on Patreon, get full journal access, join the Synthesasia Discord.</p>
-      <span class="panel-arrow">Become a member →</span>
-    </a>
-
-    <a class="panel" href="/settings/providers.html" id="provider-panel" data-prod-hidden>
-      <span class="panel-icon">⚡</span>
-      <span class="panel-label">Settings</span>
-      <h2>AI Providers</h2>
-      <p id="provider-panel-desc">Configure Gemini, Claude, or OpenAI keys. All optional — works without any key.</p>
-      <span class="panel-arrow">Configure →</span>
-    </a>
-
-    <a class="panel" href="/knowledgecenter.html">
-      <span class="panel-icon">📚</span>
-      <span class="panel-label">Help</span>
-      <h2>Guides & Help</h2>
-      <p>How to get started, what's new, and answers to common questions.</p>
-      <span class="panel-arrow">Open guides →</span>
-    </a>
-  </div>
-
-  <!-- ── Creator Dashboard ── -->
-  <p class="section-label">Create</p>
-  <div class="panels panels-margin-bottom">
-    <a class="panel" href="/create.html" data-prod-hidden>
+    <a class="panel" href="/create.html">
       <span class="panel-icon">✏️</span>
-      <span class="panel-label">Creator</span>
+      <span class="panel-label">Create</span>
       <h2>Content Creator</h2>
       <p>Upload and share your dreams, moments, and creative work. Videos, notes, projects, and highlights — all stored locally.</p>
       <span class="panel-arrow">Start Creating →</span>
     </a>
   </div>
 
-  <!-- ── Feature strip ── -->
-  <p class="section-label" data-prod-hidden>What's included</p>
-  <div class="features" id="live-features" data-prod-hidden>
-    <div class="feature"><div class="icon">✍️</div><h3>Write freely</h3><p id="stat-capture">Dreams, reflections, symbols — stored as plain files on your computer.</p></div>
-    <div class="feature"><div class="icon">🧠</div><h3 id="stat-agents-label">AI companion</h3><p id="stat-agents">Chat with an AI that knows your journal. Works with Gemini, Claude, or OpenAI.</p></div>
-    <div class="feature"><div class="icon">🔍</div><h3>Find patterns</h3><p id="stat-readiness">Search and surface recurring symbols, themes, and emotions over time.</p></div>
-    <div class="feature"><div class="icon">💾</div><h3>Always yours</h3><p>Export everything anytime. No lock-in, no subscription, no cloud required.</p></div>
-    <div class="feature"><div class="icon">🔒</div><h3>Fully private</h3><p id="stat-providers">No tracking, no ads, no data sold. Runs entirely on your machine.</p></div>
-    <div class="feature"><div class="icon">🟢</div><h3>Always ready</h3><p id="stat-server">Server running locally. No internet needed to write or read your journal.</p></div>
-  </div>
-
-  <!-- ── Status table ── -->
-  <div class="benchmark" data-prod-hidden>
-    <div class="benchmark-header">
-      <h2>What's available right now</h2>
-      <p id="benchmark-subtitle">Live status from your Lantern instance.</p>
-    </div>
-    <table>
-      <thead><tr><th>Feature</th><th>Status</th><th>What It Does</th></tr></thead>
-      <tbody id="benchmark-body">
-        <tr><td>Write & Save Dreams</td><td><span class="pill live">Ready</span></td><td>Record your dreams, reflections, and ideas. Everything saved locally.</td></tr>
-        <tr><td>Lucid Dreaming Tracking</td><td><span class="pill live">Ready</span></td><td>Log lucid dreams, techniques you tried, and dream signs to watch for.</td></tr>
-        <tr><td>Pattern Recognition</td><td><span class="pill live">Ready</span></td><td>See what symbols, emotions, and themes appear most in your dreams.</td></tr>
-        <tr><td>Download Your Data</td><td><span class="pill live">Ready</span></td><td>Export everything as a backup file. Your data is always yours.</td></tr>
-        <tr><td>Dashboard</td><td><span class="pill live">Ready</span></td><td>Your spaces, community hub, and reference data at <code>/flourishing</code>.</td></tr>
-        <tr><td>Kingdome of Hearts</td><td><span class="pill live">Ready</span></td><td>Seven-stage dream journey, three doors per scene, infinite loops. Plays offline.</td></tr>
-        <tr><td>AI Chat</td><td><span class="pill optional" id="pill-ai-chat">Optional</span></td><td id="note-ai-chat">Chat with an AI. Requires you to add an API key.</td></tr>
-        <tr><td>Voice Recording</td><td><span class="pill held">Coming Later</span></td><td>Record dreams by voice instead of typing. Coming in a future update.</td></tr>
-        <tr><td>Dream Art Generation</td><td><span class="pill held">Coming Later</span></td><td>AI generates images from your dream descriptions. Planned for future.</td></tr>
-      </tbody>
-    </table>
+  <!-- ── Secondary navigation link ── -->
+  <p class="section-label">More</p>
+  <div class="panels panels-margin-bottom">
+    <a class="panel" href="/explore.html" style="grid-column: 1 / -1;">
+      <span class="panel-icon">🗺️</span>
+      <span class="panel-label">Navigation</span>
+      <h2>Explore & Discover</h2>
+      <p>Access additional features: Kingdome dream journeys, full archives, advanced tools, community, settings, and more.</p>
+      <span class="panel-arrow">Explore →</span>
+    </a>
   </div>
 
   <!-- Recent Journal Entries — real data from backend -->
