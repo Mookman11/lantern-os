@@ -944,6 +944,17 @@ async function handleStreamChat(req, url, res) {
     // Continue with default fallback if router fails
   }
 
+  // ── Honor the provider-router / Σ₀ gate decision in Auto mode ─────────────
+  // Previously primaryProviderHint was computed and discarded — the local-first
+  // ladder always ran first regardless of the router's pick, so the Σ₀ gate's
+  // "escalate to the Claude-first reasoning chain" decision never actually
+  // routed (it was logged, not applied). When the user picked Auto (no explicit
+  // provider) AND the router escalated to Anthropic, prefer Claude: skip the
+  // Ollama/Gemini first-attempts so the chosen reasoning provider handles the
+  // turn. OpenAI + the local fallback below still backstop a Claude failure.
+  const autoHintProvider = (!requestedProvider && primaryProviderHint) ? primaryProviderHint.provider : null;
+  const autoPrefersAnthropic = autoHintProvider === "anthropic";
+
   // ── Provider 0: Ollama LOCAL-FIRST (dream chat prefers local models) ──────
   // When no specific cloud provider is requested, try all local Ollama models in sequence
   // for lower latency, zero cost, and offline resilience. Cloud providers are fallbacks.
@@ -985,7 +996,7 @@ async function handleStreamChat(req, url, res) {
   const intent = converganceDecision?.intent || "default";
   const modelChain = OLLAMA_MODEL_CHAIN[intent] || OLLAMA_MODEL_CHAIN.default;
   
-  const ollamaLocalFirst = !requestedProvider || requestedProvider === "ollama" || requestedProvider === "local";
+  const ollamaLocalFirst = (!requestedProvider || requestedProvider === "ollama" || requestedProvider === "local") && !autoPrefersAnthropic;
   if (ollamaLocalFirst && message && !isKeystoneDebug) {
     
     for (const ollamaModel of modelChain) {
@@ -1096,7 +1107,7 @@ async function handleStreamChat(req, url, res) {
 
   // Provider 1: Gemini (streaming) — cloud fallback
   const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-  if (geminiKey && message && (!requestedProvider || requestedProvider === "gemini" || requestedProvider === "google" || requestedProvider.startsWith("gemini-"))) {
+  if (geminiKey && message && ((!requestedProvider && !autoPrefersAnthropic) || requestedProvider === "gemini" || requestedProvider === "google" || requestedProvider.startsWith("gemini-"))) {
     // Gemini model fallback chain: primary -> fallbacks on 429/quota
     // Note: gemini-2.0-flash-lite shut down June 1 2026; gemini-3.5-flash is GA with free grounding
     const GEMINI_MODEL_CHAIN = [
