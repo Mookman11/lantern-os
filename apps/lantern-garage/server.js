@@ -99,6 +99,7 @@ const routes = [
   require("./routes/three-doors-image-pool"),
   require("./routes/three-doors-convergence"),
   require("./routes/convergence-dispatch"),
+  require("./routes/memory"),
   require("./routes/flourishing"),
   require("./routes/claims"),
   require("./routes/cubes"),
