@@ -1211,12 +1211,17 @@ async function handleStreamChat(req, url, res) {
       } else {
         claudeModel = process.env.ANTHROPIC_MODEL || claudeModel;
       }
+      // Prompt caching: the system block (Keystone/RP instructions + dream/CSF
+      // context) is the stable prefix reused across turns in a session. Marking
+      // it with cache_control caches it for 5 min; subsequent turns read it at
+      // 0.1x input price instead of reprocessing. No-op (silent) if the prefix
+      // is below the model's min cacheable length — verify via usage fields.
       const payload = JSON.stringify({
         model: claudeModel,
         max_tokens: isRpMode ? 1536 : 1024,
         temperature: isRpMode ? 0.88 : undefined,
         stream: true,
-        system: systemPrompt,
+        system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
         messages: [...compacted.map(h => ({ role: h.role, content: h.text })), { role: "user", content: message }],
       });
       await new Promise((resolve, reject) => {
