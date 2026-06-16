@@ -124,6 +124,7 @@ async function detectMotion(videoPath, fps = 5, threshold = 0.15) {
     const ffmpeg = spawn("ffmpeg", args);
     let frameData = Buffer.alloc(0);
     let lastFrame = null;
+    let frameIndex = 0;
 
     ffmpeg.stdout.on("data", (chunk) => {
       frameData = Buffer.concat([frameData, chunk]);
@@ -135,15 +136,17 @@ async function detectMotion(videoPath, fps = 5, threshold = 0.15) {
 
         if (lastFrame) {
           const motion = calculateMotion(lastFrame, frame);
-          if (motion > threshold) {
-            frames.push({
-              timestamp: frames.length / fps,
-              motion,
-            });
-          }
+          // Record EVERY frame's motion at its REAL timestamp (frameIndex/fps).
+          // Adaptive thresholding happens later in mergeDetections — a fixed
+          // absolute threshold is scale-dependent and unreliable (real footage
+          // here ranges ~0.7–50). The previous code also keyed timestamp off
+          // frames.length, collapsing all detections into one 0.2s-spaced run
+          // that always exceeded maxDuration → zero highlights.
+          frames.push({ timestamp: frameIndex / fps, motion });
         }
 
         lastFrame = frame;
+        frameIndex++;
       }
     });
 
@@ -196,6 +199,7 @@ async function detectAudioSpikes(videoPath, fps = 5, threshold = 0.7) {
     const ffmpeg = spawn("ffmpeg", audioArgs);
     const audioFrames = [];
     let audioBuffer = Buffer.alloc(0);
+    let frameIndex = 0;
 
     ffmpeg.stdout.on("data", (chunk) => {
       audioBuffer = Buffer.concat([audioBuffer, chunk]);
@@ -208,13 +212,12 @@ async function detectAudioSpikes(videoPath, fps = 5, threshold = 0.7) {
         const frameData = audioBuffer.slice(0, bytesPerFrame);
         audioBuffer = audioBuffer.slice(bytesPerFrame);
 
+        // Record EVERY frame's loudness at its REAL timestamp (same timestamp
+        // bug as motion previously: audioFrames.length keyed the time). Adaptive
+        // thresholding happens in mergeDetections.
         const loudness = calculateLoudness(frameData);
-        if (loudness > threshold) {
-          audioFrames.push({
-            timestamp: audioFrames.length / fps,
-            loudness,
-          });
-        }
+        audioFrames.push({ timestamp: frameIndex / fps, loudness });
+        frameIndex++;
       }
     });
 
@@ -323,6 +326,14 @@ function buildHistogram(frame) {
 // SCORING & MERGING
 // ============================================================================
 
+/** p-th percentile (0..1) of a numeric array. Returns 0 for an empty array. */
+function percentile(values, p) {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const idx = Math.min(sorted.length - 1, Math.max(0, Math.floor(sorted.length * p)));
+  return sorted[idx];
+}
+
 function mergeDetections(
   motionFrames,
   audioFrames,
@@ -331,66 +342,70 @@ function mergeDetections(
   minDuration,
   maxDuration
 ) {
-  const candidates = [];
+  if (!motionFrames.length) return [];
 
-  // Find peaks in motion
-  for (let i = 0; i < motionFrames.length; i++) {
-    const frame = motionFrames[i];
-    const audioMatch = audioFrames.find(
-      (a) => Math.abs(a.timestamp - frame.timestamp) < 0.5
-    );
-    const sceneMatch = sceneFrames.find(
-      (s) => Math.abs(s.timestamp - frame.timestamp) < 0.5
-    );
+  // ── Adaptive thresholds ──────────────────────────────────────────────────
+  // detectMotion/detectAudioSpikes now return EVERY frame's value, so we pick
+  // the genuinely active moments relative to this clip's own distribution
+  // rather than against a fixed absolute cutoff (which is scale-dependent and,
+  // for real footage, either matched every frame or none).
+  const motionVals = motionFrames.map((f) => f.motion);
+  const maxMotion = Math.max(...motionVals) || 1;
+  // Keep the top ~15% most-active frames, but never fewer than a sane floor so
+  // a low-variance clip still yields candidates.
+  const motionThresh = Math.max(percentile(motionVals, 0.85), percentile(motionVals, 0.5) * 1.2);
 
-    let score = frame.motion;
-    let reason = "motion";
-    const tags = ["motion"];
+  const audioVals = audioFrames.map((f) => f.loudness);
+  const audioThresh = audioVals.length ? percentile(audioVals, 0.85) : Infinity;
 
-    if (audioMatch) {
-      score = Math.max(score, audioMatch.loudness);
-      reason += " + audio";
-      tags.push("audio");
-    }
+  // Peak frames above the adaptive motion threshold.
+  const peaks = motionFrames.filter((f) => f.motion >= motionThresh);
+  if (!peaks.length) return [];
 
-    if (sceneMatch) {
-      score = Math.max(score, sceneMatch.difference);
-      reason += " + scene";
-      tags.push("scene");
-    }
-
-    candidates.push({
-      timestamp: frame.timestamp,
-      score,
-      reason,
-      tags,
-    });
-  }
-
-  // Group adjacent candidates into highlights
-  const highlights = [];
-  let current = null;
-
-  for (const cand of candidates) {
-    if (!current) {
-      current = { start: cand.timestamp, end: cand.timestamp, score: cand.score, reason: cand.reason, tags: cand.tags };
-    } else if (cand.timestamp - current.end < 0.5) {
-      current.end = cand.timestamp;
-      current.score = Math.max(current.score, cand.score);
+  // ── Group adjacent peaks into runs (gap < 0.6s) ──────────────────────────
+  const runs = [];
+  let cur = null;
+  for (const f of peaks) {
+    if (!cur) {
+      cur = { start: f.timestamp, end: f.timestamp, peak: f.motion };
+    } else if (f.timestamp - cur.end < 0.6) {
+      cur.end = f.timestamp;
+      cur.peak = Math.max(cur.peak, f.motion);
     } else {
-      if (current.end - current.start >= minDuration && current.end - current.start <= maxDuration) {
-        highlights.push(current);
-      }
-      current = { start: cand.timestamp, end: cand.timestamp, score: cand.score, reason: cand.reason, tags: cand.tags };
+      runs.push(cur);
+      cur = { start: f.timestamp, end: f.timestamp, peak: f.motion };
     }
   }
+  if (cur) runs.push(cur);
 
-  if (
-    current &&
-    current.end - current.start >= minDuration &&
-    current.end - current.start <= maxDuration
-  ) {
-    highlights.push(current);
+  // ── Convert runs to highlights: expand short, SPLIT long (don't discard) ──
+  const audioHit = (s, e) => audioFrames.some((a) => a.timestamp >= s && a.timestamp <= e && a.loudness >= audioThresh);
+  const sceneHit = (s, e) => sceneFrames.some((sc) => sc.timestamp >= s && sc.timestamp <= e);
+
+  const highlights = [];
+  for (const run of runs) {
+    let start = run.start;
+    let end = Math.max(run.end, run.start + 0.4); // avoid zero-length single-frame peaks
+    let dur = end - start;
+    if (dur < minDuration) { end = start + minDuration; dur = minDuration; }
+
+    // A long continuous run is real action — split it into <=maxDuration pieces
+    // instead of throwing the whole thing away (the old bug).
+    const nParts = Math.max(1, Math.ceil(dur / maxDuration));
+    const partLen = dur / nParts;
+    for (let i = 0; i < nParts; i++) {
+      const ps = start + i * partLen;
+      const pe = Math.min(end, ps + partLen);
+      if (pe - ps < minDuration && nParts > 1) continue;
+
+      const tags = ["motion"];
+      let reason = "motion";
+      let score = Math.min(1, run.peak / maxMotion); // normalized 0..1
+      if (audioHit(ps, pe)) { tags.push("audio"); reason += " + audio"; score = Math.min(1, score + 0.15); }
+      if (sceneHit(ps, pe)) { tags.push("scene"); reason += " + scene"; score = Math.min(1, score + 0.10); }
+
+      highlights.push({ start: ps, end: pe, score, reason, tags });
+    }
   }
 
   return highlights;
