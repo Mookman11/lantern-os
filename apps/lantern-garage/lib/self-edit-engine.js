@@ -241,17 +241,22 @@ function gitAddAll(repoRoot) {
 }
 
 function openDraftPr(repoRoot, branch, title, body) {
-  // branch is already sanitized — don't re-sanitize (same double-prefix bug as gitPush).
   if (!branch.startsWith("auto/")) throw new Error("invalid_branch_prefix");
   const safeTitle = String(title || "Auto PR").replace(/"/g, "'").slice(0, 256);
   const safeBody = String(body || "").replace(/"/g, "'").slice(0, 4000);
-  const result = execSync(
-    `gh pr create --head ${branch} --base master --title "${safeTitle}" --body "${safeBody}" --draft`,
-    { cwd: repoRoot, encoding: "utf8", timeout: 30000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0", SKIP_MONOWORKSTREAM: "1" } }
-  );
-  // Extract URL from gh output
-  const urlMatch = result.match(/(https:\/\/github\.com\/[^\s]+)/);
-  return urlMatch ? urlMatch[1] : result.trim();
+  try {
+    const result = execSync(
+      `gh pr create --head ${branch} --base master --title "${safeTitle}" --body "${safeBody}" --draft`,
+      { cwd: repoRoot, encoding: "utf8", timeout: 30000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0", SKIP_MONOWORKSTREAM: "1" } }
+    );
+    const urlMatch = result.match(/(https:\/\/github\.com\/[^\s]+)/);
+    return urlMatch ? urlMatch[1] : result.trim();
+  } catch (e) {
+    // PR already exists — extract the existing URL from the error output
+    const existing = (e.stderr || e.stdout || e.message || "").match(/(https:\/\/github\.com\/[^\s\n]+)/);
+    if (existing) return existing[1];
+    throw e;
+  }
 }
 
 // ── Test runner ─────────────────────────────────────────────────────────
