@@ -966,6 +966,142 @@ async function dreamChatReply(message, recentDreams, requestedAgent = "", reques
   };
 }
 
+// ── Σ₀ Self-Correcting Verify Pass ──────────────────────────────────
+// Extracts factual claims from a draft reply, checks each against the
+// codebase + memory, revises low-confidence claims, appends a convergence
+// record. Only runs when SIGMA0_VERIFY=true in env.
+async function verifyResponse(draft, userMessage, agentName) {
+  if (process.env.SIGMA0_VERIFY !== "true") return { verified: draft, records: [], corrected: false };
+
+  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  if (!anthropicKey) return { verified: draft, records: [], corrected: false };
+
+  const fs = require("fs");
+  const path = require("path");
+  const REPO_ROOT = path.resolve(__dirname, "..", "..");
+  const RECORDS_PATH = path.join(REPO_ROOT, "data", "convergence", "records.jsonl");
+
+  // Step 1: extract claims
+  let claims = [];
+  try {
+    const extractPrompt = `You are a claim extractor. Given an AI response, list every specific factual assertion (file paths, function names, numbers, feature descriptions). Return JSON array: [{"claim": "...", "type": "fact|number|feature"}]. Max 6 claims. If no factual claims, return [].
+
+AI response:
+${draft.slice(0, 1200)}`;
+
+    const payload = JSON.stringify({
+      model: process.env.ANTHROPIC_MODEL || "claude-haiku-4-5-20251001",
+      max_tokens: 512,
+      messages: [{ role: "user", content: extractPrompt }],
+    });
+
+    const raw = await new Promise((resolve, reject) => {
+      const req = https.request({
+        hostname: "api.anthropic.com",
+        path: "/v1/messages",
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": anthropicKey,
+          "anthropic-version": "2023-06-01",
+          "Content-Length": Buffer.byteLength(payload),
+        },
+      }, (res) => {
+        let d = "";
+        res.on("data", c => d += c);
+        res.on("end", () => resolve(d));
+        res.on("error", reject);
+      });
+      req.on("error", reject);
+      req.setTimeout(8000, () => { req.destroy(); reject(new Error("timeout")); });
+      req.write(payload);
+      req.end();
+    });
+
+    const parsed = JSON.parse(raw);
+    const content = parsed.content?.[0]?.text || "[]";
+    const jsonMatch = content.match(/\[[\s\S]*\]/);
+    claims = jsonMatch ? JSON.parse(jsonMatch[0]) : [];
+  } catch { return { verified: draft, records: [], corrected: false }; }
+
+  if (!claims.length) return { verified: draft, records: [], corrected: false };
+
+  // Step 2: check each claim against codebase
+  const { execSync } = require("child_process");
+  const records = [];
+  let anyLow = false;
+
+  for (const c of claims.slice(0, 4)) {
+    let evidence = "no match found";
+    let confidence = 0.4;
+    try {
+      // grep codebase for key terms from the claim
+      const terms = c.claim.replace(/[^a-zA-Z0-9_\-. ]/g, " ").split(/\s+/).filter(t => t.length > 4).slice(0, 2).join("|");
+      if (terms) {
+        const result = execSync(`git grep -l --ignore-case -E "${terms}" -- "*.js" "*.json" "*.md" 2>NUL`, { cwd: REPO_ROOT, timeout: 3000, encoding: "utf8" }).trim();
+        if (result) { evidence = `found in: ${result.split("\n").slice(0, 2).join(", ")}`; confidence = 0.85; }
+      }
+    } catch { /* grep found nothing */ }
+
+    records.push({ claim: c.claim, type: c.type, evidence, confidence, source: "codebase-grep", agent: agentName, userMessage: userMessage.slice(0, 100) });
+    if (confidence < 0.5) anyLow = true;
+  }
+
+  // Step 3: if any low-confidence claims, ask Claude to revise
+  let verified = draft;
+  let corrected = false;
+  if (anyLow) {
+    try {
+      const lowClaims = records.filter(r => r.confidence < 0.5).map(r => `- "${r.claim}" (no codebase evidence found)`).join("\n");
+      const revisePrompt = `You are a self-correcting AI. The following claims in your response could not be verified against the codebase:\n${lowClaims}\n\nOriginal response:\n${draft}\n\nRevise the response to either remove unverifiable claims, qualify them with "I believe..." or "I'm not certain, but...", or correct them. Keep the response natural. Return only the revised response text.`;
+
+      const payload2 = JSON.stringify({
+        model: process.env.ANTHROPIC_MODEL || "claude-haiku-4-5-20251001",
+        max_tokens: 1024,
+        messages: [{ role: "user", content: revisePrompt }],
+      });
+
+      const raw2 = await new Promise((resolve, reject) => {
+        const req2 = https.request({
+          hostname: "api.anthropic.com",
+          path: "/v1/messages",
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": anthropicKey,
+            "anthropic-version": "2023-06-01",
+            "Content-Length": Buffer.byteLength(payload2),
+          },
+        }, (res) => {
+          let d = "";
+          res.on("data", c => d += c);
+          res.on("end", () => resolve(d));
+          res.on("error", reject);
+        });
+        req2.on("error", reject);
+        req2.setTimeout(10000, () => { req2.destroy(); reject(new Error("timeout")); });
+        req2.write(payload2);
+        req2.end();
+      });
+
+      const parsed2 = JSON.parse(raw2);
+      const revised = parsed2.content?.[0]?.text?.trim();
+      if (revised && revised.length > 50) { verified = revised; corrected = true; }
+    } catch { /* keep original */ }
+  }
+
+  // Step 4: append convergence records
+  try {
+    fs.mkdirSync(path.dirname(RECORDS_PATH), { recursive: true });
+    const timestamp = new Date().toISOString();
+    for (const r of records) {
+      fs.appendFileSync(RECORDS_PATH, JSON.stringify({ timestamp, ...r, corrected }) + "\n");
+    }
+  } catch { /* non-fatal */ }
+
+  return { verified, records, corrected };
+}
+
 // ── Initialize Token Audit ───────────────────────────────────────────
 const tokenAudit = new TokenAudit();
 
@@ -976,5 +1112,6 @@ module.exports = {
   parseBangCommand,
   handleConvergenceCommand,
   dreamChatReply,
+  verifyResponse,
   tokenAudit,
 };

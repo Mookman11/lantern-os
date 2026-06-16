@@ -18,7 +18,7 @@ module.exports = async function dreamRoutes(req, res, url, deps) {
     readRecentDreams, dreamChatReply, appendConversationEntry,
     unifiedAgentGreet, unifiedAgentHealth, unifiedAgentInspect,
     handleStreamChat } = deps;
-  const { handleConvergenceCommand, selectAgent } = require("../lib/dream-chat");
+  const { handleConvergenceCommand, selectAgent, verifyResponse } = require("../lib/dream-chat");
   const { classifyIntent, CAPABILITY_REGISTRY } = require("../lib/intent-router");
 
   // ── CSF search endpoint ───────────────────────────────────────────────
@@ -266,6 +266,14 @@ module.exports = async function dreamRoutes(req, res, url, deps) {
         result = await handleConvergenceCommand(recentDreams, agent, message);
       } else {
         result = await dreamChatReply(message, recentDreams, body.agent || "", body.provider || "");
+        // Σ₀ self-correction pass (only when SIGMA0_VERIFY=true and reply exists)
+        if (result.reply && process.env.SIGMA0_VERIFY === "true") {
+          try {
+            const { verified, corrected, records } = await verifyResponse(result.reply, message, result.agent || "lantern");
+            if (corrected) result.reply = verified;
+            result.sigma0 = { corrected, claims: records.length, verified: records.filter(r => r.confidence >= 0.5).length };
+          } catch { /* verification non-fatal */ }
+        }
       }
 
       const provLatency = Date.now() - provStart;
@@ -380,7 +388,9 @@ module.exports = async function dreamRoutes(req, res, url, deps) {
       if (agent) engine.agent = agent;
 
       let data;
-      if (action === "reset" || action === "start") {
+      if (action === "reset") {
+        data = engine.toApiResponse(engine.resetGame());
+      } else if (action === "start") {
         data = engine.toApiResponse(engine.startGame());
       } else if (action === "choose") {
         const result = engine.chooseDoor(choice);
