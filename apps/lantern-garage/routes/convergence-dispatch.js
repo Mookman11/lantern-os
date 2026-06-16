@@ -137,19 +137,15 @@ module.exports = async (req, res, url, deps) => {
           );
         });
 
-        let branchName = currentBranch;
-        if (currentBranch === "master") {
-          branchName = `auto/issue-${issueNumber}`;
+        const branchName = `auto/issue-${issueNumber}`;
+        if (currentBranch !== branchName) {
           await new Promise((resolve) => {
-            execFile(
-              "git",
-              ["checkout", "-b", branchName],
-              { cwd: REPO_ROOT, timeout: 5000, windowsHide: true },
+            execFile("git", ["checkout", branchName], { cwd: REPO_ROOT, timeout: 5000, windowsHide: true },
               (err) => {
-                if (err) return resolve(false);
-                resolve(true);
-              }
-            );
+                if (!err) return resolve(true);
+                execFile("git", ["checkout", "-b", branchName, "master"], { cwd: REPO_ROOT, timeout: 5000, windowsHide: true, env: { ...process.env, SKIP_MONOWORKSTREAM: "1" } },
+                  (err2) => resolve(!err2));
+              });
           });
         }
 
