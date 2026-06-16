@@ -65,7 +65,10 @@ async function analyzeVideoForHighlights(videoPath, options = {}) {
     audioThreshold = 0.7,
     sceneThreshold = 0.3,
     minHighlightDuration = 2.0,
-    maxHighlightDuration = 30.0,
+    // 60s is the YouTube Shorts ceiling and the ExportValidator's maxDuration.
+    // We do not cap highlight length below that — a long continuous action run
+    // stays whole up to 60s; only runs beyond 60s are split into <=60s pieces.
+    maxHighlightDuration = 60.0,
   } = options;
 
   // Get video metadata
@@ -468,5 +471,6 @@ module.exports = {
   detectMotion,
   detectAudioSpikes,
   detectSceneChanges,
+  mergeDetections,
   scoreHighlight,
 };
