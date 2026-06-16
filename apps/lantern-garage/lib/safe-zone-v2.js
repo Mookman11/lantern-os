@@ -288,10 +288,33 @@ async function analyzeForCrop(videoPath, opts = {}) {
 
 function round3(n) { return Number(Number(n).toFixed(3)); }
 
+// Render a debug overlay: draw the detected regions (normalized bounds) onto a
+// real frame so the user can visually verify facecam/HUD detection. Uses ffmpeg
+// drawbox with iw/ih-relative coordinates, so it is resolution-independent.
+async function renderSafeZoneOverlay(videoPath, regions, outPath, opts = {}) {
+  const at = opts.at != null ? opts.at : 1;
+  const boxes = (Array.isArray(regions) ? regions : [])
+    .filter((r) => r && r.bounds)
+    .map((r) => {
+      const { x, y, width, height } = r.bounds;
+      const color = r.type === "facecam" ? "red" : "yellow";
+      return `drawbox=x=iw*${x}:y=ih*${y}:w=iw*${width}:h=ih*${height}:color=${color}@0.9:t=5`;
+    });
+  const vf = boxes.length ? boxes.join(",") : "null";
+  return new Promise((resolve) => {
+    const args = ["-y", "-ss", String(at), "-i", videoPath, "-vf", vf, "-frames:v", "1", "-q:v", "3", outPath];
+    const ff = spawn("ffmpeg", args);
+    ff.stderr.on("data", () => {});
+    ff.on("close", (code) => resolve({ ok: code === 0 && fs.existsSync(outPath), code }));
+    ff.on("error", (e) => resolve({ ok: false, error: e.message }));
+  });
+}
+
 module.exports = {
   analyzeForCrop,
   detectRegions,
   planCrop,
   sampleFrames,
+  renderSafeZoneOverlay,
   TARGET_ASPECT_9_16,
 };
