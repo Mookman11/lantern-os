@@ -250,29 +250,43 @@
   }
   @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
   .learn-more-link:hover { color: rgba(255,255,255,0.9); border-bottom-color: rgba(255,255,255,0.6); }
+
+  /* Auto-load state: hide welcome screen */
+  body.game-started .welcome-doors { display: none; }
+
+  /* Loading state */
+  .loading-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 60vh;
+    gap: 20px;
+    color: var(--muted);
+  }
+  .loading-state .lantern-icon { font-size: 48px; animation: pulse 2s infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 </style>
 </head>
 <body>
 <div class="app">
 
-  <!-- Site nav -->
+  <!-- Standard header (Lantern OS branded navigation) -->
   <nav class="site-nav">
-    <a class="nav-brand" href="/trader-dashboard.html">
-      <img src="/mandala.svg" alt="" aria-hidden="true" style="width:18px;height:18px;vertical-align:middle">
-      Lantern OS
+    <a class="nav-brand" href="/">
+      <img src="/mandala.svg" alt="" aria-hidden="true" style="width:24px;height:24px;vertical-align:middle;margin-right:8px">
+      <span style="font-size:18px;font-weight:600">Lantern OS</span>
     </a>
     <div class="nav-links">
       <a href="/dream-chat.html">Journal</a>
       <a href="/three-doors-game.html" class="active">Kingdome</a>
-      <a href="/create.html">✏️ Create</a>
-      <a href="/knowledgecenter.html">Help</a>
+      <a href="/create.html">Create</a>
+      <a href="/explore.html">Explore</a>
     </div>
     <div class="nav-actions">
       <span id="status-line" style="font-size:11px;color:var(--muted);margin-right:6px"></span>
-      <button id="training-badge" onclick="showTrainingStatus()" title="LoRA training data collected" style="display:none;background:none;border:1px solid var(--border);border-radius:7px;padding:4px 8px;color:var(--accent);cursor:pointer;font-size:11px;font-family:inherit;gap:3px">📸 <span id="training-count">0</span></button>
       <button onclick="resetGame()" title="New game" style="background:none;border:1px solid var(--border);border-radius:7px;padding:5px 10px;color:var(--muted);cursor:pointer;font-size:12px;font-family:inherit">↺ New</button>
-      <button class="nav-btn" id="narrator-toggle" onclick="toggleNarrator()" title="Narrator on/off">🎙</button>
-      <button class="nav-btn" id="theme-toggle" onclick="toggleTheme()" title="Toggle theme">🌙</button>
+      <button id="theme-toggle" onclick="toggleTheme()" title="Toggle theme" style="background:none;border:none;cursor:pointer;font-size:16px">🌙</button>
     </div>
   </nav>
 
@@ -336,5 +350,14 @@
 </footer>
 
 <script src="js/theme-toggle.js"></script>
+<script>
+  // Auto-load game on page load — all scripts are now loaded
+  window.addEventListener('load', () => {
+    document.body.classList.add('game-started');
+    if (typeof startGame === 'function') {
+      startGame();
+    }
+  });
+</script>
 </body>
 </html>

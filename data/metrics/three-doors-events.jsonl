@@ -100,3 +100,19 @@
 {"timestamp":"2026-06-16T06:00:53.879Z","event":"image_load","payload":{"sceneKey":"kingdome-garden","source":"pool:caadi","reason":"random (no keyword match)"}}
 {"timestamp":"2026-06-16T06:01:10.783Z","event":"image_load","payload":{"sceneKey":"kingdome-garden","source":"pool:caadi","reason":"random (no keyword match)"}}
 {"timestamp":"2026-06-16T06:01:11.124Z","event":"image_load","payload":{"sceneKey":"kingdome-garden","source":"pool:caadi","reason":"random (no keyword match)"}}
+{"timestamp":"2026-06-16T06:51:14.804Z","event":"image_load","payload":{"sceneKey":"kingdome-garden","source":"pool:caadi","reason":"random (no keyword match)"}}
+{"timestamp":"2026-06-16T06:51:38.852Z","event":"image_load","payload":{"sceneKey":"kingdome-garden","source":"pool:caadi","reason":"random (no keyword match)"}}
+{"timestamp":"2026-06-16T07:05:51.133Z","event":"image_load","payload":{"sceneKey":"kingdome-garden","source":"pool:caadi","reason":"random (no keyword match)"}}
+{"timestamp":"2026-06-16T07:05:55.830Z","event":"door_choice","payload":{"label":"C","name":"The Fog Door Return","sceneKey":"kingdome-garden"}}
+{"timestamp":"2026-06-16T07:06:11.875Z","event":"image_load","payload":{"sceneKey":"cloverfield","source":"pool:caadi","reason":"random (no keyword match)"}}
+{"timestamp":"2026-06-16T07:06:37.729Z","event":"door_choice","payload":{"label":"C","name":"The Tomorrow Door","sceneKey":"cloverfield"}}
+{"timestamp":"2026-06-16T07:06:43.709Z","event":"image_load","payload":{"sceneKey":"future-doors","source":"pool:caadi","reason":"random (no keyword match)"}}
+{"timestamp":"2026-06-16T07:10:34.410Z","event":"door_choice","payload":{"label":"A","name":"The Bright Branch","sceneKey":"future-doors"}}
+{"timestamp":"2026-06-16T07:10:37.459Z","event":"image_load","payload":{"sceneKey":"xp-door","source":"pool:caadi","reason":"random (no keyword match)"}}
+{"timestamp":"2026-06-16T07:10:41.887Z","event":"door_choice","payload":{"label":"C","name":"unknown.exe","sceneKey":"xp-door"}}
+{"timestamp":"2026-06-16T07:10:44.334Z","event":"image_load","payload":{"sceneKey":"xenon-convergence","source":"pool:caadi","reason":"matched keywords: infinity, mural"}}
+{"timestamp":"2026-06-16T07:10:50.115Z","event":"door_choice","payload":{"label":"C","name":"The Merge Door","sceneKey":"xenon-convergence"}}
+{"timestamp":"2026-06-16T07:10:52.136Z","event":"image_load","payload":{"sceneKey":"sigil-city","source":"pool:caadi","reason":"matched keywords: lantern"}}
+{"timestamp":"2026-06-16T07:18:08.127Z","event":"image_load","payload":{"sceneKey":"kingdome-garden","source":"pool:caadi","reason":"random (no keyword match)"}}
+{"timestamp":"2026-06-16T07:21:07.238Z","event":"image_load","payload":{"sceneKey":"kingdome-garden","source":"pool:caadi","reason":"random (no keyword match)"}}
+{"timestamp":"2026-06-16T07:22:24.661Z","event":"image_load","payload":{"sceneKey":"kingdome-garden","source":"pool:caadi","reason":"random (no keyword match)"}}

@@ -1,3 +1,11 @@
+## [1.4.1] - 2026-06-16
+**Build:** 1.4.1+2026-06-16.064254
+**Commit:** 10e6fb87
+
+test: Verify auto-merge can process real code commits
+
+---
+
 ## [1.4.0] - 2026-06-14
 **Build:** 1.4.0+20260614T1944
 **Commit:** 5958a30

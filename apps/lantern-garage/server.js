@@ -141,8 +141,16 @@ async function route(req, res) {
   }
 
   for (const handler of routes) {
-    const handled = await handler(req, res, url, deps);
-    if (handled) return;
+    try {
+      const handled = await handler(req, res, url, deps);
+      if (handled) return;
+    } catch (e) {
+      console.error(`Route handler error for ${url.pathname}:`, e.message);
+      if (!res.headersSent) {
+        sendJson(res, { error: e.message }, 500);
+      }
+      return;
+    }
   }
 }
 
