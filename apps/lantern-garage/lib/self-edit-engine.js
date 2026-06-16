@@ -302,7 +302,7 @@ function runTests(repoRoot, testCommands) {
 
 // ── LLM helper (non-streaming) ──────────────────────────────────────────
 
-async function callLlm(system, user, providerHint = "auto") {
+async function callLlm(system, user, providerHint = "auto", maxTokens = 4096) {
   const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
   const openaiKey = process.env.OPENAI_API_KEY;
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
@@ -310,19 +310,18 @@ async function callLlm(system, user, providerHint = "auto") {
 
   // When a specific provider is requested, try it directly (no cascade).
   if (providerHint !== "auto") {
-    if (providerHint === "claude" && anthropicKey) return callClaude(system, user);
-    if (providerHint === "openai" && openaiKey) return callOpenAI(messages);
-    if (providerHint === "gemini" && geminiKey) return callGemini(system, user);
+    if (providerHint === "claude" && anthropicKey) return callClaude(system, user, maxTokens);
+    if (providerHint === "openai" && openaiKey) return callOpenAI(messages, maxTokens);
+    if (providerHint === "gemini" && geminiKey) return callGemini(system, user, maxTokens);
     if (providerHint === "ollama") return callOllama(messages);
     throw new Error("no_provider_available");
   }
 
-  // Auto mode: try providers in cascade so a transient TLS/network error on
-  // one provider doesn't block the whole operation.
+  // Auto mode: try providers in cascade
   const queue = [
-    anthropicKey && (() => callClaude(system, user)),
-    geminiKey    && (() => callGemini(system, user)),
-    openaiKey    && (() => callOpenAI(messages)),
+    anthropicKey && (() => callClaude(system, user, maxTokens)),
+    geminiKey    && (() => callGemini(system, user, maxTokens)),
+    openaiKey    && (() => callOpenAI(messages, maxTokens)),
     () => callOllama(messages),
   ].filter(Boolean);
 
@@ -333,10 +332,10 @@ async function callLlm(system, user, providerHint = "auto") {
   throw new Error("all_providers_failed: " + errs.join(" | "));
 }
 
-function callOpenAI(messages) {
+function callOpenAI(messages, maxTokens = 4096) {
   const openaiKey = process.env.OPENAI_API_KEY;
   const model = process.env.OPENAI_MODEL || "gpt-4.1-mini";
-  const payload = JSON.stringify({ model, messages, max_tokens: 2048, temperature: 0.3 });
+  const payload = JSON.stringify({ model, messages, max_tokens: maxTokens, temperature: 0.3 });
   return new Promise((resolve, reject) => {
     const req = https.request({
       hostname: "api.openai.com",
@@ -362,10 +361,10 @@ function callOpenAI(messages) {
   });
 }
 
-function callClaude(system, user) {
+function callClaude(system, user, maxTokens = 4096) {
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
   const model = process.env.ANTHROPIC_MODEL || "claude-haiku-4-5-20251001";
-  const payload = JSON.stringify({ model, max_tokens: 2048, temperature: 0.3, system, messages: [{ role: "user", content: user }] });
+  const payload = JSON.stringify({ model, max_tokens: maxTokens, temperature: 0.3, system, messages: [{ role: "user", content: user }] });
   return new Promise((resolve, reject) => {
     const req = https.request({
       hostname: "api.anthropic.com",
@@ -391,12 +390,12 @@ function callClaude(system, user) {
   });
 }
 
-function callGemini(system, user) {
+function callGemini(system, user, maxTokens = 4096) {
   const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
   const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
   const payload = JSON.stringify({
     contents: [{ role: "user", parts: [{ text: `${system}\n\n${user}` }] }],
-    generationConfig: { maxOutputTokens: 2048, temperature: 0.3 },
+    generationConfig: { maxOutputTokens: maxTokens, temperature: 0.3 },
   });
   return new Promise((resolve, reject) => {
     const req = https.request({
