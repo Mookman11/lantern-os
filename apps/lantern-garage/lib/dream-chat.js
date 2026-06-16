@@ -842,45 +842,53 @@ async function dreamChatReply(message, recentDreams, requestedAgent = "", reques
     }
   }
 
-  // PRIORITY 3: Google Gemini (if explicitly requested)
+  // PRIORITY 3: Google Gemini (try all available models)
   const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
   if (geminiKey && (!rp || rp === "gemini" || rp === "google" || rp.startsWith("gemini-"))) {
-    try {
-      const geminiModel = rp.startsWith("gemini-") ? rp : (process.env.GEMINI_MODEL || "gemini-2.5-flash");
-      const payload = JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: `${agent.systemPrompt}\n\n${userPrompt}` }] }],
-        generationConfig: { maxOutputTokens: 256, temperature: 0.7 },
-        tools: [{ google_search_retrieval: {} }],
-      });
-      const reply = await new Promise((resolve, reject) => {
-        const req2 = https.request({
-          hostname: "generativelanguage.googleapis.com",
-          path: `/v1beta/models/${geminiModel}:generateContent?key=${geminiKey}`,
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Content-Length": Buffer.byteLength(payload),
-          },
-        }, (upstream) => {
-          let data = "";
-          upstream.on("data", (c) => (data += c));
-          upstream.on("end", () => {
-            try {
-              const json = JSON.parse(data);
-              resolve(String(json.candidates?.[0]?.content?.parts?.[0]?.text || "").trim());
-            } catch { resolve(""); }
-          });
-          upstream.on("error", reject);
+    const geminiModels = rp.startsWith("gemini-") ? [rp] : [
+      process.env.GEMINI_MODEL || "gemini-2.5-flash",
+      "gemini-1.5-flash",
+      "gemini-2.0-flash",
+      "gemini-1.5-pro",
+    ];
+
+    for (const geminiModel of geminiModels) {
+      try {
+        const payload = JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: `${agent.systemPrompt}\n\n${userPrompt}` }] }],
+          generationConfig: { maxOutputTokens: 256, temperature: 0.7 },
+          tools: [{ google_search_retrieval: {} }],
         });
-        req2.on("error", reject);
-        req2.setTimeout(15000, () => { req2.destroy(); reject(new Error("timeout")); });
-        req2.write(payload);
-        req2.end();
-      });
-      if (reply) {
-        return { reply, agent: agent.name, suggestions, online: true, source: "gemini", webSuggestions };
-      }
-    } catch (err) { console.error("Gemini API error:", err.message); }
+        const reply = await new Promise((resolve, reject) => {
+          const req2 = https.request({
+            hostname: "generativelanguage.googleapis.com",
+            path: `/v1beta/models/${geminiModel}:generateContent?key=${geminiKey}`,
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Content-Length": Buffer.byteLength(payload),
+            },
+          }, (upstream) => {
+            let data = "";
+            upstream.on("data", (c) => (data += c));
+            upstream.on("end", () => {
+              try {
+                const json = JSON.parse(data);
+                resolve(String(json.candidates?.[0]?.content?.parts?.[0]?.text || "").trim());
+              } catch { resolve(""); }
+            });
+            upstream.on("error", reject);
+          });
+          req2.on("error", reject);
+          req2.setTimeout(15000, () => { req2.destroy(); reject(new Error("timeout")); });
+          req2.write(payload);
+          req2.end();
+        });
+        if (reply) {
+          return { reply, agent: agent.name, suggestions, online: true, source: `gemini:${geminiModel}`, webSuggestions };
+        }
+      } catch (err) { console.error(`Gemini (${geminiModel}) error:`, err.message); }
+    }
   }
 
   // PRIORITY 4: OpenAI (if explicitly requested)
