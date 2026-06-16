@@ -28,6 +28,23 @@ module.exports = async function creatorEntriesRoutes(req, res, url, deps) {
   }
 
   // =========================================================================
+  // POST /api/creator-entries/repair-metadata - Repair all projects
+  // =========================================================================
+  // Scans every project, backfills missing metadata fields on disk, and reports
+  // any whose source video/thumbnail is missing. Safe to run repeatedly.
+  if (url.pathname === "/api/creator-entries/repair-metadata" && req.method === "POST") {
+    try {
+      const report = entryStore.repairAllProjects(repoRoot);
+      sendJson(res, { success: true, report });
+      return true;
+    } catch (error) {
+      console.error("[creator-entries] repair error:", error.message);
+      sendJson(res, { error: error.message }, 500);
+      return true;
+    }
+  }
+
+  // =========================================================================
   // GET /api/creator-entries/:id - Get entry details
   // =========================================================================
   const entryDetailMatch = url.pathname.match(/^\/api\/creator-entries\/([^/]+)$/);
