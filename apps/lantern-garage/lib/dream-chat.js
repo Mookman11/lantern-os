@@ -967,9 +967,9 @@ async function dreamChatReply(message, recentDreams, requestedAgent = "", reques
 }
 
 // ── Σ₀ Self-Correcting Verify Pass ──────────────────────────────────
-// Extracts factual claims from a draft reply, checks each against the
-// codebase + memory, revises low-confidence claims, appends a convergence
-// record. Only runs when SIGMA0_VERIFY=true in env.
+// Three grounding sources: (1) codebase grep, (2) web search via MCP,
+// (3) Gemini grounding API. Low-confidence claims trigger a revision pass.
+// Appends convergence records. Runs when SIGMA0_VERIFY=true.
 async function verifyResponse(draft, userMessage, agentName) {
   if (process.env.SIGMA0_VERIFY !== "true") return { verified: draft, records: [], corrected: false };
 
@@ -978,119 +978,145 @@ async function verifyResponse(draft, userMessage, agentName) {
 
   const fs = require("fs");
   const path = require("path");
+  const { webSearchMcp } = require("./web-search-client");
+  const { execSync } = require("child_process");
   const REPO_ROOT = path.resolve(__dirname, "..", "..");
   const RECORDS_PATH = path.join(REPO_ROOT, "data", "convergence", "records.jsonl");
 
-  // Step 1: extract claims
-  let claims = [];
-  try {
-    const extractPrompt = `You are a claim extractor. Given an AI response, list every specific factual assertion (file paths, function names, numbers, feature descriptions). Return JSON array: [{"claim": "...", "type": "fact|number|feature"}]. Max 6 claims. If no factual claims, return [].
-
-AI response:
-${draft.slice(0, 1200)}`;
-
+  // ── Helper: call Claude Haiku ─────────────────────────────────────
+  function callHaiku(prompt, maxTokens = 512) {
     const payload = JSON.stringify({
       model: process.env.ANTHROPIC_MODEL || "claude-haiku-4-5-20251001",
-      max_tokens: 512,
-      messages: [{ role: "user", content: extractPrompt }],
+      max_tokens: maxTokens,
+      messages: [{ role: "user", content: prompt }],
     });
-
-    const raw = await new Promise((resolve, reject) => {
+    return new Promise((resolve, reject) => {
       const req = https.request({
-        hostname: "api.anthropic.com",
-        path: "/v1/messages",
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": anthropicKey,
-          "anthropic-version": "2023-06-01",
-          "Content-Length": Buffer.byteLength(payload),
-        },
-      }, (res) => {
-        let d = "";
-        res.on("data", c => d += c);
-        res.on("end", () => resolve(d));
-        res.on("error", reject);
-      });
+        hostname: "api.anthropic.com", path: "/v1/messages", method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": anthropicKey, "anthropic-version": "2023-06-01", "Content-Length": Buffer.byteLength(payload) },
+      }, (res) => { let d = ""; res.on("data", c => d += c); res.on("end", () => resolve(d)); res.on("error", reject); });
       req.on("error", reject);
-      req.setTimeout(8000, () => { req.destroy(); reject(new Error("timeout")); });
-      req.write(payload);
-      req.end();
+      req.setTimeout(10000, () => { req.destroy(); reject(new Error("timeout")); });
+      req.write(payload); req.end();
     });
+  }
 
-    const parsed = JSON.parse(raw);
-    const content = parsed.content?.[0]?.text || "[]";
-    const jsonMatch = content.match(/\[[\s\S]*\]/);
-    claims = jsonMatch ? JSON.parse(jsonMatch[0]) : [];
+  // ── Helper: Gemini grounding check ───────────────────────────────
+  async function geminiGroundCheck(claim) {
+    const geminiKey = process.env.GEMINI_API_KEY;
+    if (!geminiKey) return null;
+    try {
+      const payload = JSON.stringify({
+        contents: [{ parts: [{ text: `Is this claim accurate? Answer with yes/no and one sentence of evidence: "${claim}"` }] }],
+        tools: [{ googleSearch: {} }],
+      });
+      const raw = await new Promise((resolve, reject) => {
+        const req = https.request({
+          hostname: "generativelanguage.googleapis.com",
+          path: `/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) },
+        }, (res) => { let d = ""; res.on("data", c => d += c); res.on("end", () => resolve(d)); res.on("error", reject); });
+        req.on("error", reject);
+        req.setTimeout(8000, () => { req.destroy(); reject(new Error("timeout")); });
+        req.write(payload); req.end();
+      });
+      const j = JSON.parse(raw);
+      const text = j.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      const groundingMeta = j.candidates?.[0]?.groundingMetadata;
+      const sources = groundingMeta?.groundingChunks?.map(c => c.web?.uri).filter(Boolean) || [];
+      const isYes = /^yes/i.test(text.trim());
+      return { text, sources, confident: isYes, confidence: isYes ? 0.9 : 0.35 };
+    } catch { return null; }
+  }
+
+  // ── Step 1: extract claims ────────────────────────────────────────
+  let claims = [];
+  try {
+    const raw = await callHaiku(
+      `Extract factual claims from this AI response. Return JSON array only: [{"claim":"...","type":"fact|number|feature","needsWeb":true/false}]. Max 5 claims. needsWeb=true for claims about real-world facts, current events, or external APIs. needsWeb=false for code/file claims.\n\nResponse:\n${draft.slice(0, 1200)}`
+    );
+    const content = JSON.parse(raw).content?.[0]?.text || "[]";
+    const m = content.match(/\[[\s\S]*\]/);
+    claims = m ? JSON.parse(m[0]) : [];
   } catch { return { verified: draft, records: [], corrected: false }; }
 
   if (!claims.length) return { verified: draft, records: [], corrected: false };
 
-  // Step 2: check each claim against codebase
-  const { execSync } = require("child_process");
+  // ── Step 2: ground each claim (codebase + web + Gemini in parallel) ──
   const records = [];
   let anyLow = false;
 
-  for (const c of claims.slice(0, 4)) {
+  await Promise.all(claims.slice(0, 5).map(async (c) => {
     let evidence = "no match found";
     let confidence = 0.4;
-    try {
-      // grep codebase for key terms from the claim
-      const terms = c.claim.replace(/[^a-zA-Z0-9_\-. ]/g, " ").split(/\s+/).filter(t => t.length > 4).slice(0, 2).join("|");
-      if (terms) {
-        const result = execSync(`git grep -l --ignore-case -E "${terms}" -- "*.js" "*.json" "*.md" 2>NUL`, { cwd: REPO_ROOT, timeout: 3000, encoding: "utf8" }).trim();
-        if (result) { evidence = `found in: ${result.split("\n").slice(0, 2).join(", ")}`; confidence = 0.85; }
+    let source = "none";
+    const sources = [];
+
+    // 2a: codebase grep (always run for code claims)
+    if (!c.needsWeb) {
+      try {
+        const terms = c.claim.replace(/[^a-zA-Z0-9_\-. ]/g, " ").split(/\s+/).filter(t => t.length > 4).slice(0, 2).join("|");
+        if (terms) {
+          const res = execSync(`git grep -l --ignore-case -E "${terms}" -- "*.js" "*.json" "*.md" 2>NUL`, { cwd: REPO_ROOT, timeout: 3000, encoding: "utf8" }).trim();
+          if (res) { evidence = `codebase: ${res.split("\n").slice(0, 2).join(", ")}`; confidence = 0.85; source = "codebase-grep"; sources.push(evidence); }
+        }
+      } catch { /* not found */ }
+    }
+
+    // 2b: web search via MCP (for web claims or still ungrounded)
+    if (confidence < 0.6) {
+      try {
+        const searchResult = await webSearchMcp(`${c.claim} site:github.com OR site:docs.anthropic.com OR developer docs`, 3);
+        if (searchResult?.results?.length) {
+          const snippet = searchResult.results[0].snippet || "";
+          evidence = `web: ${snippet.slice(0, 120)}`;
+          confidence = 0.75;
+          source = "web-search";
+          sources.push(...searchResult.results.slice(0, 2).map(r => r.url));
+        }
+      } catch { /* MCP offline */ }
+    }
+
+    // 2c: Gemini grounding API (for still-low or web claims)
+    if (confidence < 0.7 || c.needsWeb) {
+      const g = await geminiGroundCheck(c.claim);
+      if (g) {
+        if (g.confident && g.confidence > confidence) {
+          evidence = `gemini: ${g.text.slice(0, 120)}`;
+          confidence = g.confidence;
+          source = "gemini-grounding";
+          sources.push(...g.sources);
+        } else if (!g.confident && g.confidence < confidence) {
+          evidence = `gemini-refuted: ${g.text.slice(0, 120)}`;
+          confidence = g.confidence;
+          source = "gemini-grounding";
+        }
       }
-    } catch { /* grep found nothing */ }
+    }
 
-    records.push({ claim: c.claim, type: c.type, evidence, confidence, source: "codebase-grep", agent: agentName, userMessage: userMessage.slice(0, 100) });
+    records.push({ claim: c.claim, type: c.type, evidence, confidence, source, sources, agent: agentName, userMessage: userMessage.slice(0, 100) });
     if (confidence < 0.5) anyLow = true;
-  }
+  }));
 
-  // Step 3: if any low-confidence claims, ask Claude to revise
+  // ── Step 3: revise low-confidence claims ─────────────────────────
   let verified = draft;
   let corrected = false;
   if (anyLow) {
     try {
-      const lowClaims = records.filter(r => r.confidence < 0.5).map(r => `- "${r.claim}" (no codebase evidence found)`).join("\n");
-      const revisePrompt = `You are a self-correcting AI. The following claims in your response could not be verified against the codebase:\n${lowClaims}\n\nOriginal response:\n${draft}\n\nRevise the response to either remove unverifiable claims, qualify them with "I believe..." or "I'm not certain, but...", or correct them. Keep the response natural. Return only the revised response text.`;
-
-      const payload2 = JSON.stringify({
-        model: process.env.ANTHROPIC_MODEL || "claude-haiku-4-5-20251001",
-        max_tokens: 1024,
-        messages: [{ role: "user", content: revisePrompt }],
-      });
-
-      const raw2 = await new Promise((resolve, reject) => {
-        const req2 = https.request({
-          hostname: "api.anthropic.com",
-          path: "/v1/messages",
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-api-key": anthropicKey,
-            "anthropic-version": "2023-06-01",
-            "Content-Length": Buffer.byteLength(payload2),
-          },
-        }, (res) => {
-          let d = "";
-          res.on("data", c => d += c);
-          res.on("end", () => resolve(d));
-          res.on("error", reject);
-        });
-        req2.on("error", reject);
-        req2.setTimeout(10000, () => { req2.destroy(); reject(new Error("timeout")); });
-        req2.write(payload2);
-        req2.end();
-      });
-
-      const parsed2 = JSON.parse(raw2);
-      const revised = parsed2.content?.[0]?.text?.trim();
+      const lowClaims = records.filter(r => r.confidence < 0.5)
+        .map(r => `- "${r.claim}" → evidence: ${r.evidence} (confidence: ${r.confidence.toFixed(2)})`)
+        .join("\n");
+      const raw2 = await callHaiku(
+        `You are a self-correcting AI. These claims in your response failed grounding:\n${lowClaims}\n\nOriginal response:\n${draft}\n\nRevise to remove or qualify unverified claims. Use "I believe...", "I'm not certain, but...", or "According to available sources..." where appropriate. Return only the revised response.`,
+        1024
+      );
+      const revised = JSON.parse(raw2).content?.[0]?.text?.trim();
       if (revised && revised.length > 50) { verified = revised; corrected = true; }
     } catch { /* keep original */ }
   }
 
-  // Step 4: append convergence records
+  // ── Step 4: append convergence records ───────────────────────────
   try {
     fs.mkdirSync(path.dirname(RECORDS_PATH), { recursive: true });
     const timestamp = new Date().toISOString();
