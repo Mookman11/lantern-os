@@ -1447,18 +1447,27 @@ async function runSafeZones() {
 }
 
 async function runRenderShorts() {
+  if (!currentProject || !currentProject.filePath) { waStatus('Upload a video first.'); return; }
   const variants = (currentProject && Array.isArray(currentProject.variantsV10)) ? currentProject.variantsV10 : [];
-  if (variants.length === 0) { waStatus('Run Analyze Highlights first to generate variants to render.'); return; }
-  const top = variants.find(v => v.rank === 1) || variants[0];
-  if (!top || !Array.isArray(top.segments) || top.segments.length === 0) { waStatus('Top variant has no segments to render.'); return; }
+  const top = variants.find(v => v.rank === 1) || variants[0] || null;
+  // NEVER dead-end on empty segments. If the top variant has no segments (or there
+  // are no variants yet), fall back to a whole-clip render — the backend re-encodes
+  // to 9:16 and caps at 60s, so the user always gets a finished Short.
+  let segments = (top && Array.isArray(top.segments)) ? top.segments : [];
+  if (segments.length === 0) {
+    console.warn('[render] no variant segments — falling back to whole-clip render');
+    waStatus(variants.length === 0
+      ? 'No variants yet — rendering the full clip as a Short.'
+      : 'No segments found — rendering the full clip as a Short.');
+  }
   waBusy(true);
-  waStatus('');
+  if (segments.length) waStatus('');
   TPP.hide();
-  TPP.show(`Render: ${top.label || top.id}`);
+  TPP.show(`Render: ${(top && (top.label || top.id)) || 'Full clip'}`);
   try {
     const r = await fetch('/api/creator/export', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ videoPath: currentProject.filePath, entryId, renderKey: top.id, segments: top.segments, format: '9:16', fit: 'pad', burnCaptions: true }),
+      body: JSON.stringify({ videoPath: currentProject.filePath, entryId, renderKey: (top && top.id) || 'highlight', segments, format: '9:16', fit: 'pad', burnCaptions: true }),
     });
     const d = await r.json();
     if (!r.ok || !d.jobId) throw new Error(d.error || 'failed to queue');
