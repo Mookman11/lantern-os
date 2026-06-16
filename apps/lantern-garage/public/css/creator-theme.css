@@ -209,45 +209,47 @@ button,
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 12px;
-  margin-bottom: 24px;
+  padding: 10px 12px;
+  margin-bottom: 20px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+  gap: 12px;
   box-shadow: var(--shadow);
 }
 
 .workspace-nav-title {
-  font-size: var(--font-size-sm);
+  font-size: 0.9rem;
   font-weight: 600;
   color: var(--muted);
-  margin-right: 16px;
-  padding-right: 16px;
+  white-space: nowrap;
+  padding-right: 12px;
   border-right: 1px solid var(--border);
 }
 
 .tabs {
   display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
+  gap: 6px;
   flex: 1;
+  flex-wrap: nowrap;
+  overflow-x: auto;
 }
 
 .tab-button {
   background: var(--surface2);
   border: 1px solid var(--border);
   color: var(--muted);
-  padding: 10px 16px;
+  padding: 8px 14px;
   cursor: pointer;
-  font-size: var(--font-size-sm);
+  font-size: 0.85rem;
   font-weight: 600;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-xs);
   transition: all 0.2s ease;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   font-family: inherit;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .tab-button::before {
