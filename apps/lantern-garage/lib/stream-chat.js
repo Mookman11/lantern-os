@@ -1,7 +1,7 @@
 const https = require("https");
 const http = require("http");
 const path = require("path");
-const { AGENT_PERSONAS, DREAM_DOORS, selectAgent, parseBangCommand } = require("./dream-chat");
+const { AGENT_PERSONAS, DREAM_DOORS, selectAgent, parseBangCommand, verifyResponse } = require("./dream-chat");
 const { readRecentDreams, normalizeDreamerUser } = require("./dreamer-store");
 const { appendConversationEntry } = require("./conversation-store");
 const { getProviderState, recordProviderSuccess, recordProviderFailure } = require("./provider-cache");
@@ -1226,7 +1226,19 @@ async function handleStreamChat(req, url, res) {
         req2.write(payload);
         req2.end();
       });
-      const { cleanText: geminiClean, suggestions: geminiDoors } = doorsOrFallback(fullReply, isKeystoneDebug || !isRpMode);
+      let { cleanText: geminiClean, suggestions: geminiDoors } = doorsOrFallback(fullReply, isKeystoneDebug || !isRpMode);
+      // Σ₀ verify pass
+      let geminiSigma0 = null;
+      if (process.env.SIGMA0_VERIFY === "true") {
+        try {
+          const vr = await verifyResponse(geminiClean, message, doneAgentName);
+          if (vr.corrected) {
+            sse.writeData(res, { type: "sigma0", corrected: true, claims: vr.records.length, verified: vr.records.filter(r => r.confidence >= 0.5).length });
+            geminiClean = vr.verified;
+          }
+          geminiSigma0 = { corrected: vr.corrected, claims: vr.records.length };
+        } catch { /* non-fatal */ }
+      }
       await appendConversationEntry({
         recordedAt: new Date().toISOString(),
         surface: "dream-chat-stream",
@@ -1238,7 +1250,7 @@ async function handleStreamChat(req, url, res) {
       await recordConvergenceSignature("gemini", geminiModelName, geminiClean, true);
       const geminiReceipt = buildPcsfReceipt("gemini", geminiModelName, true);
       sendReceipt(geminiReceipt);
-      sendDone("gemini", { agent: doneAgentName, provider: "gemini", model: geminiModelName, online: true, cleanText: geminiClean, suggestions: geminiDoors, webSuggestions, receipt: geminiReceipt });
+      sendDone("gemini", { agent: doneAgentName, provider: "gemini", model: geminiModelName, online: true, cleanText: geminiClean, suggestions: geminiDoors, webSuggestions, receipt: geminiReceipt, sigma0: geminiSigma0 });
       return;
     } catch (err) {
       recordProviderFailure("gemini", err.message);
@@ -1320,7 +1332,19 @@ async function handleStreamChat(req, url, res) {
         req2.write(payload);
         req2.end();
       });
-      const { cleanText: anthropicClean, suggestions: anthropicDoors } = doorsOrFallback(fullReply, isKeystoneDebug || !isRpMode);
+      let { cleanText: anthropicClean, suggestions: anthropicDoors } = doorsOrFallback(fullReply, isKeystoneDebug || !isRpMode);
+      // Σ₀ verify pass — ground claims against codebase, web, Gemini
+      let anthropicSigma0 = null;
+      if (process.env.SIGMA0_VERIFY === "true") {
+        try {
+          const vr = await verifyResponse(anthropicClean, message, doneAgentName);
+          if (vr.corrected) {
+            sse.writeData(res, { type: "sigma0", corrected: true, claims: vr.records.length, verified: vr.records.filter(r => r.confidence >= 0.5).length });
+            anthropicClean = vr.verified;
+          }
+          anthropicSigma0 = { corrected: vr.corrected, claims: vr.records.length };
+        } catch { /* non-fatal */ }
+      }
       await appendConversationEntry({
         recordedAt: new Date().toISOString(),
         surface: "dream-chat-stream",
@@ -1333,7 +1357,7 @@ async function handleStreamChat(req, url, res) {
       await recordConvergenceSignature("anthropic", modelName, anthropicClean, true);
       const anthropicReceipt = buildPcsfReceipt("anthropic", modelName, true);
       sendReceipt(anthropicReceipt);
-      sendDone("anthropic", { agent: doneAgentName, provider: "anthropic", model: modelName, online: true, cleanText: anthropicClean, suggestions: anthropicDoors, webSuggestions, receipt: anthropicReceipt });
+      sendDone("anthropic", { agent: doneAgentName, provider: "anthropic", model: modelName, online: true, cleanText: anthropicClean, suggestions: anthropicDoors, webSuggestions, receipt: anthropicReceipt, sigma0: anthropicSigma0 });
       return;
     } catch (err) {
       const errorCode = err.message.includes("anthropic_status_") ? err.message : "unknown";
