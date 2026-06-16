@@ -4,27 +4,59 @@
 account of why an ungrounded self-improving system tends to collapse or diverge.*
 
 Status: **Theorem 1 is proven and machine-checked** (`src/cio_sde/collapse.py`,
-`tests/test_cio_sde.py` — 28 passing, 1 xfail pending [#506]) **for the symmetric /
+`tests/test_cio_sde.py` — **29 passing, 1 xfail** pending [#657]) **for the symmetric /
 normal case**. The collapse trigger (§2), the anti-collapse operator (§3), and the
 early-warning readout (§4) are control-design heuristics — empirically supported, not
 theorems. The §6 demonstration is now **reproducible**: both driver scripts are
 committed and produce checked-in run logs (see §6). Read the per-section status
 lines before relying on any claim here.
 
-**Status taxonomy & open research.** Each claim is one of: **PROVEN** (theorem +
+> **Maintenance log — 2026-06-16.** This status pass reconciles the doc with the
+> repo after a sprint day that landed **zero** commits to `src/cio_sde/`,
+> `experiments/router_*`, or this certificate (the day went to the Kingdome game
+> engine, dashboard 1.6, and the Σ₀ *application* modes — product, not the math).
+> Because the research lane was skipped, the gap block below had silently gone
+> stale: the [#509] !convergance epic (five priority research gaps) closed on
+> 2026-06-15, along with [#505], [#506], [#507], [#516], [#517], [#520], [#523],
+> and [#508] — yet none of those closures were reflected here, and two code fixes
+> landed unrecorded: the `Optional` import (§3) and the log-barrier (Appendix A).
+> Both are now marked resolved. The genuinely-remaining work is re-tracked as live
+> issues so this doc cannot drift again ([#657]–[#660]).
+
+**Status taxonomy & tracked gaps.** Each claim is one of: **PROVEN** (theorem +
 machine-checked), **MEASURED** (empirical, with a test/run pointer), **HEURISTIC**
 (operational design, not derived from the theorem), or **UNIMPLEMENTED** (described
-but not present in code). Open gaps are tracked as GitHub issues and cross-linked
-here so status cannot silently drift:
-- [#504] — §6 demo driver scripts (`router_sigma0_encoder.py`, `router_reservoir_G.py`) are **MEASURED** (committed; run logs in `data/sigma0/`). *Closed.*
-- [#505] — non-normal-Jacobian handling for Theorem 1 (the conditional gap in §1).
-- [#506] — surprise↔Σ₀ anti-collapse integration is **PARTIAL**: `engine.forward_step` now consumes `m.surprise_monitor` and emits `surprise_spook` (boosting anti-collapse proximity), and `SurpriseMonitor` exposes `sigma0_proximity()` / `anti_collapse_signal()`. But the engine self-observes (`y = x`), so during collapse the innovation `→ 0` and the canary may not fire; `test_surprise_monitor_integration` stays `xfail` until the observation model triggers spooks under collapse.
-- [#507] — real-data grounding for the demonstration.
+but not present in code). Gaps are tracked as GitHub issues and cross-linked here so
+status cannot silently drift.
+
+**Closed (landed 2026-06-15, via the [#509] !convergance epic):**
+- [#504] — §6 demo driver scripts (`router_sigma0_encoder.py`, `router_reservoir_G.py`) are **MEASURED** (committed; run logs in `data/sigma0/`).
+- [#505] — non-normal-Jacobian handling: `collapse_certificate()` now reports both the small-gain `alpha` bound and the exact full-spectrum `spectral_abscissa` (§1.1–1.2).
+- [#506] — surprise↔Σ₀ integration **landed** (`engine.forward_step` consumes `m.surprise_monitor`, emits `surprise_spook`; `SurpriseMonitor.sigma0_proximity()` / `anti_collapse_signal()`). Residual carried to [#657] (below).
+- [#507] / [#523] — real-data grounding demonstration (§6).
+- [#516] / [#517] / [#520] — model-collapse literature integrated (two-phase collapse, double-scaling law, prediction-markets-as-grounding; §7 + References).
+- [#508] — `.md`/`.tex` status-box reconcile pass.
+
+**Open (the deterministic next gaps — what this pass re-tracks):**
+- [#657] — **§4 residual.** The NIS canary is wired but the engine self-observes (`y = x`), so during collapse the innovation `→ 0` and the canary may not fire. `test_surprise_monitor_integration` stays `xfail` until an observation model triggers spooks under collapse. *This is the only open technical gap in the Σ₀ machinery.*
+- [#658] — **§3 sufficiency.** Σ₀⁻¹ is HEURISTIC with N=1 evidence; no theorem says it *prevents* collapse. Upgrade via proof under explicit hypotheses, or a regime sweep to MEASURED-over-distribution.
+- [#659] — **§4 decision.** `p_gate`/`p_unbounded` are documented but not in code (superseded by the `surprise.py` NIS canary). Formally retire them, or implement and wire `p_gate`.
+- [#660] — **housekeeping.** Reconcile the persistent-excitation attribution across `.md`/`.tex`, and verify all web citations before formal publication.
 
 [#504]: https://github.com/alex-place/lantern-os/issues/504
 [#505]: https://github.com/alex-place/lantern-os/issues/505
 [#506]: https://github.com/alex-place/lantern-os/issues/506
 [#507]: https://github.com/alex-place/lantern-os/issues/507
+[#508]: https://github.com/alex-place/lantern-os/issues/508
+[#509]: https://github.com/alex-place/lantern-os/issues/509
+[#516]: https://github.com/alex-place/lantern-os/issues/516
+[#517]: https://github.com/alex-place/lantern-os/issues/517
+[#520]: https://github.com/alex-place/lantern-os/issues/520
+[#523]: https://github.com/alex-place/lantern-os/issues/523
+[#657]: https://github.com/alex-place/lantern-os/issues/657
+[#658]: https://github.com/alex-place/lantern-os/issues/658
+[#659]: https://github.com/alex-place/lantern-os/issues/659
+[#660]: https://github.com/alex-place/lantern-os/issues/660
 
 ---
 
@@ -224,7 +256,9 @@ signals.
 re-exciting directions that have gone flat is a sensible way to keep the system
 off the null manifold. But there is **no companion theorem** stating that Σ₀⁻¹
 *prevents* collapse — in contrast to Theorem 1, which is proven (under §1's
-hypothesis). The support is a single demonstration, reported as such.
+hypothesis). The support is a single demonstration, reported as such. Closing
+this gap (proof, or a regime sweep upgrading N=1 → MEASURED-over-distribution) is
+tracked as [#658].
 
 **Empirical evidence (N=1).** On one forced-collapse run, Σ₀ fired on every step
 and the state froze; with Σ₀⁻¹ active, Σ₀ stopped firing and the state escaped
@@ -241,14 +275,13 @@ and no parameter being identified — only a state kept off a manifold. So Σ₀
 established**. (The Åström–Bohlin 1965 attribution should be reconciled between
 the `.md` and `.tex` variants, where it is currently inconsistent.)
 
-**Latent code defect (real, minor).** `AntiCollapseOperator.__init__` annotates
-`detector: Optional[...]`, but `collapse.py` imports only `from typing import
-Dict`. The module loads and all 20 tests pass *only* because `from __future__
-import annotations` (PEP 563) keeps the annotation an unevaluated string;
-`typing.get_type_hints()` on it raises `NameError: name 'Optional' is not
-defined`, and any runtime annotation introspection (Pydantic, FastAPI,
-dataclass eval, Sphinx autodoc) breaks. Against the "production-ready" framing
-this is a genuine bug. One-line fix: `from typing import Dict, Optional`.
+**Latent code defect — RESOLVED (2026-06-15).** `AntiCollapseOperator.__init__`
+annotated `detector: Optional[...]` while `collapse.py` imported only `from typing
+import Dict`, so `typing.get_type_hints()` raised `NameError: name 'Optional' is
+not defined` (masked at import time by PEP 563 string annotations, but breaking any
+runtime annotation introspection — Pydantic, FastAPI, dataclass eval, Sphinx
+autodoc). Fixed: `collapse.py:33` now reads `from typing import Dict, Optional`.
+Recorded here so the resolution is not lost.
 
 ---
 
@@ -279,10 +312,11 @@ correctly redundant. **However:**
   (the slowest mode), which is **not** §1's `α = max λᵢ(A_s)` (the largest /
   least-stable active eigenvalue). Disambiguate before use.
 
-**Action required:** either implement `p_unbounded` / `p_gate` in `collapse.py`
-and wire `p_gate` into `AntiCollapseOperator`, **or** keep §4 explicitly labeled
-as a proposed (not-yet-implemented) readout. As written, the `p_gate`/`p_unbounded`
-signal is not computed anywhere.
+**Action required ([#659]):** either implement `p_unbounded` / `p_gate` in
+`collapse.py` and wire `p_gate` into `AntiCollapseOperator`, **or** formally retire
+them as superseded by the NIS canary below. As verified 2026-06-16, the
+`p_gate`/`p_unbounded` signal is still not computed anywhere in code; the working
+early-warning is the NIS monitor (`src/cio_sde/surprise.py`).
 
 **Update — the right canary, now implemented (`src/cio_sde/surprise.py`).** The
 eigenvalue readout above was the wrong early-warning. The correct one is *surprise
@@ -299,6 +333,14 @@ signal cannot: a low-reality-coupling observer that is *calm while wrong* (low N
 growing error) during the gap before an unobserved disturbance "rustles" into a
 visible dimension and the NIS spikes past threshold. The dangerous state is not the
 spook — it is the quiet that precedes it.
+
+**Residual ([#657]).** The monitor is wired into `engine.forward_step`, but in the
+shipped engine the observation is the identity (`y = x`): during collapse the
+innovation `ν = y − Cx̂ → 0`, so the canary may not fire on the very trajectory it
+is meant to catch. `test_surprise_monitor_integration` is `xfail` until an
+observation model with genuine reality-coupling is supplied; flipping that test to a
+hard pass is the acceptance check. This is the only open technical gap in the Σ₀
+machinery as of 2026-06-16.
 
 ---
 
@@ -506,9 +548,10 @@ hand-entered, not data-derived.**
 3. A reservoir's autonomous rollout diverges unless projected back onto the
    valid `[0,1]⁴` domain; that projection *is* `π`. This is a real modeling step,
    but it is also an external bound imposed by hand, not an emergent property.
-4. The certificate is unreliable at boundary fixed points where the hard clamp
-   is non-smooth — a log-barrier is the proper fix and is **not yet
-   implemented**.
+4. **(Resolved 2026-06-15.)** The certificate was unreliable at boundary fixed
+   points where the hard clamp is non-smooth; the proper fix — a smooth log-barrier
+   penalty — is now implemented (`src/cio_sde/collapse.py:71–126`,
+   `log_barrier_strength`, default 0.1).
 
 ### Status: Implemented
 
@@ -520,7 +563,7 @@ the hand-entered claims in this appendix are kept only for provenance.
 ---
 
 *Source of record: `src/cio_sde/collapse.py` (Theorem 1, Σ₀, Σ₀⁻¹);
-`tests/test_cio_sde.py` (28 passing, 1 xfail pending #506); framework `docs/sigma0-collapse-certificate.tex`.
+`tests/test_cio_sde.py` (29 passing, 1 xfail pending [#657]); framework `docs/sigma0-collapse-certificate.tex`.
 The router demonstration scripts `experiments/router_sigma0_encoder.py` and
 `experiments/router_reservoir_G.py` are **committed and reproducible** — see §6
 for produced results and Appendix A for the original design sketch.*
