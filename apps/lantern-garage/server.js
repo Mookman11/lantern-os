@@ -110,6 +110,7 @@ const routes = [
   require("./routes/agent-performance"),
   require("./routes/leaderboard"),
   require("./routes/agent-status"),
+  require("./routes/providers"),
   require("./routes/self-edit"),
   require("./routes/creator"),
   require("./routes/creator-entries"),
