@@ -64,7 +64,7 @@ async function analyzeVideoForHighlights(videoPath, options = {}) {
     motionThreshold = 0.15,
     audioThreshold = 0.7,
     sceneThreshold = 0.3,
-    minHighlightDuration = 1.0,
+    minHighlightDuration = 2.0,
     maxHighlightDuration = 30.0,
   } = options;
 
@@ -362,13 +362,18 @@ function mergeDetections(
   const peaks = motionFrames.filter((f) => f.motion >= motionThresh);
   if (!peaks.length) return [];
 
-  // ── Group adjacent peaks into runs (gap < 0.6s) ──────────────────────────
+  // ── Group adjacent peaks into runs ───────────────────────────────────────
+  // Use a grouping gap >= minDuration so that distinct runs are always at least
+  // minDuration apart. This guarantees that when a short run is later expanded
+  // up to minDuration it can never overlap the next run (which would duplicate
+  // footage in the rendered Short).
+  const gap = Math.max(0.6, minDuration);
   const runs = [];
   let cur = null;
   for (const f of peaks) {
     if (!cur) {
       cur = { start: f.timestamp, end: f.timestamp, peak: f.motion };
-    } else if (f.timestamp - cur.end < 0.6) {
+    } else if (f.timestamp - cur.end < gap) {
       cur.end = f.timestamp;
       cur.peak = Math.max(cur.peak, f.motion);
     } else {
