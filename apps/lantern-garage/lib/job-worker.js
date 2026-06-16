@@ -5,6 +5,7 @@
 const fs = require("fs");
 const path = require("path");
 const { analyzeVideoForHighlights } = require("./highlight-engine");
+const { analyzeVideoWithSigmaZeroV10 } = require("./analyzer-v10-integration");
 const { generateCaptions } = require("./caption-engine");
 const { detectSafeZones } = require("./safe-zone-detector");
 const { reencodeToShortForm, renderSegments, probeSource, burnCaptionsToVideo } = require("./video-export");
@@ -207,9 +208,9 @@ async function processAnalyzeJob(job, repoRoot, ctx) {
   const stageFromKey = { loading_video: "load", analyzing_motion: "frame_scan", detecting_highlights: "highlights" };
   let highlightsFoundSoFar = 0;
 
-  // Run highlight analysis — streams real sub-stage progress (8→66%) so the bar
-  // never sits at a single number.
-  const timeline = await analyzeVideoForHighlights(fullPath, options || {}, (percent, statusKey, message) => {
+  // Run Σ₀ V10 highlight analysis
+  // Uses collapse-theory-based scoring with stability filtering
+  const timeline = await analyzeVideoWithSigmaZeroV10(fullPath, options || {}, (percent, statusKey, message) => {
     const nextStage = stageFromKey[statusKey];
     if (nextStage && job.currentStageId !== nextStage) {
       ctx.stage(nextStage);
@@ -217,10 +218,10 @@ async function processAnalyzeJob(job, repoRoot, ctx) {
     ctx.progress(percent, message || statusKey);
     ctx.log(message || statusKey);
 
-    // Parse "Analyzing motion (13s / 120s)" for live stats
-    const motionMatch = message && message.match(/Analyzing motion \((\d+)s \/ (\d+)s\)/);
-    if (motionMatch) {
-      ctx.liveStats({ analyzedSec: parseInt(motionMatch[1]), totalSec: parseInt(motionMatch[2]) });
+    // Parse "Analyzed X/Y" for live stats
+    const analyzed = message && message.match(/Analyzed (\d+)\/(\d+)/);
+    if (analyzed) {
+      ctx.liveStats({ analyzedSec: parseInt(analyzed[1]), totalSec: parseInt(analyzed[2]) });
     }
   });
 
