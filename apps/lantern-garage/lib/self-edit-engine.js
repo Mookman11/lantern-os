@@ -447,6 +447,31 @@ function callOllama(messages) {
   });
 }
 
+// ── JSON extraction (resilient against markdown fences + preamble) ───────
+
+function extractJson(raw) {
+  if (!raw || typeof raw !== "string") throw new Error("empty response");
+  // 1. Try direct parse first
+  const trimmed = raw.trim();
+  try { return JSON.parse(trimmed); } catch {}
+  // 2. Strip ```json ... ``` or ``` ... ``` fences
+  const fenceMatch = trimmed.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+  if (fenceMatch) { try { return JSON.parse(fenceMatch[1].trim()); } catch {} }
+  // 3. Find first { and last } to extract embedded JSON object
+  const start = trimmed.indexOf("{");
+  const end = trimmed.lastIndexOf("}");
+  if (start !== -1 && end > start) {
+    try { return JSON.parse(trimmed.slice(start, end + 1)); } catch {}
+  }
+  // 4. Find first [ and last ] for array responses
+  const aStart = trimmed.indexOf("[");
+  const aEnd = trimmed.lastIndexOf("]");
+  if (aStart !== -1 && aEnd > aStart) {
+    try { return JSON.parse(trimmed.slice(aStart, aEnd + 1)); } catch {}
+  }
+  throw new Error("no valid JSON found in model response");
+}
+
 // ── Plan generation ─────────────────────────────────────────────────────
 
 const PLAN_SYSTEM_PROMPT = `You are a disciplined code-change planner. Given a user request and relevant file contents, produce a structured plan.
@@ -485,11 +510,9 @@ async function generatePlan(repoRoot, userRequest, scopeFiles, history) {
   const raw = await callLlm(PLAN_SYSTEM_PROMPT, userPrompt, "auto");
   let plan;
   try {
-    // Strip markdown fences if present
-    const jsonText = raw.replace(/^```json\n?/, "").replace(/\n?```$/, "").trim();
-    plan = JSON.parse(jsonText);
-  } catch {
-    throw new Error("plan_parse_failed: model did not return valid JSON");
+    plan = extractJson(raw);
+  } catch (e) {
+    throw new Error("plan_parse_failed: " + e.message + " | raw=" + raw.slice(0, 300));
   }
 
   // Validate plan structure
