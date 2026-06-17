@@ -28,15 +28,15 @@ const PROTECTED_PAGES = {
 module.exports = async function pagesRoute(req, res, url, deps) {
   const pathname = url.pathname;
 
-  console.log(`[PAGES] Checking ${pathname}...`);
-
   // Check if this is a page request (ends with .html or is root)
   if (!pathname.match(/\.html$/) && pathname !== "/") {
-    console.log(`[PAGES] Not a page request, skipping`);
     return false;
   }
 
-  console.log(`[PAGES] ${req.method} ${pathname}, authenticated=${!!req.session?.patreon?.id}, session=${!!req.session}`);
+  // Stop here if response already sent
+  if (res.headersSent) {
+    return true;
+  }
 
   // Check public pages first
   if (PUBLIC_PAGES[pathname]) {
@@ -46,7 +46,8 @@ module.exports = async function pagesRoute(req, res, url, deps) {
     if (fs.existsSync(filePath)) {
       const html = fs.readFileSync(filePath, "utf-8");
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-      return res.end(html);
+      res.end(html);
+      return true;
     }
   }
 
@@ -64,13 +65,14 @@ module.exports = async function pagesRoute(req, res, url, deps) {
     }
 
     // User authenticated and has required role - serve page
-    const filename = requiredRole === "guest" ? pathname : PROTECTED_PAGES[pathname];
+    const filename = PROTECTED_PAGES[pathname];
     const filePath = path.join(deps.publicRoot, filename);
 
     if (fs.existsSync(filePath)) {
       const html = fs.readFileSync(filePath, "utf-8");
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-      return res.end(html);
+      res.end(html);
+      return true;
     }
   }
 
