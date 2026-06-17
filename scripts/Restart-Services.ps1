@@ -1,4 +1,4 @@
-# Restart-Services.ps1 — stop and restart Lantern server + Discord bot
+﻿# Restart-Services.ps1 - stop and restart Lantern server + Discord bot
 Set-Location "C:\dev\lantern-os"
 $logDir = "C:\dev\lantern-os\logs"
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
@@ -12,14 +12,17 @@ function Log($msg) {
 # ── Stop existing processes ────────────────────────────────────────────────
 
 Log "Stopping Lantern server..."
-Get-Process node -ErrorAction SilentlyContinue |
-    Where-Object { $_.CommandLine -like "*lantern-garage*" -or $_.CommandLine -like "*server.js*" } |
-    ForEach-Object { Stop-Process -Id $_.Id -Force; Log "  Killed node PID $($_.Id)" }
+# Kill by port ownership (CommandLine not available in PS5.1 without WMI)
+foreach ($port in @(4177, 4178)) {
+    $ownerPid = (Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue |
+        Where-Object State -eq 'Listen' | Select-Object -First 1).OwningProcess
+    if ($ownerPid) { Stop-Process -Id $ownerPid -Force -ErrorAction SilentlyContinue; Log "  Killed PID $ownerPid on :$port" }
+}
 
 Log "Stopping Discord bot..."
-Get-Process python -ErrorAction SilentlyContinue |
+Get-WmiObject Win32_Process -Filter "Name='python.exe'" |
     Where-Object { $_.CommandLine -like "*bot_v2.py*" } |
-    ForEach-Object { Stop-Process -Id $_.Id -Force; Log "  Killed python PID $($_.Id)" }
+    ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue; Log "  Killed python PID $($_.ProcessId)" }
 
 Start-Sleep -Seconds 2
 
@@ -38,12 +41,11 @@ Log "  Server PID $($serverProc.Id) -> $serverLog"
 $ready = $false
 for ($i = 0; $i -lt 20; $i++) {
     Start-Sleep -Milliseconds 500
-    try {
-        $null = Invoke-WebRequest -Uri "http://127.0.0.1:4177/" -TimeoutSec 2 -ErrorAction Stop
-        $ready = $true; break
-    } catch {}
+    $listening = Get-NetTCPConnection -LocalPort 4177 -ErrorAction SilentlyContinue |
+        Where-Object State -eq 'Listen'
+    if ($listening) { $ready = $true; break }
 }
-if ($ready) { Log "  Server ready on :4177" } else { Log "  [WARN] Server not responding after 10s — check $serverLog" }
+if ($ready) { Log "  Server ready on :4177" } else { Log "  [WARN] Server not listening after 10s - check $serverLog" }
 
 # ── Start Discord bot ──────────────────────────────────────────────────────
 
@@ -69,7 +71,7 @@ for ($i = 0; $i -lt 20; $i++) {
         $botReady = $true; break
     }
 }
-if ($botReady) { Log "  Bot logged in" } else { Log "  [WARN] Bot not ready after 10s — check $botLog" }
+if ($botReady) { Log "  Bot logged in" } else { Log "  [WARN] Bot not ready after 10s - check $botLog" }
 
 # ── Summary ────────────────────────────────────────────────────────────────
 
