@@ -433,6 +433,26 @@ async function processCaptionJob(job, repoRoot, ctx) {
   };
 }
 
+// Ensure a variant cut-list meets the ExportValidator minimum duration (15s)
+// when the source has the footage — extend the last segment toward the source
+// end, then the first segment toward the start. Prevents a valid-but-short
+// variant from being blocked purely on length. If the source itself is shorter
+// than the floor, segments are returned unchanged (cannot make a longer Short).
+const EXPORT_MIN_DURATION_SEC = 15;
+function topUpSegmentsToMinDuration(segments, sourceDur, minSec = EXPORT_MIN_DURATION_SEC) {
+  if (!Array.isArray(segments) || !segments.length || !sourceDur || sourceDur < minSec) return segments;
+  const segs = segments.map((s) => ({ ...s }));
+  const total = () => segs.reduce((a, s) => a + Math.max(0, (s.end || 0) - (s.start || 0)), 0);
+  if (total() >= minSec) return segs;
+  const last = segs[segs.length - 1];
+  last.end = Math.min(sourceDur, (last.end || 0) + (minSec - total()));
+  if (total() < minSec) {
+    const first = segs[0];
+    first.start = Math.max(0, (first.start || 0) - (minSec - total()));
+  }
+  return segs;
+}
+
 async function processExportJob(job, repoRoot, ctx) {
   const { videoPath, variant, format } = job.input;
 
@@ -499,9 +519,18 @@ async function processExportJob(job, repoRoot, ctx) {
   // A variant export supplies a segment cut-list -> trim+concat render.
   // Otherwise re-encode the whole clip to spec.
   ctx.stage("encode");
-  const segments = Array.isArray(job.input.segments) ? job.input.segments : null;
+  let segments = Array.isArray(job.input.segments) ? job.input.segments : null;
   let encodeInfo;
   if (segments && segments.length) {
+    // Top up to the export minimum duration if the variant is short and the
+    // source has the footage, so a valid render is never blocked purely on length.
+    try {
+      const probe = await probeSource(fullPath);
+      const before = segments.reduce((a, s) => a + Math.max(0, (s.end || 0) - (s.start || 0)), 0);
+      segments = topUpSegmentsToMinDuration(segments, probe && probe.duration);
+      const after = segments.reduce((a, s) => a + Math.max(0, (s.end || 0) - (s.start || 0)), 0);
+      if (after > before + 0.05) ctx.log(`Extended variant ${before.toFixed(1)}s -> ${after.toFixed(1)}s to meet export minimum`);
+    } catch (e) { /* non-fatal: render the original cut-list */ }
     ctx.progress(30, `Rendering ${segments.length} segments to short-form (1080x1920)`);
     ctx.log(`Rendering ${segments.length} highlight segments`);
     encodeInfo = await renderSegments(fullPath, exportFile, segments, {
