@@ -59,6 +59,8 @@ function _loadPersonasFromFile() {
       id: p.id,
       name: p.name,
       symbol: p.symbol,
+      avatar: p.avatar || null,
+      role: p.role || null,
       systemPrompt: p.systemPrompt,
     }));
   } catch (err) {
