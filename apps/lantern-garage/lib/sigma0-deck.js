@@ -176,9 +176,12 @@ module.exports = { endState, scoreCard, rankDeck, selfTest, readCard };
 
 if (require.main === module) {
   const r = selfTest();
-  console.log("Σ₀ deck self-test:", r.ok ? "PASS" : "FAIL");
-  console.log("  ranked order :", r.order.join("  >  "));
-  console.log("  top card Σ₀  :", JSON.stringify(r.top));
-  console.log("  checks       :", JSON.stringify(r.checks, null, 0));
+  const out = [
+    `Σ₀ deck self-test: ${r.ok ? "PASS" : "FAIL"}`,
+    `  ranked order : ${r.order.join("  >  ")}`,
+    `  top card Σ₀  : ${JSON.stringify(r.top)}`,
+    `  checks       : ${JSON.stringify(r.checks, null, 0)}`,
+  ].join("\n");
+  process.stdout.write(out + "\n");
   process.exit(r.ok ? 0 : 1);
 }
