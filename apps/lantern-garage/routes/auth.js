@@ -19,7 +19,8 @@ module.exports = async function authRoutes(req, res, url, deps) {
   }
 
   // GET /api/auth/patreon/start?returnTo=...
-  if (req.method === "GET" && path === "/api/auth/patreon/start") {
+  if (method === "GET" && path === "/api/auth/patreon/start") {
+    console.log("[AUTH] Handling /api/auth/patreon/start");
     const returnTo = url.searchParams.get("returnTo") || "/";
     handlePatreonStart(req, res, returnTo);
     return true;
