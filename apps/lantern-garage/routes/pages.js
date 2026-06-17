@@ -7,71 +7,52 @@ const path = require("path");
 const fs = require("fs");
 const { requireAuth, requireRole } = require("../lib/auth-middleware");
 
-// Public pages (no auth required)
+// Public pages — no auth required
 const PUBLIC_PAGES = {
-  "/": "index.html",
-  "/index.html": "index.html",
-  "/auth.html": "auth.html",
-  "/auth": "auth.html",
-  "/knowledgecenter.html": "knowledgecenter.html",
-  "/explore.html": "explore.html",
+  "/auth.html":           "auth.html",
+  "/auth":                "auth.html",
+  "/explore.html":        "explore.html",
+  "/knowledgecenter.html":"knowledgecenter.html",
 };
 
-// Protected pages with minimum role requirement
+// Protected pages — { file, role } where role is minimum required
 const PROTECTED_PAGES = {
-  "/dream-chat.html": "guest",     // Free + Wanderer + all tiers
-  "/profile.html": "guest",        // Any logged-in user
-  "/create.html": "founder",       // Deep Dreamer tier ($20) + higher
-  "/trader-dashboard.html": "admin", // Guild tier ($200) only
+  "/":                    { file: "index.html",             role: "guest" },
+  "/index.html":          { file: "index.html",             role: "guest" },
+  "/dream-chat.html":     { file: "dream-chat.html",        role: "guest" },
+  "/profile.html":        { file: "profile.html",           role: "guest" },
+  "/crypto-dashboard.html":{ file: "crypto-dashboard.html", role: "guest" },
+  "/create.html":         { file: "create.html",            role: "founder" },
+  "/trader-dashboard.html":{ file: "trader-dashboard.html", role: "admin" },
+  "/kalshi-terminal.html":{ file: "kalshi-terminal.html",   role: "admin" },
 };
 
 module.exports = async function pagesRoute(req, res, url, deps) {
   const pathname = url.pathname;
 
-  // Check if this is a page request (ends with .html or is root)
-  if (!pathname.match(/\.html$/) && pathname !== "/") {
-    return false;
-  }
+  if (!pathname.match(/\.html$/) && pathname !== "/") return false;
+  if (res.headersSent) return true;
 
-  // Stop here if response already sent
-  if (res.headersSent) {
-    return true;
-  }
-
-  // Check public pages first
+  // Public — serve directly
   if (PUBLIC_PAGES[pathname]) {
-    const filename = PUBLIC_PAGES[pathname];
-    const filePath = path.join(deps.publicRoot, filename);
-
+    const filePath = path.join(deps.publicRoot, PUBLIC_PAGES[pathname]);
     if (fs.existsSync(filePath)) {
-      const html = fs.readFileSync(filePath, "utf-8");
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-      res.end(html);
+      res.end(fs.readFileSync(filePath, "utf-8"));
       return true;
     }
   }
 
-  // Check protected pages
-  const requiredRole = PROTECTED_PAGES[pathname];
-  if (requiredRole !== undefined) {
-    // Require authentication
-    if (!requireAuth(req, res)) {
-      return true;
-    }
+  // Protected — check auth + role
+  const page = PROTECTED_PAGES[pathname];
+  if (page) {
+    if (!requireAuth(req, res)) return true;
+    if (!requireRole(req, res, page.role)) return true;
 
-    // Require role
-    if (!requireRole(req, res, requiredRole)) {
-      return true;
-    }
-
-    // User authenticated and has required role - serve page
-    const filename = pathname.slice(1);
-    const filePath = path.join(deps.publicRoot, filename);
-
+    const filePath = path.join(deps.publicRoot, page.file);
     if (fs.existsSync(filePath)) {
-      const html = fs.readFileSync(filePath, "utf-8");
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-      res.end(html);
+      res.end(fs.readFileSync(filePath, "utf-8"));
       return true;
     }
   }
