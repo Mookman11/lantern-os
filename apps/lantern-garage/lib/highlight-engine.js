@@ -79,8 +79,11 @@ async function analyzeVideoForHighlights(videoPath, options = {}, onProgress = (
     motionThreshold = 0.15,
     audioThreshold = 0.7,
     sceneThreshold = 0.3,
-    minHighlightDuration = 1.0,
-    maxHighlightDuration = 30.0,
+    minHighlightDuration = 2.0,
+    // 60s is the YouTube Shorts ceiling and the ExportValidator's maxDuration.
+    // We do not cap highlight length below that — a long continuous action run
+    // stays whole up to 60s; only runs beyond 60s are split into <=60s pieces.
+    maxHighlightDuration = 60.0,
     perProcessTimeoutMs = ANALYSIS_DEFAULTS.perProcessTimeoutMs,
     maxAnalyzeSeconds = ANALYSIS_DEFAULTS.maxAnalyzeSeconds,
   } = options;
@@ -138,6 +141,17 @@ async function analyzeVideoForHighlights(videoPath, options = {}, onProgress = (
     maxHighlightDuration,
     options.weights
   );
+
+  // Instrumentation — real counts from this analysis, surfaced so the pipeline
+  // can never fail silently (stored on the project as analysis.debug downstream).
+  timeline.metadata.debug = {
+    videoDuration: Number((metadata.duration || 0).toFixed(2)),
+    fps,
+    sampledMotionFrames: motionFrames.length,
+    sampledAudioFrames: audioSpikes.length,
+    sceneChanges: sceneChanges.length,
+    mergedHighlights: highlights.length,
+  };
 
   highlights.forEach((hl) => {
     timeline.addHighlight(hl.start, hl.end, hl.score, hl.reason, hl.tags);

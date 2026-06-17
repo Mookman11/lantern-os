@@ -31,6 +31,18 @@ data/csf/*.csf
 # Large local media (archived in D:\tmp / Google Drive)
 apps/lantern-garage/public/data/video/*.mp4
 
+# ─── Creator Dashboard generated output (local only, not source) ─────────────
+data/creator/exports/
+data/dreamer/videos/
+data/creator/analyses/
+data/creator/entries/
+data/creator/captions/
+models/v10/
+
+# ─── YouTube research data (local only — see scripts/youtube_shorts_collector_v2.py) ──
+data/youtube/
+data/viral-research/
+
 # ─── Training outputs (review locally before promotion) ───────────────────────
 data/training/**/*.jsonl
 data/training/**/*.json
@@ -121,11 +133,15 @@ archive/**/worktrees/**
 *-old*
 *-backup*
 
-# Exceptions: legitimately-named Creator V10 source + docs (not old-version junk)
+# Exceptions: legitimately-named Creator V10 source + docs + Σ₀ spectral modules
 !docs/creator-v10/**
 !apps/lantern-garage/lib/safe-zone-v2.js
 !apps/lantern-garage/lib/caption-engine-v3.js
 !apps/lantern-garage/lib/variant-engine-v2.js
+!apps/lantern-garage/lib/spectral-analyzer.js
+!apps/lantern-garage/lib/scoring-engine-v2.js
+!apps/lantern-garage/lib/render-pipeline-v2.js
+!apps/lantern-garage/lib/highlight_detector.py
 
 # IDE / tool artifacts
 .claude/
@@ -212,3 +228,7 @@ rag/
 merge-patches/
 patches/
 src/cio/target/
+
+# Creator pipeline test fixtures (generated locally by scripts/test_creator_pipeline.js)
+tests/assets/*.mp4
+data/creator/pipeline-test-summary.json

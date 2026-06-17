@@ -292,6 +292,9 @@ function padZero(num) {
 
 module.exports = {
   generateCaptions,
+  generateVTT,
+  generateSRT,
+  generateJSON,
   Caption,
   CaptionStyle,
   burnCaptionsToVideo,
