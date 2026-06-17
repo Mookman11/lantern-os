@@ -65,7 +65,7 @@ module.exports = async function pagesRoute(req, res, url, deps) {
     }
 
     // User authenticated and has required role - serve page
-    const filename = PROTECTED_PAGES[pathname];
+    const filename = pathname.slice(1);
     const filePath = path.join(deps.publicRoot, filename);
 
     if (fs.existsSync(filePath)) {
