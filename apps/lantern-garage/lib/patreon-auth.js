@@ -158,11 +158,14 @@ async function exchangePatreonCode(code, verifier) {
  * Fetch user identity and membership data from Patreon.
  */
 async function getPatreonUserWithMemberships(token) {
+  const params = new URLSearchParams({
+    include: "memberships",
+    "fields[user]": "email,full_name",
+    "fields[member]": "currently_entitled_tiers",
+  });
+
   const res = await fetchFn(
-    "https://www.patreon.com/api/oauth2/v2/identity?" +
-    "include=memberships&" +
-    "fields[user]=email,full_name&" +
-    "fields[member]=currently_entitled_tiers",
+    `https://www.patreon.com/api/oauth2/v2/identity?${params.toString()}`,
     {
       headers: { Authorization: `Bearer ${token.access_token}` },
     }
