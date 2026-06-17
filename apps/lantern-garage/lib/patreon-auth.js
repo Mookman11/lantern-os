@@ -169,15 +169,9 @@ async function exchangePatreonCode(code, verifier) {
  * Fetch user identity and membership data from Patreon.
  */
 async function getPatreonUserWithMemberships(token) {
-  const params = new URLSearchParams({
-    include: "memberships",
-    "fields[user]": "email,full_name",
-    "fields[member]": "currently_entitled_tiers",
-  });
-
-  const url = `https://www.patreon.com/api/oauth2/v2/identity?${params.toString()}`;
-  console.log("[AUTH] User fetch URL:", url.split("?")[0]);
-  console.log("[AUTH] User fetch params:", params.toString());
+  // Fetch identity with memberships included - no field filtering
+  const url = "https://www.patreon.com/api/oauth2/v2/identity?include=memberships";
+  console.log("[AUTH] User fetch URL:", url);
 
   const res = await fetchFn(url, {
     headers: { Authorization: `Bearer ${token.access_token}` },
@@ -189,11 +183,14 @@ async function getPatreonUserWithMemberships(token) {
     throw new Error(`User fetch failed: ${res.statusText} - ${errText}`);
   }
 
-  const { data, included } = await res.json();
+  const json = await res.json();
+  console.log("[AUTH] User fetch success, data id:", json.data?.id);
 
-  // Get membership (tied to campaign)
+  const { data, included } = json;
+
+  // Find membership in included data
   const membership = (included || []).find((r) => r.type === "member");
-  const tierIds = membership?.attributes?.currently_entitled_tiers || [];
+  const tierIds = membership?.relationships?.currently_entitled_tiers?.data?.map((t) => t.id) || [];
 
   return {
     id: data.id,
