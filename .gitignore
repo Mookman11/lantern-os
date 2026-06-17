@@ -60,6 +60,10 @@ integrations/human-flourishing-frameworks/data/world_model.db
 # the route bakes its own fallback list, so none of this needs tracking)
 data/youtube/
 
+# CAAD grounding corpus — large external reference PDFs (315MB+) downloaded at
+# runtime. Tracked spec lives under docs/caad/; the raw PDFs stay local-only.
+caad/architecture/grounding/
+
 # ─── Node ─────────────────────────────────────────────────────────────────────
 node_modules/
 **/node_modules/
