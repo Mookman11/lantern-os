@@ -222,7 +222,7 @@ def test_certificate_predicts_actual_contraction():
 
 # ── Real vs Synthetic Data Separation (issue #522) ───────────────────────────
 #
-# Data-type taxonomy (arXiv:2406.07284 double-scaling law; arXiv:2309.07864):
+# Data-type taxonomy (arXiv:2402.07043 change-of-scaling-laws; Shumailov et al. 2024):
 #   synthetic (π=0) : the model is rolled out on its own outputs only.
 #                     Recursive self-reference drives model collapse — the state
 #                     freezes onto the Σ₀ null manifold (the parrot attractor).
@@ -307,7 +307,7 @@ def test_collapse_scaling_monotone_in_real_fraction(
     """Double-scaling law: collapse score is monotone-decreasing in π.
 
     synthetic (π=0) ≥ mixed (π=0.5) ≥ real (π=1), and synthetic strictly worse
-    than real — the arXiv:2406.07284 'mix real data to prevent collapse' result.
+    than real — the arXiv:2402.07043 'mix real data to prevent collapse' result.
     """
     assert synthetic_collapse_score >= mixed_collapse_score >= real_collapse_score
     assert synthetic_collapse_score > real_collapse_score
