@@ -82,6 +82,7 @@ const deps = {
 };
 
 const routes = [
+  require("./routes/auth"),             // Patreon OAuth + session
   require("./routes/status"),
   require("./routes/system-overview"),
   require("./routes/ui"),
@@ -124,6 +125,30 @@ const routes = [
   require("./routes/auto-merge"),
 ];
 
+// ── Session middleware (Patreon OAuth) ──
+const session = require("express-session");
+const sessionSecret = process.env.SESSION_SECRET || "lantern-local-dev-secret-change-in-prod";
+const sessionMiddleware = session({
+  secret: sessionSecret,
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+  },
+});
+
+// Wrap session middleware to work with Node's http module
+function withSession(req, res, handler) {
+  return new Promise((resolve) => {
+    sessionMiddleware(req, res, () => {
+      resolve(handler(req, res));
+    });
+  });
+}
+
 async function route(req, res) {
   const url = new URL(req.url, `http://${req.headers.host}`);
 
@@ -157,7 +182,7 @@ async function route(req, res) {
 }
 
 const server = http.createServer((req, res) => {
-  route(req, res).catch((error) => {
+  withSession(req, res, () => route(req, res)).catch((error) => {
     if (res.headersSent) {
       console.error("Route error after response sent:", error.message);
       return;
