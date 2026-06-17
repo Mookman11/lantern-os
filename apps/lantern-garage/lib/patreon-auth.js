@@ -131,6 +131,10 @@ async function exchangePatreonCode(code, verifier) {
   const clientSecret = process.env.PATREON_CLIENT_SECRET;
   const redirectUri = process.env.PATREON_REDIRECT_URI;
 
+  console.log("[AUTH] Token exchange - code:", code.slice(0, 10) + "...");
+  console.log("[AUTH] Token exchange - redirectUri:", redirectUri);
+  console.log("[AUTH] Token exchange - verifier:", verifier ? "present" : "missing");
+
   const body = querystring.stringify({
     code,
     grant_type: "authorization_code",
@@ -139,6 +143,8 @@ async function exchangePatreonCode(code, verifier) {
     redirect_uri: redirectUri,
     code_verifier: verifier,
   });
+
+  console.log("[AUTH] Token exchange body length:", body.length);
 
   const res = await fetchFn("https://www.patreon.com/api/oauth2/token", {
     method: "POST",
