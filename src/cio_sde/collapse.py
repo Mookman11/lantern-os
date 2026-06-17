@@ -203,9 +203,11 @@ def collapse_certificate(A: Tensor, eig_eps: float = 1e-2,
     where A_s is the symmetric part. This provides a conservative bound
     that accounts for cross-terms in the non-normal case.
 
-    Model collapse grounding (arXiv:2406.07284): Synthetic data induces error
-    plateau at T_synth > k^β; contraction margin prevents this by maintaining
-    spectral distance from collapse boundary (α < -margin).
+    Model-collapse grounding (Dohmatob et al., "A Tale of Tails", arXiv:2402.07043,
+    ICML 2024): synthetic data changes the scaling law and truncates gains; a
+    contraction margin keeps spectral distance from the collapse boundary
+    (α < -margin). The matrix-measure bound is classical contraction analysis
+    (Lohmiller & Slotine 1998, Automatica 34(6):683-696).
     """
     Abar = A.mean(0) if A.dim() == 3 else A
     A_s = 0.5 * (Abar + Abar.T)
