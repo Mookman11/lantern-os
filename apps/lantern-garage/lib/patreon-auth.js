@@ -14,7 +14,7 @@ const fetchFn = typeof fetch !== "undefined" ? fetch : require("node-fetch");
 // Campaign: Dream Journal By Lantern OS (ID: 16143763)
 const TIER_TO_ROLE = {
   "28764312": "supporter",     // Wanderer ($5)
-  "28740619": "founder",       // Dream Supporter ($20)
+  "28740619": "founder",       // Deep Dreamer ($20)
   "28764307": "admin",         // Synthesasia Guild ($200)
 };
 
