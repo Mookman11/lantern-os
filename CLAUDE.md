@@ -226,6 +226,12 @@ CIO accuracy tracking: `python experiments/kalshi_tightband_analysis.py` appends
 
 Copy `.env.example` to `.env` at repo root. Key variables: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `DISCORD_TOKEN`. The server loads `.env` from repo root at startup.
 
+**Patreon OAuth** (optional — gates entire site behind login):
+- `PATREON_CLIENT_ID`, `PATREON_CLIENT_SECRET`, `PATREON_CAMPAIGN_ID`, `PATREON_REDIRECT_URI`, `SESSION_SECRET`
+- See **[PATREON-OAUTH.md](docs/PATREON-OAUTH.md)** for full setup guide
+- When configured, unauthenticated users redirect to `/auth.html` login page
+- Patreon tiers map to roles (guest → supporter → founder → admin)
+
 `pytest.ini` sets `pythonpath = apps src` so tests can import from both trees without install.
 
 ## Keystone Testing Charter

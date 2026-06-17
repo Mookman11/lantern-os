@@ -58,16 +58,35 @@ python -m pip install -r requirements.txt
 
 1. Copy `.env.example` → `.env` and fill in your keys:
    ```
+   # AI Providers (at least one required for chat)
+   ANTHROPIC_API_KEY=sk-ant-...   # or GEMINI_API_KEY / OPENAI_API_KEY
+   
+   # Discord (optional, enables Discord bot)
    DISCORD_BOT_TOKEN=your_bot_token
    LANTERN_DISCORD_GUILD_ID=your_server_id
-   ANTHROPIC_API_KEY=sk-ant-...   # or GEMINI_API_KEY / OPENAI_API_KEY
+   
+   # Patreon OAuth (optional, enables login gate + role-based access)
+   PATREON_CLIENT_ID=your_client_id
+   PATREON_CLIENT_SECRET=your_client_secret
+   PATREON_REDIRECT_URI=http://127.0.0.1:4177/api/auth/patreon/callback
+   PATREON_CAMPAIGN_ID=your_campaign_id
+   SESSION_SECRET=your_session_secret
    ```
+
+   **To set up Patreon OAuth:**
+   - Create a Patreon app at https://www.patreon.com/portal/registration/register-oauth-application
+   - Create a campaign if you don't have one
+   - Get your Client ID and Client Secret from the OAuth app settings
+   - Get your Campaign ID from your campaign URL (patreon.com/c/{campaign_id})
+   - Set `SESSION_SECRET` to any random string (e.g., `openssl rand -hex 32`)
+
 2. Install ffmpeg for voice/music (optional, enables `!lounge` / `!dreams` / `!focus`):
    ```powershell
    winget install Gyan.FFmpeg
    ```
 3. Start everything: `npm run dev --prefix apps/lantern-garage`
    — the server auto-starts the Discord bot when token keys are set.
+   — Patreon OAuth gates the site when credentials are configured.
 
 ---
 
