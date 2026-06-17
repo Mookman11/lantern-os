@@ -31,6 +31,18 @@ data/csf/*.csf
 # Large local media (archived in D:\tmp / Google Drive)
 apps/lantern-garage/public/data/video/*.mp4
 
+# ─── Creator Dashboard generated output (local only, not source) ─────────────
+data/creator/exports/
+data/dreamer/videos/
+data/creator/analyses/
+data/creator/entries/
+data/creator/captions/
+models/v10/
+
+# ─── YouTube research data (local only — see scripts/youtube_shorts_collector_v2.py) ──
+data/youtube/
+data/viral-research/
+
 # ─── Training outputs (review locally before promotion) ───────────────────────
 data/training/**/*.jsonl
 data/training/**/*.json
