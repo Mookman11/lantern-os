@@ -6,6 +6,7 @@
 
 const crypto = require("crypto");
 const querystring = require("querystring");
+const { getOrCreateFromPatreon } = require("./user-profiles");
 
 // Use native fetch (Node 18+) or require a polyfill
 const fetchFn = typeof fetch !== "undefined" ? fetch : require("node-fetch");
@@ -98,15 +99,18 @@ async function handlePatreonCallback(req, res, query, deps) {
     const user = await getPatreonUserWithMemberships(token);
 
     // Map tier to role
-    const role = mapPatreonTierToRole(user.memberships);
+    const patreonRole = mapPatreonTierToRole(user.memberships);
 
-    // Store in session
+    // Create or update user profile in local database
+    const profile = getOrCreateFromPatreon(user, patreonRole);
+
+    // Store in session (use profile data which may have local overrides)
     req.session.patreon = {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      tier: user.primaryTier,
-      role,
+      id: profile.id,
+      email: profile.email,
+      name: profile.name,
+      tier: profile.tier,
+      role: profile.role, // May be overridden locally
       token: token.access_token,
       expiresAt: Date.now() + (token.expires_in * 1000),
     };
