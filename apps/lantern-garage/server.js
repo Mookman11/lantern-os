@@ -120,6 +120,7 @@ const routes = [
   require("./routes/self-edit"),
   require("./routes/creator"),
   require("./routes/creator-entries"),
+  require("./routes/pdfs"), // PDF document listing for Knowledge Center
   require("./routes/surfaces"),
   require("./routes/features"),
   require("./routes/personal-cube"),
