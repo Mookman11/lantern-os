@@ -233,6 +233,47 @@ function getAnalysis(repoRoot, entryId) {
   return JSON.parse(fs.readFileSync(analysisPath, "utf8"));
 }
 
+// Append an analysis-run audit record (kept to the last 20). Called by the job
+// worker after each analyze job so the workspace can show run history.
+function addAnalysisRun(repoRoot, entryId, run) {
+  const entry = getEntry(repoRoot, entryId);
+  if (!entry) throw new Error(`Entry ${entryId} not found`);
+  const full = {
+    jobId: run.jobId || null,
+    status: run.status || "complete",
+    startedAt: run.startedAt || null,
+    finishedAt: run.finishedAt || new Date().toISOString(),
+    highlightCount: typeof run.highlightCount === "number" ? run.highlightCount : null,
+    durationSec: typeof run.durationSec === "number" ? run.durationSec : null,
+    analysisCapped: !!run.analysisCapped,
+  };
+  const analysisRuns = [...(entry.analysisRuns || []), full].slice(-20);
+  return updateEntry(repoRoot, entryId, { analysisRuns });
+}
+
+// Record the last analysis failure on the entry so a reopened project can show
+// what went wrong (cleared on the next successful run).
+function recordAnalysisError(repoRoot, entryId, err) {
+  const entry = getEntry(repoRoot, entryId);
+  if (!entry) return null;
+  return updateEntry(repoRoot, entryId, {
+    analysisError: {
+      stage: (err && err.stage) || "unknown",
+      error: (err && err.error) || "unknown error",
+      at: (err && err.at) || new Date().toISOString(),
+      jobId: (err && err.jobId) || null,
+    },
+    status: "failed",
+  });
+}
+
+function clearAnalysisError(repoRoot, entryId) {
+  const entry = getEntry(repoRoot, entryId);
+  if (!entry) return null;
+  if (!entry.analysisError) return entry;
+  return updateEntry(repoRoot, entryId, { analysisError: null });
+}
+
 function saveRender(repoRoot, entryId, type, filePath) {
   // filePath is relative to repo root
   const entryDir = getEntryDir(repoRoot, entryId);
@@ -372,6 +413,9 @@ module.exports = {
   repairAllProjects,
   saveAnalysis,
   getAnalysis,
+  addAnalysisRun,
+  recordAnalysisError,
+  clearAnalysisError,
   saveRender,
   saveValidation,
   saveThumbnail,
