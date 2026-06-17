@@ -41,8 +41,8 @@ function handlePatreonStart(req, res, returnTo) {
   const redirectUri = process.env.PATREON_REDIRECT_URI;
 
   if (!clientId || !redirectUri) {
-    return res.writeHead(500, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "Patreon OAuth not configured" }));
+    res.writeHead(500, { "Content-Type": "application/json" });
+    return res.end(JSON.stringify({ error: "Patreon OAuth not configured" }));
   }
 
   const { verifier, challenge } = generatePkce();
