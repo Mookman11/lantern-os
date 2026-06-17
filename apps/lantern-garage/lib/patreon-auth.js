@@ -119,8 +119,17 @@ async function handlePatreonCallback(req, res, query, deps) {
     const returnTo = req.session.return_to || "/dream-chat.html";
     delete req.session.return_to;
 
-    res.writeHead(302, { Location: returnTo });
-    res.end();
+    // Explicitly save session before redirect
+    req.session.save((err) => {
+      if (err) {
+        console.error("[AUTH] Session save error:", err.message);
+        res.writeHead(500, { "Content-Type": "application/json" });
+        return res.end(JSON.stringify({ error: "Session save failed" }));
+      }
+      console.log("[AUTH] Session saved, redirecting to:", returnTo);
+      res.writeHead(302, { Location: returnTo });
+      res.end();
+    });
   } catch (err) {
     console.error("Patreon callback error:", err.message);
     res.writeHead(500, { "Content-Type": "application/json" });
