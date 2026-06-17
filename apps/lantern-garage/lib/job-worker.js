@@ -207,8 +207,8 @@ async function processAnalyzeJob(job, repoRoot, ctx) {
   const stageFromKey = { loading_video: "load", analyzing_motion: "frame_scan", detecting_highlights: "highlights" };
   let highlightsFoundSoFar = 0;
 
-  // Run highlight analysis — streams real sub-stage progress (8→66%) so the bar
-  // never sits at a single number.
+  // Run highlight analysis — real ffmpeg motion/audio/scene detection.
+  // Streams sub-stage progress (8→66%) so the bar never sits on one number.
   const timeline = await analyzeVideoForHighlights(fullPath, options || {}, (percent, statusKey, message) => {
     const nextStage = stageFromKey[statusKey];
     if (nextStage && job.currentStageId !== nextStage) {
@@ -223,6 +223,34 @@ async function processAnalyzeJob(job, repoRoot, ctx) {
       ctx.liveStats({ analyzedSec: parseInt(motionMatch[1]), totalSec: parseInt(motionMatch[2]) });
     }
   });
+
+  // GUARANTEE: downstream variants/render require at least one highlight segment.
+  // If real detection found nothing (a quiet clip, or a long source the detector
+  // couldn't score), synthesize short sample windows so the pipeline produces a
+  // renderable selection instead of dead-ending the user. These are explicitly
+  // labeled "fallback" — we do NOT fabricate quality signals. Windows are kept
+  // short (≤12s) and evenly spaced so the result is still a usable Short even for
+  // a long source (a naive "thirds" split of a 17-min clip is not a Short).
+  if (Array.isArray(timeline.highlights) && timeline.highlights.length === 0) {
+    const dur = Number(timeline.duration) || 0;
+    if (dur > 1.5) {
+      const win = Math.min(12, Math.max(3, dur / 6));
+      if (dur <= win * 2) {
+        // Short clip: a single window covering it.
+        timeline.addHighlight(0, Number(Math.min(dur, 12).toFixed(1)), 0.5,
+          "fallback: whole clip (no strong signals detected)", ["fallback"]);
+      } else {
+        // Longer clip: three short windows at 20% / 50% / 80%.
+        for (const c of [0.2, 0.5, 0.8]) {
+          const start = Math.max(0, Math.min(dur * c - win / 2, dur - win));
+          timeline.addHighlight(Number(start.toFixed(1)), Number((start + win).toFixed(1)), 0.5,
+            "fallback: sampled window (no strong signals detected)", ["fallback"]);
+        }
+      }
+      timeline.sort();
+      ctx.log(`No highlights detected — inserted ${timeline.highlights.length} fallback window(s) so variants/render can proceed`);
+    }
+  }
 
   ctx.stage("ranking");
   ctx.progress(70, "Scoring highlights");
@@ -258,6 +286,25 @@ async function processAnalyzeJob(job, repoRoot, ctx) {
     console.error("[job-worker] V10 scoring/variants failed:", e.message);
     ctx.log(`Scoring error (non-fatal): ${e.message}`);
   }
+
+  // Phase 1 instrumentation — a compact, real debug summary persisted on the
+  // project (analysis.debug) so a "no segments" state is never invisible.
+  const tlDebug = (timelineJSON.metadata && timelineJSON.metadata.debug) || {};
+  const segmentCount = Array.isArray(timelineJSON.highlights) ? timelineJSON.highlights.length : 0;
+  const usedFallback = !!(variantsV10 && variantsV10.usedFallback) ||
+    (Array.isArray(timelineJSON.highlights) && timelineJSON.highlights.some((h) => Array.isArray(h.tags) && h.tags.includes("fallback")));
+  timelineJSON.debug = {
+    videoDuration: tlDebug.videoDuration != null ? tlDebug.videoDuration : (timelineJSON.duration || null),
+    fps: tlDebug.fps != null ? tlDebug.fps : null,
+    sampledMotionFrames: tlDebug.sampledMotionFrames != null ? tlDebug.sampledMotionFrames : null,
+    sceneChanges: tlDebug.sceneChanges != null ? tlDebug.sceneChanges : null,
+    candidateCount: tlDebug.sampledMotionFrames != null ? tlDebug.sampledMotionFrames : null,
+    segmentCount,
+    variantCount: variantsV10 ? variantsV10.variants.length : 0,
+    captionCount: captions.length,
+    usedFallback,
+  };
+  ctx.log(`debug: segments=${segmentCount} variants=${timelineJSON.debug.variantCount} fallback=${usedFallback}`);
 
   ctx.stage("saving");
   ctx.progress(96, "Saving results");
@@ -405,6 +452,26 @@ async function processCaptionJob(job, repoRoot, ctx) {
   };
 }
 
+// Ensure a variant cut-list meets the ExportValidator minimum duration (15s)
+// when the source has the footage — extend the last segment toward the source
+// end, then the first segment toward the start. Prevents a valid-but-short
+// variant from being blocked purely on length. If the source itself is shorter
+// than the floor, segments are returned unchanged (cannot make a longer Short).
+const EXPORT_MIN_DURATION_SEC = 15;
+function topUpSegmentsToMinDuration(segments, sourceDur, minSec = EXPORT_MIN_DURATION_SEC) {
+  if (!Array.isArray(segments) || !segments.length || !sourceDur || sourceDur < minSec) return segments;
+  const segs = segments.map((s) => ({ ...s }));
+  const total = () => segs.reduce((a, s) => a + Math.max(0, (s.end || 0) - (s.start || 0)), 0);
+  if (total() >= minSec) return segs;
+  const last = segs[segs.length - 1];
+  last.end = Math.min(sourceDur, (last.end || 0) + (minSec - total()));
+  if (total() < minSec) {
+    const first = segs[0];
+    first.start = Math.max(0, (first.start || 0) - (minSec - total()));
+  }
+  return segs;
+}
+
 async function processExportJob(job, repoRoot, ctx) {
   const { videoPath, variant, format } = job.input;
 
@@ -471,9 +538,18 @@ async function processExportJob(job, repoRoot, ctx) {
   // A variant export supplies a segment cut-list -> trim+concat render.
   // Otherwise re-encode the whole clip to spec.
   ctx.stage("encode");
-  const segments = Array.isArray(job.input.segments) ? job.input.segments : null;
+  let segments = Array.isArray(job.input.segments) ? job.input.segments : null;
   let encodeInfo;
   if (segments && segments.length) {
+    // Top up to the export minimum duration if the variant is short and the
+    // source has the footage, so a valid render is never blocked purely on length.
+    try {
+      const probe = await probeSource(fullPath);
+      const before = segments.reduce((a, s) => a + Math.max(0, (s.end || 0) - (s.start || 0)), 0);
+      segments = topUpSegmentsToMinDuration(segments, probe && probe.duration);
+      const after = segments.reduce((a, s) => a + Math.max(0, (s.end || 0) - (s.start || 0)), 0);
+      if (after > before + 0.05) ctx.log(`Extended variant ${before.toFixed(1)}s -> ${after.toFixed(1)}s to meet export minimum`);
+    } catch (e) { /* non-fatal: render the original cut-list */ }
     ctx.progress(30, `Rendering ${segments.length} segments to short-form (1080x1920)`);
     ctx.log(`Rendering ${segments.length} highlight segments`);
     encodeInfo = await renderSegments(fullPath, exportFile, segments, {
@@ -593,6 +669,39 @@ async function processExportJob(job, repoRoot, ctx) {
       entryStore.touchStages(repoRoot, job.input.entryId, ["rendered"]);
     } catch (e) {
       console.error("[job-worker] register render onto entry failed:", e.message);
+    }
+  }
+
+  // Phase 7 — per-export render report in the project's renders/ folder.
+  if (job.input.entryId) {
+    try {
+      const entryStore = require("./entry-store");
+      const entry = entryStore.getEntry(repoRoot, job.input.entryId);
+      const key = job.input.renderKey || job.input.variant || "highlight";
+      const variant = (entry && Array.isArray(entry.variantsV10))
+        ? entry.variantsV10.find((v) => v.id === key) : null;
+      const viral = variant && variant.score ? variant.score : null;
+      const segSec = Array.isArray(segments) ? segments.reduce((a, s) => a + Math.max(0, (s.end || 0) - (s.start || 0)), 0) : 0;
+      const conf = viral && viral.confidence != null ? viral.confidence : null;
+      const report = {
+        variant: key,
+        segments: Array.isArray(segments) ? segments.length : 0,
+        duration: segSec ? `${Math.round(segSec)}s` : null,
+        sigma0_score: viral && viral.viralScore != null ? viral.viralScore : null,
+        confidence: conf,
+        collapse_risk: conf != null ? Number((1 - conf).toFixed(3)) : null, // derived: 1 - confidence
+        rendered: true,
+        output: path.relative(repoRoot, exportFile).split(path.sep).join("/"),
+        sizeBytes: stats.size,
+        validation: { ok: validation.ok === true, skipped: validation.skipped === true },
+        at: new Date().toISOString(),
+      };
+      const reportPath = path.join(entryStore.getEntryDir(repoRoot, job.input.entryId), "renders", "report.json");
+      fs.mkdirSync(path.dirname(reportPath), { recursive: true });
+      fs.writeFileSync(reportPath, JSON.stringify(report, null, 2));
+      ctx.log(`Render report: variant=${report.variant} segments=${report.segments} duration=${report.duration}`);
+    } catch (e) {
+      console.error("[job-worker] render report write failed (non-fatal):", e.message);
     }
   }
 
