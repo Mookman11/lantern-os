@@ -11,11 +11,11 @@ const querystring = require("querystring");
 const fetchFn = typeof fetch !== "undefined" ? fetch : require("node-fetch");
 
 // Tier ID to Lantern role mapping.
-// Get real tier IDs from Patreon API: GET /api/oauth2/v2/campaigns/{id}/tiers
+// Campaign: Dream Journal By Lantern OS (ID: 16143763)
 const TIER_TO_ROLE = {
-  // "123456": "supporter",    // Replace with real tier ID
-  // "234567": "founder",      // Replace with real tier ID
-  // "345678": "admin",        // Replace with real tier ID
+  "28764312": "supporter",     // Wanderer ($5)
+  "28740619": "founder",       // Dream Supporter ($20)
+  "28764307": "admin",         // Synthesasia Guild ($200)
 };
 
 /**
