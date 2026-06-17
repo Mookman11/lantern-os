@@ -28,10 +28,15 @@ const PROTECTED_PAGES = {
 module.exports = async function pagesRoute(req, res, url, deps) {
   const pathname = url.pathname;
 
+  console.log(`[PAGES] Checking ${pathname}...`);
+
   // Check if this is a page request (ends with .html or is root)
   if (!pathname.match(/\.html$/) && pathname !== "/") {
+    console.log(`[PAGES] Not a page request, skipping`);
     return false;
   }
+
+  console.log(`[PAGES] ${req.method} ${pathname}, authenticated=${!!req.session?.patreon?.id}, session=${!!req.session}`);
 
   // Check public pages first
   if (PUBLIC_PAGES[pathname]) {
