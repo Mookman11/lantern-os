@@ -232,3 +232,8 @@ src/cio/target/
 # Creator pipeline test fixtures (generated locally by scripts/test_creator_pipeline.js)
 tests/assets/*.mp4
 data/creator/pipeline-test-summary.json
+
+# Session-derived training data — privacy: never commit
+data/training/
+models/*/training-data.jsonl
+models/*/adapters/
