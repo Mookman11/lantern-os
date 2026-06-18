@@ -57,7 +57,14 @@ module.exports = async function pdfRoutes(req, res, url, deps) {
       return true;
     }).map(({ absolutePath, ...rest }) => rest); // strip internal absolutePath from response
 
-    unique.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+    unique.sort((a, b) => {
+      const da = a.modifiedAt || a.createdAt || '';
+      const db = b.modifiedAt || b.createdAt || '';
+      if (da && db) return db.localeCompare(da); // newest first
+      if (da) return -1;
+      if (db) return 1;
+      return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+    });
     sendJson(res, { pdfs: unique, total: unique.length });
     return true;
   }
