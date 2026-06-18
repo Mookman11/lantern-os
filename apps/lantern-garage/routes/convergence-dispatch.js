@@ -304,6 +304,14 @@ module.exports = async (req, res, url, deps) => {
         }
         step("fetch_issue", "done", { title: issueDetails.title, state: issueDetails.state });
 
+        // Guard: don't work an already-closed issue (prevents duplicate work)
+        if (issueDetails.state && String(issueDetails.state).toUpperCase() !== "OPEN") {
+          step("fetch_issue", "error", { error: "issue_closed", state: issueDetails.state });
+          send("done", { ok: false, ...receipt, stoppedAt: "issue_closed", message: `Issue #${issueNumber} is ${issueDetails.state} — nothing to work.` });
+          res.end();
+          return;
+        }
+
         // ── 2. branch (always issue-specific, never reuse current) ──────────
         step("branch", "start");
         const targetBranch = `auto/issue-${issueNumber}`;
