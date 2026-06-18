@@ -247,9 +247,14 @@ function getSessionInfo(req) {
       },
     };
   }
-  // Dev bypass: port 4178 skips auth gate (admin session, local only)
+  // Local-only admin bypass (matches auth-middleware isLocalBypass):
+  // dev port 4178, or LANTERN_LOCAL_ADMIN=1 on a loopback connection.
   const devPort = req.socket && req.socket.localPort;
-  if (devPort === 4178) {
+  const ip = (req.socket && req.socket.remoteAddress) || "";
+  const loopbackAdmin =
+    process.env.LANTERN_LOCAL_ADMIN === "1" &&
+    (ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1");
+  if (devPort === 4178 || loopbackAdmin) {
     return { authenticated: true, role: "admin", user: { id: "dev", name: "Dev", email: "", tier: "dev" } };
   }
   return { authenticated: false, role: "guest" };
