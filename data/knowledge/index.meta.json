@@ -1,20 +1,21 @@
 {
-  "built_at": 1781819806.0706558,
+  "built_at": 1781820215.1455426,
   "docs": [
     "README.md",
-    "QUICKSTART.md",
-    "AGENTS.md",
     "CLAUDE.md",
+    "AGENTS.md",
+    "QUICKSTART.md",
+    "docs/SIGMA0-COLLAPSE-CERTIFICATE.md",
+    "docs/SIGMA0-QUANTUM-RELATIVITY-ANALYSIS.md",
+    "docs/LANTERN-SIGMA0-CODER.md",
+    "docs/OURO-LOOPLM.md",
+    "docs/CSF-FORMAT-SPECIFICATION.md",
     "SECURITY.md",
     "SKILLS.md",
     "PROVIDERS.md",
     "CONTRIBUTING.md",
-    "docs/SIGMA0-COLLAPSE-CERTIFICATE.md",
-    "docs/SIGMA0-QUANTUM-RELATIVITY-ANALYSIS.md",
-    "docs/CSF-FORMAT-SPECIFICATION.md",
-    "docs/LANTERN-SIGMA0-CODER.md",
-    "docs/OURO-LOOPLM.md"
+    "CODE_OF_CONDUCT.md"
   ],
-  "sections": 304,
-  "sha256": "9818177732d52526c24d3adf8f7c145677ebda4cfc171e4c72d69c58074da617"
+  "sections": 309,
+  "sha256": "34a9baf0eb719c0b7005d201ac1341b2f1b4f43aea8ea42ba257971d0492e66d"
 }
