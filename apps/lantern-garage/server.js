@@ -506,6 +506,28 @@ server.listen(port, host, () => {
     console.log("[PR Watcher] disabled — set PR_WATCHER_ENABLED=1 on ONE fleet host to enable");
   }
   refreshAllPcsf(repoRoot);
+
+  // ── CSF Research Tesseract — auto-pack on startup ──────────────────────────
+  // Runs in background; skips if archive is less than 24 hours old.
+  (() => {
+    const { execFile } = require("child_process");
+    const fs = require("fs");
+    const path = require("path");
+    const manifest = path.join(repoRoot, "data", "tesseract", "manifest.json");
+    const script   = path.join(repoRoot, "scripts", "csf_research_tesseract.py");
+    let stale = true;
+    try {
+      const m = fs.statSync(manifest);
+      stale = Date.now() - m.mtimeMs > 24 * 60 * 60 * 1000;
+    } catch { /* doesn't exist yet */ }
+    if (!stale) { console.log("[Tesseract] Archive fresh — skipping auto-pack"); return; }
+    console.log("[Tesseract] Packing research archive in background…");
+    execFile("python", [script, "pack"], { cwd: repoRoot, timeout: 300_000 }, (err, stdout) => {
+      if (err) { console.error("[Tesseract] Pack failed:", err.message); return; }
+      const last = stdout.trim().split("\n").pop();
+      console.log("[Tesseract]", last);
+    });
+  })();
   // Ollama cold-start probe
   const ollamaBase = process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434";
   const ollamaModel = process.env.OLLAMA_MODEL || "qwen2.5-coder";
