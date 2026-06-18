@@ -35,7 +35,7 @@ const CONVERGENCE_EPS = 0.04; // exit when Δconfidence < this (plateaued)
 // ── CDF-based exit condition ────────────────────────────────────────────────
 // confidenceHistory: float[] of confidence values across loop iterations.
 // Returns {exit, loop_n, confidence, reason}.
-function cdfExit(confidenceHistory, threshold = CDF_THRESHOLD) {
+function cdfExit(confidenceHistory, threshold = CDF_THRESHOLD, maxLoops = MAX_LOOPS) {
   const n = confidenceHistory.length;
   if (!n) return { exit: false, loop_n: 0, confidence: 0, reason: "no_data" };
 
@@ -52,8 +52,8 @@ function cdfExit(confidenceHistory, threshold = CDF_THRESHOLD) {
       return { exit: true, loop_n: n, confidence: latest, reason: "converged" };
   }
 
-  // (c) compute budget
-  if (n >= MAX_LOOPS)
+  // (c) compute budget (honors the caller's maxLoops, not just the module default)
+  if (n >= maxLoops)
     return { exit: true, loop_n: n, confidence: latest, reason: "max_loops" };
 
   return { exit: false, loop_n: n, confidence: latest, reason: "continuing" };
@@ -132,7 +132,7 @@ async function loopedReason({ prompt, systemPrompt = "", callLLM, maxLoops = MAX
 
     if (onLoop) onLoop(loopN, conf, lastReply);
 
-    const exitCheck = cdfExit(confidenceHistory, cdfThreshold);
+    const exitCheck = cdfExit(confidenceHistory, cdfThreshold, maxLoops);
     if (exitCheck.exit) {
       return {
         reply: lastReply,

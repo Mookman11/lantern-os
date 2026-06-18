@@ -31,6 +31,7 @@ KC_DOCS = [
     "docs/TESSERACT-CONVERGENCE-LOOP.md",
     "docs/CSF-FORMAT-SPECIFICATION.md",
     "docs/LANTERN-SIGMA0-CODER.md",
+    "docs/OURO-LOOPLM.md",
 ]
 
 MAX_SECTION_CHARS = 1200
