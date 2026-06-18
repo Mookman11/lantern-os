@@ -237,3 +237,6 @@ data/creator/pipeline-test-summary.json
 data/training/
 models/*/training-data.jsonl
 models/*/adapters/
+
+# isolated training venv
+.venv-train/
