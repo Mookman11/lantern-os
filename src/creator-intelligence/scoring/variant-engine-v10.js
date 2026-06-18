@@ -162,6 +162,15 @@ function generateVariantsV10(analysis = {}, opts = {}) {
       tags: s.tags || [],
       ...(s.role ? { role: s.role } : {}),  // V12 story-arc narrative role, when present
     }));
+    // V12 punch-in: flag this variant's single strongest beat for a render-time
+    // zoom (energetic, not cheap — one punch-in, not zoom-on-everything). The
+    // story_arc "peak" already implies zoom; for the others, mark the max-score
+    // segment so every variant lands one dynamic moment.
+    if (segments.length && !segments.some((s) => s.role === "peak")) {
+      let top = segments[0];
+      for (const s of segments) if ((s.score || 0) > (top.score || 0)) top = s;
+      top.zoom = true;
+    }
     const derived = buildDerivedTimeline(segments);
     const scored = scoreVideoV10(derived, opts);
 

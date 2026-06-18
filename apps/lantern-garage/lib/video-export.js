@@ -87,6 +87,18 @@ function isValidRect(rect) {
   return width > 0 && height > 0 && x >= 0 && y >= 0 && x + width <= 1.0001 && y + height <= 1.0001;
 }
 
+// Real punch-in zoom (V12 render quality). Returns a zoompan filter string that
+// pushes in from 1.0x to `zoomMax` over `rampSec`, then holds — the "punch-in on
+// the big moment" look top Shorts editors use. Operates on an already-WxH frame
+// (appended after the fit filter), so it never changes output dimensions. This
+// applies a REAL ffmpeg zoom to real pixels; it is not a fabricated effect.
+function buildZoomFilter(w, h, fps, zoomMax = 1.18, rampSec = 0.8) {
+  const inc = Math.max(0.0005, (zoomMax - 1) / Math.max(1, rampSec * fps));
+  // zoom accumulates per output frame (d=1); center-anchored push-in.
+  return `zoompan=z='min(zoom+${inc.toFixed(5)},${zoomMax})':d=1:` +
+    `x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${w}x${h}:fps=${fps}`;
+}
+
 /**
  * Build the video filtergraph for a given fit mode.
  * Returns { vf } for simple modes or { filterComplex, mapV } for blur.
@@ -270,6 +282,7 @@ async function renderSegments(inputPath, outputPath, segments, options = {}) {
   const srcDur = meta.duration || Infinity;
 
   // Sanitize segments: clamp to source, drop empties, cap total to maxDuration.
+  // Carry the V12 zoom flag through (zoom:true or role:"peak" => punch-in).
   const clean = [];
   let total = 0;
   for (const s of segments) {
@@ -279,7 +292,8 @@ async function renderSegments(inputPath, outputPath, segments, options = {}) {
     if (total + (end - start) > cfg.maxDuration) {
       end = start + Math.max(0, cfg.maxDuration - total); // trim last to fit cap
     }
-    if (end > start) { clean.push({ start, end }); total += end - start; }
+    const zoom = s.zoom === true || s.role === "peak";
+    if (end > start) { clean.push({ start, end, zoom }); total += end - start; }
     if (total >= cfg.maxDuration) break;
   }
   if (clean.length === 0) throw new Error("no valid segments after clamping");
@@ -288,10 +302,20 @@ async function renderSegments(inputPath, outputPath, segments, options = {}) {
   const { vf } = buildVideoFilter(cfg.fit === "blur" ? "pad" : cfg.fit, cfg.width, cfg.height, cfg.fps, options.cropRect || null);
   const hasAudio = meta.hasAudio;
 
+  // V12 punch-in: apply a real zoom to segments the caller flags (peak/high
+  // intensity). `punchIn` defaults on; a segment zooms when its source segment
+  // had zoom:true (set by the pipeline for peak/high-score beats). Honest: only
+  // flagged segments zoom — we don't zoom everything (that would feel cheap).
+  const punchInEnabled = options.punchIn !== false;
+  const zoomFilter = buildZoomFilter(cfg.width, cfg.height, cfg.fps,
+    options.zoomMax || 1.18, options.zoomRampSec || 0.8);
+
   const chains = [];
   const concatInputs = [];
+  let zoomedCount = 0;
   clean.forEach((s, i) => {
-    chains.push(`[0:v]trim=start=${s.start}:end=${s.end},setpts=PTS-STARTPTS,${vf}[v${i}]`);
+    const segVf = (punchInEnabled && s.zoom) ? (zoomedCount++, `${vf},${zoomFilter}`) : vf;
+    chains.push(`[0:v]trim=start=${s.start}:end=${s.end},setpts=PTS-STARTPTS,${segVf}[v${i}]`);
     if (hasAudio) {
       chains.push(`[0:a]atrim=start=${s.start}:end=${s.end},asetpts=PTS-STARTPTS,aresample=async=1[a${i}]`);
       concatInputs.push(`[v${i}][a${i}]`);
@@ -328,6 +352,7 @@ async function renderSegments(inputPath, outputPath, segments, options = {}) {
     durationTarget: Number(total.toFixed(3)),
     fit: cfg.fit === "blur" ? "pad" : cfg.fit,
     hadAudioSource: hasAudio,
+    zoomedSegments: zoomedCount, // V12: how many segments got a punch-in
   };
 }
 

@@ -51,6 +51,14 @@ function scoreVideoV10(analysis = {}, opts = {}) {
     result.gaming = gamingScoreV10(viral, { safeZones: opts.safeZones, facecamPresent: opts.facecamPresent });
   }
 
+  // V12 weighted edit score (the handoff's explicit formula). Reuses the REAL
+  // viral component scores instead of duplicating the scorer; components that
+  // require detectors not present (faceReaction, gameplayIntensity without a
+  // facecam/gaming signal) are excluded and the remaining weights renormalized,
+  // so the score is honest about what it actually measured rather than faking
+  // unavailable inputs.
+  result.weightedEditScore = weightedEditScore(viral, result.gaming, opts);
+
   // Top-level headline numbers for convenience (all traceable to the above).
   result.headline = {
     viralScore: viral.viralScore,
@@ -64,4 +72,45 @@ function scoreVideoV10(analysis = {}, opts = {}) {
   return result;
 }
 
-module.exports = { scoreVideoV10 };
+// The handoff's explicit weighted formula, computed from REAL viral components.
+// Mapping (handoff term -> real measured component):
+//   viralScore        -> viral.viralScore
+//   excitement        -> surprise component (multi-signal spike rate)
+//   sceneEnergy       -> retention component (scene/cut density)
+//   suspense          -> rewatch component (end-payoff / late-surprise buildup)
+//   editingMomentum   -> pacing component (cut rhythm)
+//   faceReaction      -> emotion component, ONLY when a facecam is present
+//   gameplayIntensity -> gaming score, ONLY when gaming scoring ran
+// Unavailable components are dropped and weights renormalized — never faked.
+const WEIGHTS = {
+  viralScore: 0.25, excitement: 0.20, sceneEnergy: 0.15, suspense: 0.10,
+  faceReaction: 0.10, gameplayIntensity: 0.10, editingMomentum: 0.10,
+};
+function weightedEditScore(viral, gaming, opts = {}) {
+  const cs = (viral && viral.componentScores) || {};
+  const get = (name) => (cs[name] && typeof cs[name].score === "number" ? cs[name].score : null);
+  const available = {
+    viralScore: typeof viral.viralScore === "number" ? viral.viralScore : null,
+    excitement: get("surprise"),
+    sceneEnergy: get("retention"),
+    suspense: get("rewatch"),
+    editingMomentum: get("pacing"),
+    // Only real when the supporting detector/signal actually ran:
+    faceReaction: opts.facecamPresent ? get("emotion") : null,
+    gameplayIntensity: (opts.gaming && gaming && typeof gaming.gamingViralScore === "number") ? gaming.gamingViralScore : null,
+  };
+  let sum = 0, wsum = 0;
+  const used = {}, excluded = [];
+  for (const [k, w] of Object.entries(WEIGHTS)) {
+    if (available[k] === null) { excluded.push(k); continue; }
+    sum += w * available[k]; wsum += w; used[k] = Number(available[k].toFixed(3));
+  }
+  return {
+    score: wsum > 0 ? Number((sum / wsum).toFixed(3)) : 0, // renormalized over available
+    components: used,
+    excluded, // components needing absent detectors (facecam/gaming) — honestly omitted
+    note: "Handoff weighted formula over REAL measured components; unavailable ones excluded + weights renormalized, not faked.",
+  };
+}
+
+module.exports = { scoreVideoV10, weightedEditScore };

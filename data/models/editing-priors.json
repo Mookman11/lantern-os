@@ -1,0 +1,31 @@
+{
+  "generatedAt": "2026-06-18T03:15:03.380Z",
+  "sampleSizes": {
+    "ccClips": 10,
+    "firstPartyRenders": 14,
+    "calibration": 28
+  },
+  "averageCutsPerMinute": {
+    "median": 28.219,
+    "mean": 40.316,
+    "n": 38
+  },
+  "targetDurationSec": {
+    "median": 29,
+    "mean": 32.136
+  },
+  "introHookStrength": {
+    "median": 0.934,
+    "mean": 0.932,
+    "n": 24,
+    "caveat": "detectOpeningHookStrength saturates (~0.98); describes detector behavior, not validated hook quality (hour_12.md)"
+  },
+  "zoomFrequency": "insufficient_data (no zoom detector for reference clips; render applies punch-in, but we don't measure others' zooms)",
+  "facecamPosition": "insufficient_data (per-clip facecam heuristic exists, but no reliable aggregate over references)",
+  "captionDensity": "insufficient_data (only known for first-party renders, not reference clips — no OCR on references)",
+  "suspenseTiming": "insufficient_data (needs per-segment arc timing across many labeled refs)",
+  "peakSpacing": "insufficient_data (needs multi-peak timing labels not present in references)",
+  "endingStyle": "insufficient_data (needs ending-classification not built)",
+  "gameplayCrop": "full-frame 9:16 (renderer fills frame; safe-zone-v2 avoids slicing detected regions)",
+  "honestyNote": "Priors are emitted only where real measurement exists (cut rate, duration, intro hook). Everything requiring an absent detector is insufficient_data, never guessed. Reference data is CC-licensed + first-party only."
+}

@@ -695,6 +695,24 @@ async function processExportJob(job, repoRoot, ctx) {
       fs.mkdirSync(path.dirname(reportPath), { recursive: true });
       fs.writeFileSync(reportPath, JSON.stringify(report, null, 2));
       ctx.log(`Render report: variant=${report.variant} segments=${report.segments} duration=${report.duration}`);
+
+      // V12 editing memory — record the REAL editing stats of this render
+      // (owned first-party data, always legitimate to keep).
+      try {
+        const { recordEditingMemory } = require("./editing-memory");
+        recordEditingMemory({
+          entryId: job.input.entryId,
+          renderId: renderRecord && renderRecord.id ? renderRecord.id : key,
+          durationSec: segSec,
+          segments: Array.isArray(segments) ? segments : [],
+          captionCount: (entry && Array.isArray(entry.captions)) ? entry.captions.length : null,
+          viralScore: viral && viral.viralScore != null ? viral.viralScore : null,
+          cropMode: job.input.fit || "crop",
+          zoomedSegments: encodeInfo && typeof encodeInfo.zoomedSegments === "number" ? encodeInfo.zoomedSegments : null,
+        });
+      } catch (e) {
+        console.error("[job-worker] editing-memory write failed (non-fatal):", e.message);
+      }
     } catch (e) {
       console.error("[job-worker] render report write failed (non-fatal):", e.message);
     }
