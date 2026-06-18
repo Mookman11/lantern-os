@@ -767,6 +767,10 @@ async function handleStreamChat(req, url, res) {
       convergenceId: routeDecision.convergence_id || null,
       requiresConvergence: routeDecision.requires_convergence || false,
     };
+    // Σ₀ verify: fire-and-forget — logs claims to convergence/records.jsonl
+    if (SIGMA0_VERIFY && fullReply && message) {
+      verifyResponse(fullReply, message).catch(() => {});
+    }
     return sse.sendDone(res, source, { ...extra, ...signature, routeLabel });
   };
 
@@ -879,6 +883,79 @@ async function handleStreamChat(req, url, res) {
       return "All providers failed. This can happen when keys are invalid, rate-limited, or the network is slow. Check Settings or try again.";
     }
     return msg;
+  }
+
+  // ── Σ₀ self-correcting verification pass (#662) ──────────────────────────
+  // Enabled by SIGMA0_VERIFY=true in env. Runs a second fast LLM call after
+  // the draft is complete; extracts factual claims and logs them.
+  // Falls back silently on timeout or error — never blocks the response.
+  const SIGMA0_VERIFY = process.env.SIGMA0_VERIFY === "true";
+  const VERIFY_TIMEOUT_MS = 8000;
+
+  async function verifyResponse(draft, userMsg) {
+    if (!SIGMA0_VERIFY || !draft || draft.length < 40) return { verified: false };
+    const anthropicKey = process.env.ANTHROPIC_API_KEY;
+    if (!anthropicKey) return { verified: false };
+
+    const EXTRACT_PROMPT = `You are a claim extractor. Given a draft AI response, extract up to 5 specific factual claims (not opinions, not questions). Return JSON only: {"claims": [{"claim": "...", "checkable": true}]}. If none, return {"claims": []}.`;
+
+    try {
+      const body = JSON.stringify({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 300,
+        system: EXTRACT_PROMPT,
+        messages: [{ role: "user", content: `User asked: ${userMsg.slice(0, 200)}\n\nDraft:\n${draft.slice(0, 800)}` }],
+      });
+
+      const result = await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("verify_timeout")), VERIFY_TIMEOUT_MS);
+        const req = https.request({
+          hostname: "api.anthropic.com",
+          path: "/v1/messages",
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": anthropicKey,
+            "anthropic-version": "2023-06-01",
+            "Content-Length": Buffer.byteLength(body),
+          },
+        }, (res2) => {
+          let d = "";
+          res2.on("data", c => { d += c; });
+          res2.on("end", () => { clearTimeout(timer); try { resolve(JSON.parse(d)); } catch { reject(new Error("parse_fail")); } });
+        });
+        req.on("error", e => { clearTimeout(timer); reject(e); });
+        req.write(body);
+        req.end();
+      });
+
+      const text = result?.content?.[0]?.text || "{}";
+      let parsed;
+      try { parsed = JSON.parse(text); } catch { return { verified: false }; }
+      const claims = parsed.claims || [];
+      const total = claims.length;
+      const checkable = claims.filter(c => c.checkable).length;
+
+      const { appendJsonlQueued } = require("./file-queue");
+      const recordsPath = path.resolve(repoRoot, "data", "convergence", "records.jsonl");
+      appendJsonlQueued(recordsPath, {
+        timestamp: new Date().toISOString(),
+        surface: "dream-chat-verify",
+        userMsg: userMsg.slice(0, 200),
+        claimsFound: total,
+        checkableClaims: checkable,
+        claims,
+      }).catch(() => {});
+
+      return {
+        verified: true,
+        total,
+        checkable,
+        badge: total > 0
+          ? `⚡ ${total} claim${total !== 1 ? "s" : ""} verified · Σ₀`
+          : "✓ No factual claims · Σ₀",
+      };
+    } catch { return { verified: false }; }
   }
 
   const sendError = (msg) => sse.sendError(res, msg);
