@@ -53,8 +53,11 @@ Claude is expensive. Use it for design decisions and complex debugging. Delegate
 | PCSF file updates | Any agent | JSON edits, no logic |
 | CSF ingestion docs | Any agent | Markdown, no code |
 | `requirements.txt` edits | Any agent | One-line changes |
+| Coding work (autowork) | **[lantern-sigma0-coder](docs/LANTERN-SIGMA0-CODER.md)** | Local Σ₀ LoRA fine-tuned on this repo's Claude sessions; $0, private, leaderboard-routed |
 
 **Claude is for:** Orchestrator bugs, stream architecture, provider chain logic, system prompt design, security review.
+
+**Local coding model:** [`lantern-sigma0-coder`](docs/LANTERN-SIGMA0-CODER.md) is the project's own coding agent — a LoRA fine-tuned on past Claude sessions, served via Ollama, preferred by the performance leaderboard, and continually retrained (`scripts/continual-train.ps1`). It backs autowork and the Keystone desk as the local-first coder.
 
 ### 4. Don't re-read files you've already read
 

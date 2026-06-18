@@ -75,6 +75,7 @@ Observe → Remember → Reason → Act → Verify → Converge
 | **Auto-Deployment** | ✅ Live | Hourly master branch pulls, pre-deploy tests, automatic rollback |
 | **Convergence Routing** | ✅ Live | 120+ Keystone intent routes, >70% cache hit rate, deterministic local routing |
 | **Multi-Provider Fallback** | ✅ Live | Claude → OpenAI → Gemini → Grok → Local Ollama, with capacity gates |
+| **[lantern-sigma0-coder](docs/LANTERN-SIGMA0-CODER.md)** | ✅ Live (2026-06-18) | Local Σ₀ coding LoRA fine-tuned on past Claude sessions; Ollama-served, leaderboard-routed, continually retrained |
 | **CSF Memory Archive** | ✅ Live | Symbolic searchable format, tiered promotion (trace → skill) |
 | **MCP Server** | ✅ Live | Local tool surface, agent registration, OAuth2 protected endpoint |
 | **Discord Integration** | ✅ Live | Bot with convergence-aware responses |
