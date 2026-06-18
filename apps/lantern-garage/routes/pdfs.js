@@ -132,6 +132,8 @@ module.exports = async function pdfRoutes(req, res, url, deps) {
     }
     const saved = [];
     const errors = [];
+    const writes = [];
+    try { fs.mkdirSync(ingestBase, { recursive: true }); } catch { /* already exists */ }
     const bb = Busboy({ headers: req.headers, limits: { fileSize: 100 * 1024 * 1024 } });
     bb.on('file', (fieldname, file, info) => {
       const { filename } = info;
@@ -142,13 +144,24 @@ module.exports = async function pdfRoutes(req, res, url, deps) {
       }
       const safe = path.basename(filename).replace(/[^a-zA-Z0-9._\- ]/g, '_');
       const dest = path.join(ingestBase, safe);
-      const ws = fs.createWriteStream(dest);
-      file.pipe(ws);
-      ws.on('finish', () => saved.push(safe));
-      ws.on('error', e => errors.push({ filename: safe, error: e.message }));
+      // Track each write so the response waits for the file to flush to disk.
+      // (Busboy 1.x emits 'close' after streams drain; replying on 'finish'
+      //  raced ahead of the write and reported saved:[] for files already saving.)
+      writes.push(new Promise((resolve) => {
+        const ws = fs.createWriteStream(dest);
+        file.pipe(ws);
+        ws.on('finish', () => { saved.push(safe); resolve(); });
+        ws.on('error', e => { errors.push({ filename: safe, error: e.message }); resolve(); });
+      }));
     });
-    bb.on('finish', () => sendJson(res, { ok: true, saved, errors }));
-    bb.on('error', e => sendJson(res, { ok: false, error: e.message }, 500));
+    const respond = () => {
+      Promise.all(writes).then(() => {
+        if (!res.writableEnded) sendJson(res, { ok: true, saved, errors });
+      });
+    };
+    bb.on('close', respond);
+    bb.on('finish', respond);
+    bb.on('error', e => { if (!res.writableEnded) sendJson(res, { ok: false, error: e.message }, 500); });
     req.pipe(bb);
     return true;
   }

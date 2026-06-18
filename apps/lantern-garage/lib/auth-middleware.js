@@ -7,13 +7,29 @@
 const { getProfile } = require("./user-profiles");
 
 /**
+ * Local-only access bypass (grants admin).
+ * Two triggers, both safe for production:
+ *   1. Dev server on port 4178 (existing behavior).
+ *   2. LANTERN_LOCAL_ADMIN=1 AND the request arrives on a loopback address.
+ * Cloud deploys bind 0.0.0.0 and never set LANTERN_LOCAL_ADMIN, so remote
+ * traffic stays fully gated. Lets the owner reach founder/admin pages
+ * (e.g. /create.html) on the local stable server (4177) without Patreon login.
+ */
+function isLocalBypass(req) {
+  if (req.socket?.localPort === 4178) return true;
+  if (process.env.LANTERN_LOCAL_ADMIN !== "1") return false;
+  const ip = req.socket?.remoteAddress || "";
+  return ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1";
+}
+
+/**
  * Require authentication for a route.
  * Returns true if user is authenticated, false otherwise.
  * Sends appropriate redirect (to /auth.html if not logged in).
  */
 function requireAuth(req, res) {
-  // Dev bypass: port 4178 skips auth gate
-  if (req.socket?.localPort === 4178) return true;
+  // Local-only bypass: dev port 4178, or LANTERN_LOCAL_ADMIN on loopback
+  if (isLocalBypass(req)) return true;
 
   const session = req.session?.patreon;
 
@@ -32,8 +48,8 @@ function requireAuth(req, res) {
  * Sends 403 Forbidden if insufficient role.
  */
 function requireRole(req, res, requiredRole = "supporter") {
-  // Dev bypass: port 4178 gets admin access
-  if (req.socket?.localPort === 4178) return true;
+  // Local-only bypass: dev port 4178, or LANTERN_LOCAL_ADMIN on loopback
+  if (isLocalBypass(req)) return true;
 
   const session = req.session?.patreon;
 
