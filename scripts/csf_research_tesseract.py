@@ -160,7 +160,7 @@ def pack():
         "totalTextChars": sum(r["textLength"] for r in records),
         "format": "csf-fallback",
         "csfPath": str(CSF_OUT),
-        "docs": [{k: v for k, v in r.items() if k != "text"} for r in records],
+        "docs": [{**{k: v for k, v in r.items() if k != "text"}, "textSnippet": r.get("text", "")[:600]} for r in records],
     }
     MANIFEST_OUT.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     print(f"[pack] Manifest written: {MANIFEST_OUT}", flush=True)
