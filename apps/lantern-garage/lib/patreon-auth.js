@@ -98,8 +98,9 @@ async function handlePatreonCallback(req, res, query, deps) {
     // Fetch user identity and membership data
     const user = await getPatreonUserWithMemberships(token);
 
-    // Map tier to role
-    const patreonRole = mapPatreonTierToRole(user.memberships);
+    // Map tier to role; owner always gets admin
+    const OWNER_IDS = new Set(["49294581"]);
+    const patreonRole = OWNER_IDS.has(String(user.id)) ? "admin" : mapPatreonTierToRole(user.memberships);
 
     // Create or update user profile in local database
     const profile = getOrCreateFromPatreon(user, patreonRole);
@@ -182,8 +183,11 @@ async function exchangePatreonCode(code, verifier) {
  * Fetch user identity and membership data from Patreon.
  */
 async function getPatreonUserWithMemberships(token) {
-  // Fetch identity with memberships included - no field filtering
-  const url = "https://www.patreon.com/api/oauth2/v2/identity?include=memberships";
+  // Request identity + memberships with currently_entitled_tiers relationship
+  const url = "https://www.patreon.com/api/oauth2/v2/identity" +
+    "?include=memberships.currently_entitled_tiers" +
+    "&fields%5Bmember%5D=currently_entitled_tiers" +
+    "&fields%5Btier%5D=title,amount_cents";
   console.log("[AUTH] User fetch URL:", url);
 
   const res = await fetchFn(url, {
