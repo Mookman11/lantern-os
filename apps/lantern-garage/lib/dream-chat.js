@@ -104,6 +104,13 @@ When you receive a request that references GitHub, an issue number, PR, or imple
 8. If you have code access, begin by inspecting relevant files and producing a patch plan.
 9. If you lack access, provide the grounded plan anyway.
 
+## Research Library (CSF Tesseract)
+
+You have access to a local research library of indexed PDFs stored in the CSF tesseract archive (data/tesseract/research-pool.csf). When relevant documents are retrieved they appear under "Research library:" in your context. Use them to:
+- Ground technical or scientific claims in source material
+- Cite specific papers by title and publication date
+- Surface relevant background when answering research questions
+
 ## Tool Access (Σ₀ Framework Integration)
 
 You have access to:

@@ -7,6 +7,7 @@ const repoRoot = path.resolve(__dirname, "..", "..", "..");
 const CSF_MEMORY_PATH = path.join(repoRoot, "data", "csf_memory");
 const CSF_INGEST_PATH = path.join(repoRoot, "csf", "ingest");
 const DREAM_JOURNAL_PATH = path.join(repoRoot, "data", "dream_journal");
+const TESSERACT_MANIFEST = path.join(repoRoot, "data", "tesseract", "manifest.json");
 const DOOR_STATE_PATH = path.join(DREAM_JOURNAL_PATH, "door_state.json");
 const RAG_HOUSE_PATH = path.join(repoRoot, "data", "rag-house", "flat-rag-house-latest.json");
 
@@ -162,6 +163,28 @@ function saveDoorChoice(doorText, allDoors) {
   saveDoorState(state);
 }
 
+// Query tesseract research library — PDF titles + text snippets scored by relevance
+let _tesseractCache = { docs: null, ts: 0 };
+function queryResearchLibrary(message, limit = 3) {
+  try {
+    if (!fs.existsSync(TESSERACT_MANIFEST)) return [];
+    const now = Date.now();
+    if (!_tesseractCache.docs || (now - _tesseractCache.ts) > 60_000) {
+      const raw = JSON.parse(fs.readFileSync(TESSERACT_MANIFEST, "utf8"));
+      _tesseractCache = { docs: raw.docs || [], ts: now };
+    }
+    const scored = _tesseractCache.docs.map(d => {
+      const haystack = [d.pdfTitle || "", d.textSnippet || "", d.filename || ""].join(" ");
+      return { doc: d, score: relevanceScore(haystack, message) };
+    });
+    return scored
+      .filter(s => s.score >= 0.15)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit)
+      .map(s => s.doc);
+  } catch { return []; }
+}
+
 // Query RAG house knowledge base — returns relevant records by keyword matching
 function queryRagHouse(message, limit = 2) {
   try {
@@ -236,6 +259,20 @@ function formatCSFContextForPrompt(message) {
     parts.push(`Doors: ${last3 || "none yet"}`);
   }
 
+  // Research library (CSF tesseract) — PDF titles + snippets scored by relevance
+  if (message) {
+    const researchDocs = queryResearchLibrary(message, 3);
+    if (researchDocs.length > 0) {
+      const researchText = researchDocs.map(d => {
+        const title = d.pdfTitle || d.filename;
+        const date = d.publishedAt ? ` (${d.publishedAt})` : "";
+        const snippet = (d.textSnippet || "").slice(0, 300).trim();
+        return `- **${title}**${date}${snippet ? ": " + snippet : ""}`;
+      }).join("\n");
+      parts.push(`Research library:\n${researchText}`);
+    }
+  }
+
   // RAG house knowledge base — relevant external records
   if (message) {
     const ragRecords = queryRagHouse(message, 2);
@@ -276,6 +313,7 @@ module.exports = {
   queryIngestDocs,
   queryDreamEntries,
   queryRagHouse,
+  queryResearchLibrary,
   loadDoorState,
   saveDoorState,
   saveDoorChoice,
