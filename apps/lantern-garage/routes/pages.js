@@ -43,7 +43,7 @@ module.exports = async function pagesRoute(req, res, url, deps) {
     }
   }
 
-  // Protected — check auth + role
+  // Explicitly protected pages (role-specific)
   const page = PROTECTED_PAGES[pathname];
   if (page) {
     if (!requireAuth(req, res)) return true;
@@ -51,6 +51,17 @@ module.exports = async function pagesRoute(req, res, url, deps) {
 
     const filePath = path.join(deps.publicRoot, page.file);
     if (fs.existsSync(filePath)) {
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(fs.readFileSync(filePath, "utf-8"));
+      return true;
+    }
+  }
+
+  // Catch-all: any other .html page not explicitly listed is auth-gated
+  if (pathname.match(/\.html$/)) {
+    const filePath = path.join(deps.publicRoot, pathname.slice(1));
+    if (fs.existsSync(filePath)) {
+      if (!requireAuth(req, res)) return true;
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       res.end(fs.readFileSync(filePath, "utf-8"));
       return true;
