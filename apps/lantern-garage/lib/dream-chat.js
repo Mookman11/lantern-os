@@ -962,6 +962,54 @@ async function dreamChatReply(message, recentDreams, requestedAgent = "", reques
     }
   }
 
+  // PRIORITY 5: Grok / xAI
+  const xaiKey = process.env.XAI_API_KEY;
+  if (xaiKey && (!rp || rp === "grok" || rp === "xai")) {
+    try {
+      const payload = JSON.stringify({
+        model: process.env.XAI_MODEL || "grok-3-mini",
+        messages: [
+          { role: "system", content: agent.systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        max_tokens: 512,
+      });
+      const reply = await new Promise((resolve, reject) => {
+        const req2 = https.request({
+          hostname: "api.x.ai",
+          path: "/v1/chat/completions",
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${xaiKey}`,
+            "Content-Length": Buffer.byteLength(payload),
+          },
+        }, (upstream) => {
+          let data = "";
+          upstream.on("data", (c) => (data += c));
+          upstream.on("end", () => {
+            try {
+              const json = JSON.parse(data);
+              resolve(String(json.choices?.[0]?.message?.content || "").trim());
+            } catch { resolve(""); }
+          });
+          upstream.on("error", reject);
+        });
+        req2.on("error", reject);
+        req2.setTimeout(15000, () => { req2.destroy(); reject(new Error("timeout")); });
+        req2.write(payload);
+        req2.end();
+      });
+      if (reply) {
+        recordProviderSuccessRouter("xai");
+        return { reply, agent: agent.name, suggestions, online: true, source: "grok", webSuggestions };
+      }
+    } catch (err) {
+      console.error("Grok (xAI) API error:", err.message);
+      recordProviderFailureRouter("xai", "unknown");
+    }
+  }
+
   // No provider available — return clear error with setup instructions
   return {
     reply: null,
