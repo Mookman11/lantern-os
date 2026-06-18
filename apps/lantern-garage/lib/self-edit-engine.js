@@ -12,7 +12,7 @@
 
 const fs = require("fs");
 const path = require("path");
-const { execSync } = require("child_process");
+const { execSync, execFileSync } = require("child_process");
 const https = require("https");
 
 // Node's built-in CA bundle sometimes can't verify API provider certs on Windows.
@@ -240,21 +240,49 @@ function gitAddAll(repoRoot) {
   execSync("git add -A", { cwd: repoRoot, encoding: "utf8", timeout: 5000 });
 }
 
+// GitHub repo slug for API calls. Override with GH_REPO env if the remote moves.
+const GH_REPO = process.env.GH_REPO || "alex-place/lantern-os";
+
 function openDraftPr(repoRoot, branch, title, body) {
   if (!branch.startsWith("auto/")) throw new Error("invalid_branch_prefix");
-  const safeTitle = String(title || "Auto PR").replace(/"/g, "'").slice(0, 256);
-  const safeBody = String(body || "").replace(/"/g, "'").slice(0, 4000);
+  const safeTitle = String(title || "Auto PR").slice(0, 256);
+  const safeBody = String(body || "").slice(0, 4000);
+  const env = { ...process.env, GIT_TERMINAL_PROMPT: "0", SKIP_MONOWORKSTREAM: "1" };
+  // `gh pr create` is broken on this repo — use the REST API via `gh api`.
+  // execFileSync with an args array avoids all shell-quoting issues with title/body.
   try {
-    const result = execSync(
-      `gh pr create --head ${branch} --base master --title "${safeTitle}" --body "${safeBody}" --draft`,
-      { cwd: repoRoot, encoding: "utf8", timeout: 30000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0", SKIP_MONOWORKSTREAM: "1" } }
+    const result = execFileSync(
+      "gh",
+      [
+        "api", `repos/${GH_REPO}/pulls`,
+        "--method", "POST",
+        "-f", `title=${safeTitle}`,
+        "-f", `head=${branch}`,
+        "-f", "base=master",
+        "-f", `body=${safeBody}`,
+        "-F", "draft=true",
+        "--jq", ".html_url",
+      ],
+      { cwd: repoRoot, encoding: "utf8", timeout: 30000, env }
     );
-    const urlMatch = result.match(/(https:\/\/github\.com\/[^\s]+)/);
-    return urlMatch ? urlMatch[1] : result.trim();
+    const url = result.trim();
+    if (url.startsWith("https://")) return url;
+    const m = url.match(/(https:\/\/github\.com\/[^\s]+)/);
+    if (m) return m[1];
+    throw new Error("pr_url_not_returned");
   } catch (e) {
-    // PR already exists — extract the existing URL from the error output
-    const existing = (e.stderr || e.stdout || e.message || "").match(/(https:\/\/github\.com\/[^\s\n]+)/);
-    if (existing) return existing[1];
+    // PR already exists (422) — query the open PR for this head branch and reuse its URL.
+    try {
+      const owner = GH_REPO.split("/")[0];
+      const existing = execFileSync(
+        "gh",
+        ["api", `repos/${GH_REPO}/pulls?head=${owner}:${branch}&state=open`, "--jq", ".[0].html_url"],
+        { cwd: repoRoot, encoding: "utf8", timeout: 15000, env }
+      ).trim();
+      if (existing.startsWith("https://")) return existing;
+    } catch (_e) { /* fall through */ }
+    const fromErr = (e.stderr || e.stdout || e.message || "").match(/(https:\/\/github\.com\/[^\s\n]+)/);
+    if (fromErr) return fromErr[1];
     throw e;
   }
 }
