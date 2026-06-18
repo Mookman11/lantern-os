@@ -1,0 +1,25 @@
+{
+  "status": "trained",
+  "n_samples": 1451,
+  "n_train": 1160,
+  "n_val": 291,
+  "target": "engagement_rate",
+  "features": [
+    "duration",
+    "tag_count",
+    "title_length",
+    "hook_strength_title_proxy",
+    "is_gaming"
+  ],
+  "val_mae": 0.012448,
+  "val_r2": 0.1991,
+  "feature_importances": {
+    "duration": 0.18462960422039032,
+    "tag_count": 0.09336179494857788,
+    "title_length": 0.11397906392812729,
+    "hook_strength_title_proxy": 0.1258535236120224,
+    "is_gaming": 0.4821760356426239
+  },
+  "model_path": "data\\models\\xgboost-v10.json",
+  "honesty_note": "Trained on metadata-only features (no real motion/audio/visual signal at this sample size \u2014 see research/hour_02.md for why). val_r2 reflects how well title/duration/tag metadata alone predicts engagement_rate, which is expected to be weak; this is a baseline, not a claim that metadata is sufficient for virality prediction."
+}

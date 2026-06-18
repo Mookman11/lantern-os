@@ -132,7 +132,7 @@ async function analyzeVideoForHighlights(videoPath, options = {}, onProgress = (
   onProgress(66, "detecting_highlights", "Merging detections into highlights");
 
   // Merge and score highlights (gameplay-first; conversation is penalized).
-  const { highlights, density } = mergeDetections(
+  const merged = mergeDetections(
     motionFrames,
     audioSpikes,
     sceneChanges,
@@ -141,6 +141,15 @@ async function analyzeVideoForHighlights(videoPath, options = {}, onProgress = (
     maxHighlightDuration,
     options.weights
   );
+  const highlights = merged.highlights;
+  const density = merged.density;
+  // NOTE: this function intentionally does NOT auto-apply buildFallbackHighlights
+  // when highlights is empty — job-worker.js already owns the "never zero
+  // highlights" guarantee for the real pipeline (see its comment block around
+  // the zero-highlights check) and calls buildFallbackHighlights itself using
+  // this function's returned density heatmap. Applying a fallback here too
+  // would silently shadow that call site with a second, divergent fallback
+  // policy instead of improving the one place actually responsible for it.
 
   // Instrumentation — real counts from this analysis, surfaced so the pipeline
   // can never fail silently (stored on the project as analysis.debug downstream).
@@ -413,6 +422,79 @@ const GAMEPLAY_WEIGHTS = {
 
 function clampUnit(x) { return Math.max(0, Math.min(1, Number.isFinite(x) ? x : 0)); }
 
+const FALLBACK_MIN_HIGHLIGHTS = 2;
+const FALLBACK_MAX_HIGHLIGHTS = 10;
+
+/**
+ * Last resort when normal threshold-gated detection (mergeDetections) finds
+ * NO qualifying highlight — e.g. a calm/talking video where every candidate
+ * gets suppressed or never clears the 0.12 density floor. Rather than return
+ * an empty timeline (which surfaces as "Top variant has no segments to
+ * render" in the UI), rank the REAL per-second density heatmap already
+ * computed by mergeDetections and take the top FALLBACK_MIN..MAX seconds by
+ * that real (if sub-threshold) score. Honesty boundary: these are explicitly
+ * tagged "fallback" with their true (low) density score, never inflated to
+ * look like a normal high-confidence detection.
+ *
+ * If even the density heatmap is empty (no analyzable frames at all), there
+ * is no real signal left to rank — the only grounded fallback is to evenly
+ * space segments across the video's real (ffprobe-measured) duration, which
+ * is tagged distinctly ("no-signal") so it's never confused with a
+ * density-ranked pick.
+ */
+function buildFallbackHighlights(density, minDuration, maxDuration, videoDuration) {
+  const segDuration = Math.max(minDuration, Math.min(maxDuration, minDuration));
+
+  if (!density || density.length === 0) {
+    if (!videoDuration || videoDuration <= 0) return [];
+    const count = Math.min(FALLBACK_MAX_HIGHLIGHTS, Math.max(FALLBACK_MIN_HIGHLIGHTS,
+      Math.floor(videoDuration / segDuration) || FALLBACK_MIN_HIGHLIGHTS));
+    const spacing = videoDuration / count;
+    const out = [];
+    for (let i = 0; i < count; i++) {
+      const start = Math.min(videoDuration - segDuration, i * spacing);
+      if (start < 0) continue;
+      out.push({
+        start, end: Math.min(videoDuration, start + segDuration),
+        score: 0, reason: "fallback: no measurable activity detected; evenly-spaced segments",
+        tags: ["fallback", "no-signal"],
+      });
+    }
+    return out;
+  }
+
+  const ranked = [...density].sort((a, b) => b.density - a.density);
+  const picked = [];
+  for (const d of ranked) {
+    if (picked.length >= FALLBACK_MAX_HIGHLIGHTS) break;
+    // Skip points too close to an already-picked center so fallback segments
+    // spread across the video instead of clustering on one noisy peak.
+    if (picked.some((p) => Math.abs(p.center - d.time) < segDuration)) continue;
+    picked.push({ center: d.time, density: d.density });
+  }
+  // If the spacing rule left us short of the minimum, relax it and fill in
+  // the next-highest remaining points regardless of proximity.
+  if (picked.length < FALLBACK_MIN_HIGHLIGHTS) {
+    for (const d of ranked) {
+      if (picked.length >= FALLBACK_MIN_HIGHLIGHTS) break;
+      if (picked.some((p) => p.center === d.time)) continue;
+      picked.push({ center: d.time, density: d.density });
+    }
+  }
+
+  return picked
+    .sort((a, b) => a.center - b.center)
+    .map((p) => {
+      const start = Math.max(0, p.center - segDuration / 2);
+      const end = videoDuration > 0 ? Math.min(videoDuration, start + segDuration) : start + segDuration;
+      return {
+        start, end, score: p.density,
+        reason: "fallback: below normal highlight threshold; selected by relative density rank",
+        tags: ["fallback"],
+      };
+    });
+}
+
 /**
  * Merge motion/audio/scene detections into scored highlight segments, with a
  * gameplay-first composite and a conversation penalty. Returns { highlights,
@@ -508,6 +590,53 @@ function scoreHighlight(motion, audio, scene, weights = {}) {
   );
 }
 
+// Real first-N-seconds visual hook strength: how much motion/scene-change
+// activity happens in the opening window, reusing the same detectMotion/
+// detectSceneChanges passes as the rest of this engine (just bounded to a
+// short maxSeconds instead of the full clip). Grounded in published Shorts
+// retention research (see research/hour_07.md) showing the opening visual
+// hook — not title wording — is what drives early drop-off. Returns
+// { status: "unavailable" } rather than a fabricated score if ffmpeg fails.
+async function detectOpeningHookStrength(videoPath, opts = {}) {
+  const windowSeconds = opts.windowSeconds || 3;
+  const fps = opts.fps || 10; // finer sampling than the full-clip default — short window
+  const ffOpts = { maxSeconds: windowSeconds, timeoutMs: opts.timeoutMs || 30000 };
+
+  let motionFrames, sceneFrames;
+  try {
+    [motionFrames, sceneFrames] = await Promise.all([
+      detectMotion(videoPath, fps, opts.motionThreshold || 0.1, ffOpts),
+      detectSceneChanges(videoPath, fps, opts.sceneThreshold || 0.2, ffOpts),
+    ]);
+  } catch (err) {
+    return { status: "unavailable", reason: err.message };
+  }
+
+  const expectedFrames = windowSeconds * fps;
+  const motionRatio = expectedFrames ? Math.min(1, motionFrames.length / expectedFrames) : 0;
+  const avgMotion = motionFrames.length
+    ? motionFrames.reduce((s, f) => s + f.motion, 0) / motionFrames.length
+    : 0;
+  const sceneChangeCount = sceneFrames.length;
+
+  // Hook strength blends "how much of the opening window has above-threshold
+  // motion" with "how strong that motion is" and "did the scene visibly cut" —
+  // a pattern break (motion + a cut) early scores higher than steady motion
+  // alone, matching the cited "pattern break" hook tactic.
+  const hookStrength = Math.max(0, Math.min(1,
+    0.5 * motionRatio + 0.3 * Math.min(1, avgMotion) + 0.2 * Math.min(1, sceneChangeCount / 2)
+  ));
+
+  return {
+    status: "ok",
+    hookStrength: Number(hookStrength.toFixed(3)),
+    windowSeconds,
+    motionFrameCount: motionFrames.length,
+    avgMotion: Number(avgMotion.toFixed(3)),
+    sceneChangeCount,
+  };
+}
+
 // ============================================================================
 // UTILITIES
 // ============================================================================
@@ -557,8 +686,10 @@ module.exports = {
   detectMotion,
   detectAudioSpikes,
   detectSceneChanges,
+  detectOpeningHookStrength,
   scoreHighlight,
   mergeDetections,
+  buildFallbackHighlights,
   getVideoMetadata,
   ANALYSIS_DEFAULTS,
   GAMEPLAY_WEIGHTS,

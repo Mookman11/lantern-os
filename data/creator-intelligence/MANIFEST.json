@@ -1,11 +1,23 @@
 {
   "counts": {
-    "general": 0,
-    "gaming": 0,
+    "general": 790,
+    "gaming": 661,
     "edits": 0
   },
-  "gamingByGame": {},
+  "gamingByGame": {
+    "other": 165,
+    "cod": 35,
+    "fortnite": 60,
+    "minecraft": 65,
+    "gta": 59,
+    "roblox": 48,
+    "valorant": 49,
+    "apex": 48,
+    "elden_ring": 48,
+    "marvel_rivals": 34,
+    "cs2": 50
+  },
   "sources": [],
-  "updatedAt": "2026-06-14T22:03:18.649Z",
+  "updatedAt": "2026-06-17T21:29:47.245Z",
   "note": "Counts reflect rows physically present on disk. Empty = insufficient data."
 }

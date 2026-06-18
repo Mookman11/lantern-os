@@ -47,7 +47,7 @@ Extends `GeneralShort` with:
 
 ```json
 {
-  "game": "fortnite | cod | warzone | valorant | cs2 | minecraft | rocket_league | apex | league | overwatch | other",
+  "game": "fortnite | cod | warzone | valorant | cs2 | minecraft | rocket_league | apex | league | overwatch | gta | roblox | elden_ring | marvel_rivals | other",
   "momentType": "kill | clutch | fail | funny | reaction | boss | ranked | tournament | unknown",
   "facecamPresent": true,
   "facecamCorner": "top_left | top_right | bottom_left | bottom_right | none",

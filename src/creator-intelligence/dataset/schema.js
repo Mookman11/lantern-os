@@ -13,7 +13,8 @@ const HOOK_STYLES = [
 const PLATFORMS = ["youtube", "tiktok", "instagram", "facebook"];
 const GAMES = [
   "fortnite", "cod", "warzone", "valorant", "cs2", "minecraft",
-  "rocket_league", "apex", "league", "overwatch", "other",
+  "rocket_league", "apex", "league", "overwatch",
+  "gta", "roblox", "elden_ring", "marvel_rivals", "other",
 ];
 const MOMENT_TYPES = [
   "kill", "clutch", "fail", "funny", "reaction", "boss", "ranked", "tournament", "unknown",

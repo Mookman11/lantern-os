@@ -24,6 +24,36 @@ const GRID_COLS = 12;
 const GRID_ROWS = 8;
 const TARGET_ASPECT_9_16 = 9 / 16;
 
+// Fixed YouTube Shorts player-chrome regions, in FINAL OUTPUT canvas space
+// (normalized 0..1 over the 1080x1920 9:16 frame), not source-video space.
+// Unlike facecam/HUD — which are content baked into the source pixels that
+// detectRegions()/planCrop() decide whether to keep inside the crop window —
+// this chrome is overlaid by the YouTube player on top of the final video at
+// playback time, regardless of how the source was cropped. So it's exported
+// separately for placement decisions (where to put captions, a PiP facecam
+// box, etc. in the output canvas), not fed into planCrop()'s crop-window
+// solver. Reported with confidence 1 because it's a known platform constant,
+// not a heuristic guess — but the exact layout can shift with player updates,
+// so treat as approximate. Source: published Shorts safe-zone guidance,
+// https://kreatli.com/guides/youtube-shorts-safe-zone
+//   - top ~10% of frame: channel name / subscribe UI
+//   - right-edge strip: like/comment/share/remix button stack
+const PLATFORM_UI_REGIONS = [
+  { type: "platform_ui", name: "top_chrome", bounds: { x: 0, y: 0, width: 1, height: 0.10 }, confidence: 1 },
+  { type: "platform_ui", name: "right_button_stack", bounds: { x: 0.83, y: 0.30, width: 0.17, height: 0.65 }, confidence: 1 },
+];
+
+// True if a normalized output-canvas rect overlaps a platform UI region —
+// use this to keep captions/PiP placement out of the player chrome.
+function overlapsPlatformUI(rect) {
+  return PLATFORM_UI_REGIONS.some((ui) => {
+    const b = ui.bounds;
+    const xOverlap = rect.x < b.x + b.width && rect.x + rect.width > b.x;
+    const yOverlap = rect.y < b.y + b.height && rect.y + rect.height > b.y;
+    return xOverlap && yOverlap;
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Frame sampling (real ffmpeg raw pipeline, same approach as highlight-engine)
 // ---------------------------------------------------------------------------
@@ -419,4 +449,6 @@ module.exports = {
   renderSafeZoneOverlay,
   TARGET_ASPECT_9_16,
   PRIORITY_WEIGHT,
+  PLATFORM_UI_REGIONS,
+  overlapsPlatformUI,
 };

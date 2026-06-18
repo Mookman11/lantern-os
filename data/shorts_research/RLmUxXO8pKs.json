@@ -1,0 +1,42 @@
+{
+  "video_id": "RLmUxXO8pKs",
+  "status": "ok",
+  "fps": 30,
+  "duration_sec": 20.04,
+  "average_cut_length": 0.21,
+  "hook_duration": 0.983,
+  "zoom_frequency": "insufficient_data",
+  "subtitle_style": "insufficient_data",
+  "caption_density": "insufficient_data",
+  "motion_curve": {
+    "0": 5.377893518518551,
+    "1": 5.115509259259277,
+    "2": 2.0513348765432062,
+    "3": 18.30936728395061,
+    "4": 2.7825462962962884,
+    "5": 14.740956790123509,
+    "6": 12.634652777777827,
+    "7": 3.564259259259259,
+    "8": 2.3176697530864265,
+    "9": 17.65927469135801,
+    "10": 4.387299382716086,
+    "11": 19.09205246913587,
+    "12": 9.553780864197483,
+    "13": 5.951859567901201,
+    "14": 18.32463734567901,
+    "15": 1.0761574074074125,
+    "16": 3.43630401234568,
+    "17": 1.854344135802457,
+    "18": 2.442422839506172,
+    "19": 2.170686728395043
+  },
+  "facecam_position": {
+    "corner": "bottom_left",
+    "confidence": 0.501
+  },
+  "hud_position": "insufficient_data",
+  "emotional_peaks": [],
+  "engagement": 0.017744,
+  "source": "youtube_api_real",
+  "honesty_note": "hook_duration here is detectOpeningHookStrength()'s 0-1 score, not a literal seconds value (see research/hour_12.md re: that detector's known saturation issue, not yet recalibrated). emotional_peaks is an audio-spike-timestamp proxy, not a trained emotion-detection signal. zoom_frequency/subtitle_style/caption_density for third-party clips are insufficient_data, never guessed."
+}

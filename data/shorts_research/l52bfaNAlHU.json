@@ -1,0 +1,37 @@
+{
+  "video_id": "l52bfaNAlHU",
+  "status": "ok",
+  "fps": 30,
+  "duration_sec": 14.98,
+  "average_cut_length": 0.2,
+  "hook_duration": 0.983,
+  "zoom_frequency": "insufficient_data",
+  "subtitle_style": "insufficient_data",
+  "caption_density": "insufficient_data",
+  "motion_curve": {
+    "0": 4.4707561728396215,
+    "1": 4.659282407407509,
+    "2": 5.400378086419759,
+    "3": 11.462469135802417,
+    "4": 11.001280864197435,
+    "5": 11.03490740740739,
+    "6": 20.23587191358069,
+    "7": 4.591234567901346,
+    "8": 20.464799382715583,
+    "9": 19.483858024691315,
+    "10": 9.242430555555536,
+    "11": 7.006813271604901,
+    "12": 5.236597222222267,
+    "13": 8.531381172839454,
+    "14": 8.42388117283964
+  },
+  "facecam_position": {
+    "corner": "top_right",
+    "confidence": 0.642
+  },
+  "hud_position": "insufficient_data",
+  "emotional_peaks": [],
+  "engagement": 0.007569,
+  "source": "youtube_api_real",
+  "honesty_note": "hook_duration here is detectOpeningHookStrength()'s 0-1 score, not a literal seconds value (see research/hour_12.md re: that detector's known saturation issue, not yet recalibrated). emotional_peaks is an audio-spike-timestamp proxy, not a trained emotion-detection signal. zoom_frequency/subtitle_style/caption_density for third-party clips are insufficient_data, never guessed."
+}

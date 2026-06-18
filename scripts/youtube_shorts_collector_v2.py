@@ -59,24 +59,46 @@ class YouTubeShortsCollectorV2:
         self.real_gaming_file = self.output_dir / "real_gaming_shorts.jsonl"
         self.quota_state_file = self.output_dir / "api_quota_state.json"
 
-        # Queries rotated daily for diversity
-        self.search_queries = [
-            "shorts gaming",
+        # General (non-gaming) Shorts queries — round-robined for category diversity
+        self.general_queries = [
             "viral shorts",
-            "minecraft shorts",
-            "fortnite shorts",
             "tiktok style shorts",
-            "gaming highlights shorts",
-            "call of duty shorts",
-            "valorant shorts",
-            "roblox shorts",
-            "gta shorts",
-            "shorts gameplay",
-            "shorts montage",
+            "satisfying shorts",
+            "life hack shorts",
+            "comedy shorts",
+            "dance shorts",
+            "cooking shorts",
+            "diy shorts",
+            "story time shorts",
+            "trending shorts",
             "shorts funny",
-            "shorts epic",
-            "shorts clutch",
+            "shorts epic moment",
+            "animal shorts",
+            "fitness shorts",
+            "asmr shorts",
         ]
+
+        # Gaming Shorts queries — explicit per-title coverage for the requested categories
+        self.gaming_queries = [
+            "call of duty shorts",
+            "fortnite shorts",
+            "minecraft shorts",
+            "gta shorts",
+            "roblox shorts",
+            "valorant shorts",
+            "apex legends shorts",
+            "elden ring shorts",
+            "marvel rivals shorts",
+            "cs2 shorts",
+            "shorts gaming",
+            "gaming highlights shorts",
+            "shorts gameplay",
+            "shorts clutch",
+            "shorts killstreak",
+        ]
+
+        # Combined, round-robined query list (kept for backward compatibility)
+        self.search_queries = self.general_queries + self.gaming_queries
 
         # Gaming keywords for filtering
         self.gaming_keywords = {

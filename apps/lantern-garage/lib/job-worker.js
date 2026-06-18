@@ -4,7 +4,7 @@
 
 const fs = require("fs");
 const path = require("path");
-const { analyzeVideoForHighlights } = require("./highlight-engine");
+const { analyzeVideoForHighlights, buildFallbackHighlights } = require("./highlight-engine");
 const { generateCaptions } = require("./caption-engine");
 const { detectSafeZones } = require("./safe-zone-detector");
 const { reencodeToShortForm, renderSegments, probeSource, burnCaptionsToVideo } = require("./video-export");
@@ -228,24 +228,19 @@ async function processAnalyzeJob(job, repoRoot, ctx) {
   // If real detection found nothing (a quiet clip, or a long source the detector
   // couldn't score), synthesize short sample windows so the pipeline produces a
   // renderable selection instead of dead-ending the user. These are explicitly
-  // labeled "fallback" — we do NOT fabricate quality signals. Windows are kept
-  // short (≤12s) and evenly spaced so the result is still a usable Short even for
-  // a long source (a naive "thirds" split of a 17-min clip is not a Short).
+  // labeled "fallback" — we do NOT fabricate quality signals: buildFallbackHighlights
+  // ranks the REAL (sub-threshold) per-second density heatmap from this same
+  // analysis pass, only falling back to evenly-spaced windows if even that
+  // heatmap is empty. Min 2 / max 10 segments (see highlight-engine.js).
   if (Array.isArray(timeline.highlights) && timeline.highlights.length === 0) {
     const dur = Number(timeline.duration) || 0;
     if (dur > 1.5) {
-      const win = Math.min(12, Math.max(3, dur / 6));
-      if (dur <= win * 2) {
-        // Short clip: a single window covering it.
-        timeline.addHighlight(0, Number(Math.min(dur, 12).toFixed(1)), 0.5,
-          "fallback: whole clip (no strong signals detected)", ["fallback"]);
-      } else {
-        // Longer clip: three short windows at 20% / 50% / 80%.
-        for (const c of [0.2, 0.5, 0.8]) {
-          const start = Math.max(0, Math.min(dur * c - win / 2, dur - win));
-          timeline.addHighlight(Number(start.toFixed(1)), Number((start + win).toFixed(1)), 0.5,
-            "fallback: sampled window (no strong signals detected)", ["fallback"]);
-        }
+      const minDur = (options && options.minHighlightDuration) || 2.0;
+      const maxDur = (options && options.maxHighlightDuration) || 60.0;
+      const density = (timeline.metadata && timeline.metadata.gameplayDensity) || [];
+      const fallbackHighlights = buildFallbackHighlights(density, minDur, maxDur, dur);
+      for (const hl of fallbackHighlights) {
+        timeline.addHighlight(hl.start, hl.end, hl.score, hl.reason, hl.tags);
       }
       timeline.sort();
       ctx.log(`No highlights detected — inserted ${timeline.highlights.length} fallback window(s) so variants/render can proceed`);
