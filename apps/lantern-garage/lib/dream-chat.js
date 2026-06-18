@@ -262,7 +262,7 @@ function selectAgent(message) {
   const agentKeywords = {
     lantern: ["dream", "safe", "home", "steady", "light", "memory", "remember", "warm", "calm", "feeling", "emotional"],
     blinkbug: ["chaos", "glitch", "weird", "strange", "random", "creative", "wild", "unhinged", "glitch", "chaotic"],
-    keystone: ["github", "code", "issue", "pr", "fix", "bug", "technical", "engineering", "repo", "#", "implement"],
+    keystone: ["github", "code", "issue", "pr", "fix", "bug", "technical", "engineering", "repo", "#", "implement", "broken", "needs work", "what's broken", "what needs", "build", "deploy", "refactor", "debug", "merge", "branch", "commit", "test", "ci", "endpoint", "api", "error", "crash", "stack trace", "work on"],
     waterfall: ["cascade", "flow", "stream", "river", "water", "gentle", "reflection", "patient", "cascade"],
     xenon: ["signal", "detect", "pattern", "convergence", "navigate", "explore", "spacecraft", "navigation"],
     founder: ["vision", "goal", "plan", "strategic", "future", "wish", "protect", "lantern", "leadership"],

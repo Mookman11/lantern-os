@@ -132,6 +132,18 @@ module.exports = async (req, res, url, deps) => {
           return;
         }
 
+        // Guard: don't work an already-closed issue (prevents duplicate work)
+        if (issueDetails.state && String(issueDetails.state).toUpperCase() !== "OPEN") {
+          sendJson(res, {
+            ok: false,
+            error: "issue_closed",
+            issue: issueNumber,
+            state: issueDetails.state,
+            message: `Issue #${issueNumber} is ${issueDetails.state} — nothing to work.`,
+          }, 409);
+          return;
+        }
+
         // Check current branch and switch from master if needed
         const currentBranch = await new Promise((resolve) => {
           execFile(
@@ -190,10 +202,16 @@ module.exports = async (req, res, url, deps) => {
         gitAddAll(REPO_ROOT);
         const commitTitle = `fix: ${issueDetails.title} (fixes #${issueNumber})`;
         gitCommit(REPO_ROOT, commitTitle);
-        
+
+        // Capture the commit SHA for the response/UI
+        const commitSha = await new Promise((resolve) => {
+          execFile("git", ["rev-parse", "HEAD"], { cwd: REPO_ROOT, timeout: 5000, windowsHide: true },
+            (err, stdout) => resolve(err ? null : stdout.trim()));
+        });
+
         // Step 6: Push
         gitPush(REPO_ROOT, branchName);
-        
+
         // Step 7: Open PR
         const prBody = `Fixes #${issueNumber}\n\n${issueDetails.body}`;
         const prUrl = openDraftPr(REPO_ROOT, branchName, commitTitle, prBody);
@@ -203,6 +221,7 @@ module.exports = async (req, res, url, deps) => {
           issue: issueNumber,
           title: issueDetails.title,
           branch: branchName,
+          commitSha,
           prUrl,
           steps: ["fetched_issue", "generated_plan", "applied_patch", "ran_tests", "committed", "pushed", "opened_pr"],
           testResults
@@ -284,6 +303,14 @@ module.exports = async (req, res, url, deps) => {
           return;
         }
         step("fetch_issue", "done", { title: issueDetails.title, state: issueDetails.state });
+
+        // Guard: don't work an already-closed issue (prevents duplicate work)
+        if (issueDetails.state && String(issueDetails.state).toUpperCase() !== "OPEN") {
+          step("fetch_issue", "error", { error: "issue_closed", state: issueDetails.state });
+          send("done", { ok: false, ...receipt, stoppedAt: "issue_closed", message: `Issue #${issueNumber} is ${issueDetails.state} — nothing to work.` });
+          res.end();
+          return;
+        }
 
         // ── 2. branch (always issue-specific, never reuse current) ──────────
         step("branch", "start");
