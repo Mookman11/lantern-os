@@ -50,6 +50,42 @@ function recordExport(entryId, features = {}) {
   });
 }
 
+/**
+ * Capture the real Σ₀ feature vector of an edit that was just rendered, so it
+ * can later be joined to its real published-performance outcome. This is the
+ * FEATURE half of the first-party flywheel. `features` should be the measurable
+ * editing decisions of the rendered Short (durations, segment count, story-arc
+ * presence, collapse risk, viral component scores) — all real, none invented.
+ */
+function recordRenderedFeatures(entryId, renderId, features = {}) {
+  return store.appendEdit({
+    id: makeId("export"), entryId, createdAt: nowIso(),
+    kind: "export", features: { renderId, ...features }, choice: renderId, outcome: null,
+  });
+}
+
+/**
+ * Record a REAL performance outcome for a Short the operator published. This is
+ * the LABEL half of the flywheel — the only legitimate source of outcome-labeled
+ * training data (the operator's own content). Metrics must be real numbers the
+ * operator owns (their channel analytics / a figure they report); nothing here
+ * is fabricated or scraped.
+ * @param {string} entryId   the rendered entry this outcome belongs to
+ * @param {Object} metrics   { views, likes, comments, avgViewDurationSec, ... }
+ * @param {Object} opts      { source="self_reported", renderId }
+ */
+function recordOutcome(entryId, metrics = {}, opts = {}) {
+  return store.appendOutcome({
+    id: makeId("outcome"),
+    entryId,
+    renderId: opts.renderId || null,
+    source: opts.source || "self_reported",
+    recordedAt: nowIso(),
+    metrics,
+  });
+}
+
 module.exports = {
   recordEdit, recordVariantGenerated, recordVariantSelected, recordExport,
+  recordRenderedFeatures, recordOutcome,
 };

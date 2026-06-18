@@ -1,20 +1,20 @@
 {
-  "generatedAt": "2026-06-18T02:18:11.335Z",
+  "generatedAt": "2026-06-18T02:46:03.753Z",
   "sources": {
     "durations": "data/youtube/features_v11.jsonl (n=1451)",
-    "cutting": "data/youtube/calibration_features.jsonl (n=28)"
+    "cutting": "data/youtube/calibration_features.jsonl + data/shorts/cc/features_cc.jsonl (n=38)"
   },
   "targetDurationSec": {
     "median": 29,
     "mean": 32.1358
   },
   "averageCutLengthSec": {
-    "median": 3.17,
-    "mean": 9.4604
+    "median": 2.16,
+    "mean": 7.1615
   },
   "sceneCutsPerClip": {
-    "median": 7.5,
-    "mean": 11.6429
+    "median": 10.5,
+    "mean": 160.9737
   },
   "negativeContentPenalty": 0.15,
   "negativeDetectors": [
@@ -23,5 +23,5 @@
     "detectMenuOrLoadingScreen",
     "detectStaticFrames"
   ],
-  "honestyNote": "Duration/cut stats are real measurements over collected metadata + the small calibration sample. They describe what top-viewed Shorts in the sample look like; they are guidance priors, not a trained policy."
+  "honestyNote": "Duration/cut stats are real measurements over collected metadata + the calibration sample + CC-licensed reference clips. They describe observed editing patterns; they are guidance priors, not a trained policy. CC clips are pattern reference only (we don't own their outcomes)."
 }

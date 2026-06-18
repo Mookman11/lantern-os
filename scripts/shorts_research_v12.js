@@ -64,10 +64,19 @@ function main() {
   const features = readJsonl(path.join(YT_DIR, "features_v11.jsonl"));
   const calibration = readJsonl(path.join(YT_DIR, "calibration_features.jsonl"));
   const visual = readJsonDir(RESEARCH_DIR).filter((r) => r.status === "ok");
+  // CC-licensed reference features (legitimate third-party, CC-BY) — real
+  // frame/audio observations usable as editing-pattern priors. NOT outcome
+  // labels (we don't own these clips' performance), so they inform editing
+  // RULES, never the predictive model.
+  const ccRows = readJsonl(path.join(ROOT, "data", "shorts", "cc", "features_cc.jsonl"))
+    .map((r) => r.features).filter((f) => f && f.status === "ok");
 
   // ── hook-weights.json ──────────────────────────────────────────────────
-  // Real opening-hook-strength stats from any visual records that have them.
-  const hookVals = visual.map((v) => v.hook_duration).filter((x) => typeof x === "number");
+  // Real opening-hook-strength stats from first-party visual records + CC clips.
+  const hookVals = [
+    ...visual.map((v) => v.hook_duration),
+    ...ccRows.map((c) => c.openingHookStrength),
+  ].filter((x) => typeof x === "number");
   const hookWeights = {
     generatedAt: now,
     source: "data/shorts_research/*.json (opening_hook_strength via highlight-engine detectOpeningHookStrength)",
@@ -83,15 +92,23 @@ function main() {
   write("hook-weights.json", hookWeights);
 
   // ── editing-rules.json ─────────────────────────────────────────────────
-  // Real duration/cut stats from the calibration sample + the collected set.
+  // Real duration/cut stats from the metadata set, calibration sample, AND the
+  // CC-licensed reference clips (real ffmpeg cut measurements on owned-license
+  // footage).
   const durations = features.map((f) => f.duration).filter((x) => typeof x === "number");
-  const cutLens = calibration.map((c) => c.average_scene_length).filter((x) => typeof x === "number");
-  const sceneCuts = calibration.map((c) => c.scene_cut_count).filter((x) => typeof x === "number");
+  const cutLens = [
+    ...calibration.map((c) => c.average_scene_length),
+    ...ccRows.map((c) => (c.durationSec && c.sceneCutCount ? c.durationSec / Math.max(1, c.sceneCutCount) : null)),
+  ].filter((x) => typeof x === "number");
+  const sceneCuts = [
+    ...calibration.map((c) => c.scene_cut_count),
+    ...ccRows.map((c) => c.sceneCutCount),
+  ].filter((x) => typeof x === "number");
   const editingRules = {
     generatedAt: now,
     sources: {
       durations: "data/youtube/features_v11.jsonl (n=" + durations.length + ")",
-      cutting: "data/youtube/calibration_features.jsonl (n=" + calibration.length + ")",
+      cutting: "data/youtube/calibration_features.jsonl + data/shorts/cc/features_cc.jsonl (n=" + (calibration.length + ccRows.length) + ")",
     },
     targetDurationSec: durations.length ? { median: round(median(durations)), mean: round(mean(durations)) } : INSUFFICIENT,
     averageCutLengthSec: cutLens.length ? { median: round(median(cutLens)), mean: round(mean(cutLens)) } : INSUFFICIENT,
@@ -99,8 +116,9 @@ function main() {
     negativeContentPenalty: 0.15,
     negativeDetectors: ["detectConversation", "detectIdleGameplay", "detectMenuOrLoadingScreen", "detectStaticFrames"],
     honestyNote:
-      "Duration/cut stats are real measurements over collected metadata + the small calibration sample. " +
-      "They describe what top-viewed Shorts in the sample look like; they are guidance priors, not a trained policy.",
+      "Duration/cut stats are real measurements over collected metadata + the calibration sample + " +
+      "CC-licensed reference clips. They describe observed editing patterns; they are guidance priors, " +
+      "not a trained policy. CC clips are pattern reference only (we don't own their outcomes).",
   };
   write("editing-rules.json", editingRules);
 
@@ -138,9 +156,43 @@ function main() {
   };
   write("sigma0-training.json", sigma0Training);
 
+  // ── training-feature-table.json (two-track provenance view) ─────────────
+  // The honest "unified dataset" of Phase 4: two clearly separated tracks.
+  // Only the first-party track can ever carry outcome LABELS (owned content);
+  // the reference track is observational pattern data with no owned outcome.
+  let firstPartyLabeled = 0;
+  try {
+    const store = require("../src/creator-intelligence/dataset/dataset-store");
+    firstPartyLabeled = store.joinLabeledFirstParty().length;
+  } catch { /* store unavailable */ }
+  write("training-feature-table.json", {
+    generatedAt: now,
+    tracks: {
+      firstPartyLabeled: {
+        count: firstPartyLabeled,
+        role: "PREDICTIVE training (features -> owned engagement outcome)",
+        source: "data/creator-intelligence/{edits,outcomes} — operator's OWN published Shorts",
+        trainer: "scripts/train_firstparty_sigma0.py (MIN_SAMPLES gate -> insufficient_data until enough)",
+      },
+      referenceObservational: {
+        count: visual.length + ccRows.length,
+        role: "editing-PATTERN priors only (no owned outcome, never a label)",
+        sources: ["data/shorts_research/*.json (first-party renders)", "data/shorts/cc/features_cc.jsonl (CC-BY)"],
+        consumer: "editing-rules.json / hook-weights.json above",
+      },
+    },
+    honestyNote:
+      "Phase-4 'massive training dataset' is honestly two tracks. The predictive model is trainable ONLY on " +
+      "the first-party labeled track (owned outcomes); it is " + (firstPartyLabeled ? firstPartyLabeled + " rows" : "currently EMPTY") +
+      ", which grows as Lantern Shorts are published and their real performance recorded. The reference track " +
+      "(first-party renders + CC-BY clips) informs structural editing priors but carries no engagement labels and " +
+      "is never used to fabricate them.",
+  });
+
   console.log("\nshorts-research-v12 complete. Deliverables written to data/models/:");
-  console.log("  creator-profiles.json, hook-weights.json, editing-rules.json, sigma0-training.json");
-  console.log(`  inputs: features=${features.length}, calibration=${calibration.length}, visual=${visual.length}`);
+  console.log("  creator-profiles, hook-weights, editing-rules, sigma0-training, training-feature-table .json");
+  console.log(`  reference inputs: metadata=${features.length}, calibration=${calibration.length}, firstPartyVisual=${visual.length}, ccLicensed=${ccRows.length}`);
+  console.log(`  first-party LABELED rows (predictive-trainable): ${firstPartyLabeled}`);
 }
 
 function round(x) { return x == null ? null : Number(Number(x).toFixed(4)); }

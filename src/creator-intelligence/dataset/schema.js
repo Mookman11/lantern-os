@@ -87,7 +87,36 @@ function validateEditEvent(row) {
   return { valid: errors.length === 0, errors };
 }
 
+// First-party Outcome: a REAL performance record for a Short the operator
+// rendered AND published, from a source they own (their own channel analytics /
+// a number they report). This is the label half of the Σ₀ flywheel — it is the
+// only legitimate way to get outcome-labeled training data without scraping
+// anyone, because it describes the operator's OWN published content.
+const OUTCOME_SOURCES = ["self_reported", "youtube_analytics_oauth", "manual"];
+
+function validateOutcome(row) {
+  const errors = [];
+  if (!row || typeof row !== "object") return { valid: false, errors: ["row is not an object"] };
+  if (!isNonEmptyString(row.id)) errors.push("id required");
+  // Must reference a real rendered edit so features can be joined to this label.
+  if (!isNonEmptyString(row.entryId) && !isNonEmptyString(row.renderId)) {
+    errors.push("entryId or renderId required (to join this outcome to its edit)");
+  }
+  if (!isNonEmptyString(row.recordedAt)) errors.push("recordedAt (ISO-8601) required");
+  if (!OUTCOME_SOURCES.includes(row.source)) errors.push(`source must be one of ${OUTCOME_SOURCES.join("|")}`);
+  if (typeof row.metrics !== "object" || row.metrics === null) {
+    errors.push("metrics object required (e.g. { views, likes, comments, avgViewDurationSec })");
+  } else {
+    // Every supplied metric must be a real finite number — never a placeholder.
+    for (const [k, v] of Object.entries(row.metrics)) {
+      if (!isFiniteNumberOrNull(v)) errors.push(`metrics.${k} must be a finite number or null`);
+    }
+  }
+  return { valid: errors.length === 0, errors };
+}
+
 module.exports = {
   HOOK_STYLES, PLATFORMS, GAMES, MOMENT_TYPES, FACECAM_CORNERS, EDIT_KINDS,
-  validateGeneralShort, validateGamingShort, validateEditEvent,
+  OUTCOME_SOURCES,
+  validateGeneralShort, validateGamingShort, validateEditEvent, validateOutcome,
 };

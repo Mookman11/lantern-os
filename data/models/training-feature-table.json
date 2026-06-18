@@ -1,0 +1,21 @@
+{
+  "generatedAt": "2026-06-18T02:46:03.753Z",
+  "tracks": {
+    "firstPartyLabeled": {
+      "count": 0,
+      "role": "PREDICTIVE training (features -> owned engagement outcome)",
+      "source": "data/creator-intelligence/{edits,outcomes} — operator's OWN published Shorts",
+      "trainer": "scripts/train_firstparty_sigma0.py (MIN_SAMPLES gate -> insufficient_data until enough)"
+    },
+    "referenceObservational": {
+      "count": 24,
+      "role": "editing-PATTERN priors only (no owned outcome, never a label)",
+      "sources": [
+        "data/shorts_research/*.json (first-party renders)",
+        "data/shorts/cc/features_cc.jsonl (CC-BY)"
+      ],
+      "consumer": "editing-rules.json / hook-weights.json above"
+    }
+  },
+  "honestyNote": "Phase-4 'massive training dataset' is honestly two tracks. The predictive model is trainable ONLY on the first-party labeled track (owned outcomes); it is currently EMPTY, which grows as Lantern Shorts are published and their real performance recorded. The reference track (first-party renders + CC-BY clips) informs structural editing priors but carries no engagement labels and is never used to fabricate them."
+}

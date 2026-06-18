@@ -10,7 +10,7 @@
 const fs = require("fs");
 const path = require("path");
 const {
-  validateGeneralShort, validateGamingShort, validateEditEvent,
+  validateGeneralShort, validateGamingShort, validateEditEvent, validateOutcome,
 } = require("./schema");
 
 // repoRoot = three levels up: src/creator-intelligence/dataset -> repo root
@@ -22,6 +22,7 @@ const BUCKETS = {
   general: { dir: path.join(DATA_DIR, "general"), file: "general.jsonl", validate: validateGeneralShort },
   gaming: { dir: path.join(DATA_DIR, "gaming"), file: "gaming.jsonl", validate: validateGamingShort },
   edits: { dir: path.join(DATA_DIR, "edits"), file: "edits.jsonl", validate: validateEditEvent },
+  outcomes: { dir: path.join(DATA_DIR, "outcomes"), file: "outcomes.jsonl", validate: validateOutcome },
 };
 
 function ensureDir(dir) {
@@ -56,6 +57,7 @@ function counts() {
     general: countBucket("general"),
     gaming: countBucket("gaming"),
     edits: countBucket("edits"),
+    outcomes: countBucket("outcomes"),
   };
 }
 
@@ -97,6 +99,49 @@ function appendRow(bucketName, row) {
 const appendGeneral = (row) => appendRow("general", row);
 const appendGaming = (row) => appendRow("gaming", row);
 const appendEdit = (row) => appendRow("edits", row);
+const appendOutcome = (row) => appendRow("outcomes", row);
+
+/**
+ * Join captured edit-export features to their real outcome labels by entryId
+ * (and renderId when present). Returns only rows that have BOTH a feature
+ * vector and a real outcome — i.e. the legitimately labeled first-party
+ * training set. Never fabricates a label for an unlabeled edit.
+ * @returns {Array<{entryId, renderId, features, metrics, source, label}>}
+ */
+function joinLabeledFirstParty(labelKey = "engagement_rate") {
+  const exports = readAll("edits").filter((e) => e.kind === "export" && e.features);
+  const outcomes = readAll("outcomes");
+  const byEntry = new Map();
+  for (const o of outcomes) {
+    // Latest outcome per entry wins (most recent real measurement).
+    const key = o.entryId || o.renderId;
+    if (!key) continue;
+    const prev = byEntry.get(key);
+    if (!prev || (o.recordedAt || "") > (prev.recordedAt || "")) byEntry.set(key, o);
+  }
+  const joined = [];
+  for (const e of exports) {
+    const key = e.entryId || (e.features && e.features.renderId);
+    const o = key ? byEntry.get(key) : null;
+    if (!o) continue; // unlabeled edit — excluded, never given a placeholder label
+    const label = computeLabel(o.metrics, labelKey);
+    if (label === null) continue;
+    joined.push({ entryId: e.entryId, renderId: o.renderId || null, features: e.features, metrics: o.metrics, source: o.source, label });
+  }
+  return joined;
+}
+
+// Derive a real training label from real metrics. engagement_rate =
+// (likes+comments)/views; never invented if views are missing/zero.
+function computeLabel(metrics, labelKey) {
+  if (!metrics) return null;
+  if (labelKey === "engagement_rate") {
+    const v = metrics.views, l = metrics.likes || 0, c = metrics.comments || 0;
+    return typeof v === "number" && v > 0 ? (l + c) / v : null;
+  }
+  const direct = metrics[labelKey];
+  return typeof direct === "number" && Number.isFinite(direct) ? direct : null;
+}
 
 /**
  * Read all rows from a bucket (used by analysis/scoring). For large datasets
@@ -141,6 +186,7 @@ function refreshManifest() {
 module.exports = {
   DATA_DIR, MANIFEST_PATH,
   counts, gamingCountsByGame, readAll,
-  appendGeneral, appendGaming, appendEdit,
+  appendGeneral, appendGaming, appendEdit, appendOutcome,
+  joinLabeledFirstParty,
   refreshManifest,
 };
