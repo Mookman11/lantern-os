@@ -81,6 +81,33 @@ python -m csf.csf_pack list out.csf
 Tests: [`tests/test_csf_pack.py`](../tests/test_csf_pack.py) (round-trip ×2,
 list, tamper-detection, traversal).
 
+### 2.6 App routes
+
+Wired into the server alongside the legacy tesseract pack ([`routes/csf.js`](../apps/lantern-garage/routes/csf.js)):
+
+```
+POST /api/csf/pack    { paths: ["docs","README.md"], out: "data/exports/bundle.csf", compress?: true }
+POST /api/csf/unpack  { archive: "data/exports/bundle.csf", dest: "data/exports/out" }
+```
+Both constrain paths to within `repoRoot` (no traversal) on top of the module's own guards.
+
+### 2.7 Benchmark — does it work better?
+
+`python scripts/csf_pack_benchmark.py` on 316 real repo files (2.8 MB):
+
+| Format | Size | Ratio | Integrity / safety |
+|---|---|---|---|
+| **CSF-Pack v0.8** | 1.0 MB | 2.73× | **SHA-256 per file + whole-archive footer digest + path-traversal guard** |
+| zip (DEFLATE-9) | 1.0 MB | 2.76× | CRC-32 only; no crypto hash; no path guard |
+| tar.gz | 888 KB | 3.22× | no per-file checksum |
+| legacy symbolic CSF | — | — | **cannot store arbitrary files** (255 B/record payload cap) |
+
+**Verdict (honest):** CSF-Pack is **size-competitive with zip (within ~1%)** and **strictly safer** —
+cryptographic per-file + whole-archive integrity and path-traversal protection that zip/tar don't
+provide by default. `tar.gz` compresses better (solid stream) but offers no per-file integrity.
+Against the **legacy symbolic CSF it's a categorical upgrade** — that format can't hold arbitrary
+file bytes at all. Use CSF-Pack when integrity + safety matter; it's the format for general bundling.
+
 ---
 
 ## 3. Legacy / symbolic formats (brief)

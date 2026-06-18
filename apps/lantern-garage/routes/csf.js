@@ -8,13 +8,33 @@ const fs = require("fs");
 const TESSERACT_SCRIPT = path.resolve(__dirname, "../../../scripts/csf_research_tesseract.py");
 const TESSERACT_MANIFEST = path.resolve(__dirname, "../../../data/tesseract/manifest.json");
 
-function runPython(args, repoRoot) {
+function runPython(args, repoRoot, extraEnv) {
   return new Promise((resolve, reject) => {
-    execFile("python", args, { cwd: repoRoot, timeout: 120_000 }, (err, stdout, stderr) => {
+    const env = extraEnv ? { ...process.env, ...extraEnv } : process.env;
+    execFile("python", args, { cwd: repoRoot, timeout: 120_000, env }, (err, stdout, stderr) => {
       if (err) return reject(new Error(stderr || err.message));
       resolve(stdout.trim());
     });
   });
+}
+
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    let b = "";
+    req.on("data", (c) => { b += c; if (b.length > 1e6) req.destroy(); });
+    req.on("end", () => resolve(b || "{}"));
+    req.on("error", reject);
+  });
+}
+
+// Resolve a user-supplied relative path strictly inside repoRoot (no traversal).
+function resolveInRepo(repoRoot, p) {
+  const root = path.resolve(repoRoot);
+  const full = path.resolve(root, p);
+  if (full !== root && !full.startsWith(root + path.sep)) {
+    throw new Error(`path escapes repo: ${p}`);
+  }
+  return full;
 }
 
 module.exports = async function csfRoutes(req, res, url, deps) {
@@ -34,6 +54,45 @@ module.exports = async function csfRoutes(req, res, url, deps) {
     const deltas = readDeltas(limit);
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify(deltas));
+    return true;
+  }
+
+  // POST /api/csf/pack — CSF-Pack v0.8: pack ARBITRARY repo files into one .csf
+  //   body: { paths: ["docs", "README.md"], out: "data/exports/bundle.csf", compress?: true }
+  // Paths and out are constrained to within repoRoot (no traversal).
+  if (req.method === "POST" && url.pathname === "/api/csf/pack") {
+    try {
+      const body = JSON.parse(await readBody(req));
+      const paths = Array.isArray(body.paths) ? body.paths : [];
+      const out = body.out || "data/exports/bundle.csf";
+      if (!paths.length) return sendJson(res, { ok: false, error: "paths[] required" }, 400);
+      const safePaths = paths.map((p) => resolveInRepo(repoRoot, p));
+      const safeOut = resolveInRepo(repoRoot, out);
+      fs.mkdirSync(path.dirname(safeOut), { recursive: true });
+      const args = ["-m", "csf.csf_pack", "pack", ...safePaths, "-o", safeOut];
+      if (body.compress === false) args.push("--no-compress");
+      const log = await runPython(args, repoRoot, { PYTHONPATH: path.resolve(repoRoot, "src") });
+      const stat = fs.existsSync(safeOut) ? fs.statSync(safeOut) : null;
+      sendJson(res, { ok: true, log, out, bytes: stat ? stat.size : null });
+    } catch (err) {
+      sendJson(res, { ok: false, error: err.message }, 500);
+    }
+    return true;
+  }
+
+  // POST /api/csf/unpack — extract a CSF-Pack archive (integrity + path-safety enforced)
+  //   body: { archive: "data/exports/bundle.csf", dest: "data/exports/out" }
+  if (req.method === "POST" && url.pathname === "/api/csf/unpack") {
+    try {
+      const body = JSON.parse(await readBody(req));
+      const archive = resolveInRepo(repoRoot, body.archive || "");
+      const dest = resolveInRepo(repoRoot, body.dest || "data/exports/out");
+      const log = await runPython(["-m", "csf.csf_pack", "unpack", archive, "-d", dest], repoRoot,
+        { PYTHONPATH: path.resolve(repoRoot, "src") });
+      sendJson(res, { ok: true, log, dest: body.dest });
+    } catch (err) {
+      sendJson(res, { ok: false, error: err.message }, 500);
+    }
     return true;
   }
 
