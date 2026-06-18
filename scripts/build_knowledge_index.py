@@ -22,19 +22,25 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 OUT_DIR = REPO / "data" / "knowledge"
 
-# The base Knowledge Center corpus (what knowledgecenter.html links + core docs).
-KC_DOCS = [
-    "README.md", "QUICKSTART.md", "AGENTS.md", "CLAUDE.md", "SECURITY.md",
-    "SKILLS.md", "PROVIDERS.md", "CONTRIBUTING.md",
-    "docs/SIGMA0-COLLAPSE-CERTIFICATE.md",
-    "docs/SIGMA0-QUANTUM-RELATIVITY-ANALYSIS.md",
-    "docs/TESSERACT-CONVERGENCE-LOOP.md",
-    "docs/CSF-FORMAT-SPECIFICATION.md",
-    "docs/LANTERN-SIGMA0-CODER.md",
-    "docs/OURO-LOOPLM.md",
-]
-
 MAX_SECTION_CHARS = 1200
+
+# The grounding corpus IS the Knowledge Center: we parse the live KC page for the
+# docs it links (`/repo/*.md`) so the index always matches what users see, plus a
+# small CORE set of required-reading docs. Add a KC card → it's grounded. No
+# hand-maintained list to drift out of sync.
+KC_HTML = REPO / "apps" / "lantern-garage" / "public" / "knowledgecenter.html"
+CORE_DOCS = ["README.md", "CLAUDE.md", "AGENTS.md", "QUICKSTART.md"]
+
+
+def knowledge_base_docs() -> list[str]:
+    docs = list(CORE_DOCS)
+    if KC_HTML.exists():
+        html = KC_HTML.read_text(encoding="utf-8", errors="replace")
+        for m in re.findall(r'href="/repo/([^"]+\.md)"', html):
+            if m not in docs:
+                docs.append(m)
+    # keep only docs that exist on disk
+    return [d for d in docs if (REPO / d).exists()]
 
 
 def split_sections(md: str):
@@ -56,8 +62,9 @@ def split_sections(md: str):
 
 def main():
     OUT_DIR.mkdir(parents=True, exist_ok=True)
+    docs = knowledge_base_docs()
     records = []
-    for rel in KC_DOCS:
+    for rel in docs:
         p = REPO / rel
         if not p.exists():
             continue
@@ -78,7 +85,7 @@ def main():
 
     meta = {
         "built_at": time.time(),
-        "docs": [d for d in KC_DOCS if (REPO / d).exists()],
+        "docs": docs,
         "sections": len(records),
         "sha256": hashlib.sha256(idx.read_bytes()).hexdigest(),
     }
