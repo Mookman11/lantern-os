@@ -668,7 +668,7 @@
       color: var(--danger);
     }
 
-    /* ── Dream Journal Quick-Compose (#613) ── */
+    /* ── Dream Journal Editor (#613 #616) ── */
     .journal-compose {
       background: var(--surface, #111);
       border: 1px solid var(--border, #222);
@@ -701,6 +701,56 @@
     }
     .autosave-badge.saved { color: #4ade80; border-color: #4ade80; }
     .autosave-badge.saving { color: #facc15; border-color: #facc15; }
+    .template-select {
+      background: var(--surface2, #1a1a1a);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 0.78rem;
+      padding: 4px 8px;
+      font-family: inherit;
+      cursor: pointer;
+    }
+    .btn-icon {
+      background: var(--surface2, #1a1a1a);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--muted);
+      font-size: 0.78rem;
+      padding: 4px 10px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.15s;
+    }
+    .btn-icon:hover, .btn-icon[aria-pressed="true"] {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .editor-wrap {
+      display: flex;
+      gap: 12px;
+    }
+    .editor-wrap .journal-editor { flex: 1; min-width: 0; }
+    .md-preview {
+      flex: 1;
+      min-width: 0;
+      background: var(--bg, #0a0a0a);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-size: 0.9rem;
+      line-height: 1.65;
+      overflow-y: auto;
+      max-height: 320px;
+      color: var(--text);
+    }
+    .md-preview h1, .md-preview h2, .md-preview h3 { color: var(--accent); margin: 0.5em 0 0.3em; }
+    .md-preview p { margin: 0.3em 0; }
+    .md-preview ul, .md-preview ol { padding-left: 1.4em; margin: 0.3em 0; }
+    .md-preview code { font-family: 'IBM Plex Mono', monospace; background: var(--surface2); padding: 1px 4px; border-radius: 3px; font-size: 0.85em; }
+    .md-preview blockquote { border-left: 3px solid var(--accent-dim); padding-left: 10px; color: var(--muted); margin: 0.4em 0; }
+    .md-preview strong { color: var(--text); }
+
     .journal-editor {
       width: 100%;
       background: var(--bg, #0a0a0a);
@@ -925,13 +975,27 @@
   <!-- Status Messages -->
   <div id="status" class="status-message"></div>
 
-  <!-- ── Dream Journal Quick-Compose (#613) ── -->
+  <!-- ── Dream Journal Editor (#613 #616) ── -->
   <div class="journal-compose" id="journal-compose">
     <div class="journal-compose-header">
       <span>✦ New Dream Entry</span>
-      <span class="autosave-badge" id="autosave-badge">Draft</span>
+      <div style="display:flex;align-items:center;gap:8px">
+        <select id="journal-template" class="template-select" onchange="applyTemplate(this.value)" title="Load a template">
+          <option value="">Templates…</option>
+          <option value="dream">🌙 Dream Log</option>
+          <option value="gratitude">🙏 Gratitude</option>
+          <option value="idea">💡 Idea Capture</option>
+          <option value="reflection">🪞 Reflection</option>
+          <option value="story">📖 Story Seed</option>
+        </select>
+        <button class="btn-icon" id="preview-toggle" onclick="togglePreview()" title="Toggle live preview" aria-pressed="false">⬡ Preview</button>
+        <span class="autosave-badge" id="autosave-badge">Draft</span>
+      </div>
     </div>
-    <textarea id="journal-editor" class="journal-editor" placeholder="Write a dream, idea, or memory…" rows="6" spellcheck="true"></textarea>
+    <div class="editor-wrap" id="editor-wrap">
+      <textarea id="journal-editor" class="journal-editor" placeholder="Write a dream, idea, or memory… (Markdown supported)" rows="8" spellcheck="true"></textarea>
+      <div class="md-preview" id="md-preview" style="display:none" aria-label="Markdown preview"></div>
+    </div>
     <div class="journal-compose-footer">
       <div class="journal-word-count" id="journal-word-count">0 words</div>
       <div class="journal-actions">
@@ -1282,6 +1346,66 @@ document.getElementById('deleteModal').addEventListener('click', (e) => {
   const wordCount = document.getElementById('journal-word-count');
   const DRAFT_KEY = 'lantern-journal-draft';
 
+  // ── Templates (#616) ──
+  const TEMPLATES = {
+    dream: `## Dream · ${new Date().toLocaleDateString()}\n\n**Setting:** \n\n**What happened:** \n\n**How I felt:** \n\n**Symbols / themes:** \n\n**On waking:** `,
+    gratitude: `## Gratitude · ${new Date().toLocaleDateString()}\n\n1. \n2. \n3. \n\n**Why these matter today:** `,
+    idea: `## Idea · ${new Date().toLocaleDateString()}\n\n**The idea:** \n\n**Why now:** \n\n**First step:** \n\n**Open questions:** `,
+    reflection: `## Reflection · ${new Date().toLocaleDateString()}\n\n**What I'm sitting with:** \n\n**What I learned:** \n\n**What I want to carry forward:** `,
+    story: `## Story Seed · ${new Date().toLocaleDateString()}\n\n**Opening image:** \n\n**Character:** \n\n**Tension:** \n\n**Where it goes:** `,
+  };
+
+  window.applyTemplate = function(key) {
+    if (!key) return;
+    if (editor.value.trim() && !confirm('Replace current draft with template?')) {
+      document.getElementById('journal-template').value = '';
+      return;
+    }
+    editor.value = TEMPLATES[key] || '';
+    updateWordCount();
+    badge.textContent = 'Template loaded';
+    badge.className = 'autosave-badge';
+    document.getElementById('journal-template').value = '';
+    renderPreview();
+  };
+
+  // ── Markdown preview (#616) ──
+  const preview = document.getElementById('md-preview');
+  let previewOn = false;
+
+  function renderPreview() {
+    if (!previewOn) return;
+    // Minimal Markdown → HTML (no dependencies)
+    let md = editor.value;
+    let html = md
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+      .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+      .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.+?)\*/g, '<em>$1</em>')
+      .replace(/`(.+?)`/g, '<code>$1</code>')
+      .replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>')
+      .replace(/^- (.+)$/gm, '<li>$1</li>')
+      .replace(/(<li>.*<\/li>)/gs, '<ul>$1</ul>')
+      .replace(/\n\n/g, '</p><p>')
+      .replace(/\n/g, '<br>');
+    preview.innerHTML = '<p>' + html + '</p>';
+  }
+
+  window.togglePreview = function() {
+    previewOn = !previewOn;
+    const btn = document.getElementById('preview-toggle');
+    btn.setAttribute('aria-pressed', String(previewOn));
+    preview.style.display = previewOn ? 'block' : 'none';
+    renderPreview();
+  };
+
+  // Ctrl+S manual save
+  editor.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); journalSave(); }
+  });
+
   // Restore draft from localStorage
   const saved = localStorage.getItem(DRAFT_KEY);
   if (saved) { editor.value = saved; updateWordCount(); badge.textContent = 'Draft restored'; }
@@ -1296,6 +1420,7 @@ document.getElementById('deleteModal').addEventListener('click', (e) => {
     updateWordCount();
     badge.textContent = 'Unsaved';
     badge.className = 'autosave-badge';
+    renderPreview();
     clearTimeout(autoSaveTimer);
     autoSaveTimer = setTimeout(() => {
       localStorage.setItem(DRAFT_KEY, editor.value);
