@@ -1,0 +1,62 @@
+{
+  "profiles": {
+    "aggressive": {
+      "label": "Aggressive",
+      "targetSec": 20,
+      "maxCutSpacingSec": 2.5,
+      "zoom": "punch-in",
+      "captionDensity": "heavy",
+      "storyArc": false,
+      "pacing": "fast",
+      "strategyHint": "maximum_excitement",
+      "description": "Rapid cuts, punch-in zooms, captions on every beat. High energy."
+    },
+    "cinematic": {
+      "label": "Cinematic",
+      "targetSec": 40,
+      "maxCutSpacingSec": 6,
+      "zoom": "subtle",
+      "captionDensity": "sparse",
+      "storyArc": true,
+      "pacing": "calm",
+      "strategyHint": "story_arc",
+      "description": "Longer shots, subtle moves, sparse captions, deliberate arc."
+    },
+    "reaction": {
+      "label": "Reaction",
+      "targetSec": 30,
+      "maxCutSpacingSec": 4,
+      "zoom": "subtle",
+      "captionDensity": "medium",
+      "storyArc": true,
+      "pacing": "balanced",
+      "strategyHint": "story_arc",
+      "description": "Story arc that emphasizes the post-peak reaction beat."
+    },
+    "competitive": {
+      "label": "Competitive",
+      "targetSec": 25,
+      "maxCutSpacingSec": 3.5,
+      "zoom": "none",
+      "captionDensity": "sparse",
+      "storyArc": false,
+      "pacing": "balanced",
+      "strategyHint": "maximum_retention",
+      "description": "Gameplay-first, minimal captions, no gimmick zooms. Skill on display."
+    },
+    "viralGaming": {
+      "label": "Viral Gaming",
+      "targetSec": 22,
+      "maxCutSpacingSec": 3,
+      "zoom": "punch-in",
+      "captionDensity": "medium",
+      "storyArc": true,
+      "pacing": "fast",
+      "strategyHint": "story_arc",
+      "description": "Instant hook, tight build, big payoff. Broad-appeal gaming Short."
+    }
+  },
+  "default": "viralGaming",
+  "generatedAt": "2026-06-18T02:18:11.335Z",
+  "note": "Named editing-parameter presets, not real-creator fingerprints. Source: apps/lantern-garage/lib/editor-v12.js"
+}

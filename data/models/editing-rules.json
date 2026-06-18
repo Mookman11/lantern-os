@@ -1,0 +1,27 @@
+{
+  "generatedAt": "2026-06-18T02:18:11.335Z",
+  "sources": {
+    "durations": "data/youtube/features_v11.jsonl (n=1451)",
+    "cutting": "data/youtube/calibration_features.jsonl (n=28)"
+  },
+  "targetDurationSec": {
+    "median": 29,
+    "mean": 32.1358
+  },
+  "averageCutLengthSec": {
+    "median": 3.17,
+    "mean": 9.4604
+  },
+  "sceneCutsPerClip": {
+    "median": 7.5,
+    "mean": 11.6429
+  },
+  "negativeContentPenalty": 0.15,
+  "negativeDetectors": [
+    "detectConversation",
+    "detectIdleGameplay",
+    "detectMenuOrLoadingScreen",
+    "detectStaticFrames"
+  ],
+  "honestyNote": "Duration/cut stats are real measurements over collected metadata + the small calibration sample. They describe what top-viewed Shorts in the sample look like; they are guidance priors, not a trained policy."
+}

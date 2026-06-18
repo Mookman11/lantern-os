@@ -12,6 +12,13 @@
 "use strict";
 
 const { scoreVideoV10 } = require("./score-v10");
+// Story Engine V12 lives in the lantern-garage lib tree; require defensively so
+// this module still loads if that path is ever absent (degrades to the legacy
+// chronological story_arc selection rather than throwing).
+let buildStoryArc = null;
+try {
+  ({ buildStoryArc } = require("../../../apps/lantern-garage/lib/story-engine-v12"));
+} catch { /* story engine unavailable — legacy story_arc path is used */ }
 
 const STRATEGIES = {
   A: { id: "variantA", strategy: "maximum_retention", label: "Maximum Retention" },
@@ -66,7 +73,13 @@ function selectSegments(highlights, strategy, targetSec) {
       return sorted;
     }
     case "story_arc": {
-      // Chronological narrative: a spread across the clip, in time order.
+      // V12: assign real narrative roles (hook/rising/peak/reaction/payoff) and
+      // order them as a deliberate arc, not just a chronological spread. Falls
+      // back to the legacy chronological selection if the story engine is absent.
+      if (buildStoryArc) {
+        const { arc } = buildStoryArc(highlights, { targetSec, maxSec: MAX_TARGET_SEC });
+        if (arc.length) return arc;
+      }
       const chosen = takeUntil(byScore, targetSec);
       return [...chosen].sort((a, b) => (a.start || 0) - (b.start || 0));
     }
@@ -147,6 +160,7 @@ function generateVariantsV10(analysis = {}, opts = {}) {
       duration: round3(segDur(s)),
       score: round3(s.score || 0),
       tags: s.tags || [],
+      ...(s.role ? { role: s.role } : {}),  // V12 story-arc narrative role, when present
     }));
     const derived = buildDerivedTimeline(segments);
     const scored = scoreVideoV10(derived, opts);
@@ -161,14 +175,18 @@ function generateVariantsV10(analysis = {}, opts = {}) {
       gaming: scored.gaming || null,
       retention: scored.retention,
       editorGrade: scored.editorGrade,
+      sigma0: scored.sigma0 || null,  // V12 collapse diagnosis of this variant's edit
       headline: scored.headline,
       renderPath: null,               // set once actually rendered
     };
   });
 
-  // Rank by structural viral score (desc); ties broken by editor grade composite.
+  // Rank by structural viral score (desc); ties broken first by LOWER collapse
+  // risk (prefer diverse multi-peak edits — the Σ₀ anti-collapse principle),
+  // then by editor grade composite.
   variants.sort((a, b) =>
     (b.score.viralScore - a.score.viralScore) ||
+    ((a.sigma0 ? a.sigma0.risk : 1) - (b.sigma0 ? b.sigma0.risk : 1)) ||
     (b.editorGrade.composite - a.editorGrade.composite)
   );
   variants.forEach((v, i) => { v.rank = i + 1; });

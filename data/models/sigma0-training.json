@@ -1,0 +1,20 @@
+{
+  "generatedAt": "2026-06-18T02:18:11.335Z",
+  "signals": {
+    "motion": "real (highlight-engine detectMotion, frame-diff)",
+    "sceneChanges": "real (highlight-engine detectSceneChanges, histogram diff)",
+    "audioIntensity": "real (highlight-engine detectAudioSpikes)",
+    "hookStrength": "real-but-uncalibrated (detectOpeningHookStrength; saturates — see hour_12.md)",
+    "surprise": "real (viral-score-v10 surprise component: multi-signal spike rate)",
+    "emotion": "proxy (audio energy; no trained emotion model)",
+    "retention": "structural proxy (viral-score-v10 retention component)",
+    "storyArc": "real (story-engine-v12 role assignment from measured properties)",
+    "collapseRisk": "real (sigma0-v12 selection-diversity metric)",
+    "killDensity": "insufficient_data (no kill-feed OCR / event detector built)"
+  },
+  "antiCollapse": {
+    "method": "sigma0-v12 antiCollapseSelect — multi-peak diversity-maximizing selection",
+    "rankingRule": "variant-engine-v10 breaks score ties by LOWER collapse risk (prefer diverse multi-peak edits)"
+  },
+  "honestyNote": "This manifest lists which Σ₀ editing signals are real measurements vs proxies vs not-yet-built. No nightly weight retraining is claimed: there is no labeled outcome data (real retention %/share counts are not available via the public API — see hour_12.md). 'Training' here means recomputing structural priors from real on-disk data, not gradient updates on outcome labels."
+}

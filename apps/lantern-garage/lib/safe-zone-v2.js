@@ -55,6 +55,76 @@ function overlapsPlatformUI(rect) {
 }
 
 // ---------------------------------------------------------------------------
+// Facecam output placement (V12, Part 5)
+//
+// Rule (from the handoff): gameplay fills the whole 9:16 frame (no black bars,
+// never cropped to make room) and the facecam is composited ON TOP as a PiP in
+// the top 15-20% band, upper-left, clear of the platform top-chrome. If the
+// facecam would collide with the top chrome or exceed the band, it is RESIZED
+// down — gameplay is never shrunk or cropped to accommodate it.
+//
+// All output-canvas coordinates are normalized 0..1 over the 1080x1920 frame.
+// This is a deterministic layout plan, not a detector — it tells the renderer
+// where to draw the facecam, given that one exists in the source.
+// ---------------------------------------------------------------------------
+
+const FACECAM_BAND_TOP = 0.10;     // start just below the platform top-chrome (top ~10%)
+const FACECAM_BAND_BOTTOM = 0.20;  // facecam lives in the 10-20% band -> ~15-20% region
+const FACECAM_MAX_WIDTH = 0.32;    // PiP no wider than ~1/3 of the frame
+const FACECAM_MARGIN = 0.02;       // small inset from the left edge
+
+/**
+ * Plan where to composite the facecam in the OUTPUT canvas.
+ * @param {Object} opts { sourceAspect=16/9 } aspect ratio of the facecam crop
+ * @returns {{ box, band, resized, note }}
+ *   box:  normalized {x,y,width,height} PiP rect in output canvas
+ *   band: the {top,bottom} target band actually used
+ *   resized: true if the facecam was shrunk to fit the band/chrome
+ */
+function planFacecamPlacement(opts = {}) {
+  const sourceAspect = opts.sourceAspect || (16 / 9); // facecam crops are usually landscape
+  const bandHeight = FACECAM_BAND_BOTTOM - FACECAM_BAND_TOP; // 0.10 of frame height
+
+  // Output canvas is 1080x1920. A PiP box of normalized height h and normalized
+  // width w displays content of pixel size (w*1080) x (h*1920). To preserve the
+  // facecam's aspect (sourceAspect = contentW/contentH):
+  //   sourceAspect = (w*1080)/(h*1920)  ->  w = h * (1920/1080) * sourceAspect
+  const CANVAS_ASPECT = 1920 / 1080;
+  let height = bandHeight;
+  let width = height * CANVAS_ASPECT * sourceAspect;
+
+  let resized = false;
+  if (width > FACECAM_MAX_WIDTH) {
+    width = FACECAM_MAX_WIDTH;
+    height = width / (CANVAS_ASPECT * sourceAspect);
+    resized = true;
+  }
+
+  // Anchor upper-left, just inside the top-chrome line.
+  const box = {
+    x: round3(FACECAM_MARGIN),
+    y: round3(FACECAM_BAND_TOP),
+    width: round3(width),
+    height: round3(height),
+  };
+
+  // Safety: if the box would dip past the band bottom, shrink to the band.
+  if (box.y + box.height > FACECAM_BAND_BOTTOM) {
+    box.height = round3(FACECAM_BAND_BOTTOM - box.y);
+    box.width = round3(box.height * CANVAS_ASPECT * sourceAspect);
+    resized = true;
+  }
+
+  return {
+    box,
+    band: { top: FACECAM_BAND_TOP, bottom: FACECAM_BAND_BOTTOM },
+    resized,
+    overlapsChrome: overlapsPlatformUI(box),
+    note: "facecam composited as PiP in the top 10-20% band, upper-left; gameplay fills the full frame and is never cropped to fit it — facecam is resized on conflict",
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Frame sampling (real ffmpeg raw pipeline, same approach as highlight-engine)
 // ---------------------------------------------------------------------------
 
@@ -395,7 +465,14 @@ async function analyzeForCrop(videoPath, opts = {}) {
   const srcW = opts.srcWidth || SAMPLE_W;
   const srcH = opts.srcHeight || SAMPLE_H;
   const cropPlan = planCrop(regions, srcW, srcH, opts.targetAspect || TARGET_ASPECT_9_16);
-  return { status: "ok", regions, cropPlan, framesSampled, transitions };
+
+  // V12: when a facecam region is detected, also plan where to composite it in
+  // the output canvas (top 10-20% band, resized-not-cropped). Only emitted when
+  // a real facecam was found — never fabricated for footage without one.
+  const facecam = regions.find((r) => r.type === "facecam");
+  const facecamPlacement = facecam ? planFacecamPlacement(opts) : null;
+
+  return { status: "ok", regions, cropPlan, facecamPlacement, framesSampled, transitions };
 }
 
 function round3(n) { return Number(Number(n).toFixed(3)); }
@@ -451,4 +528,5 @@ module.exports = {
   PRIORITY_WEIGHT,
   PLATFORM_UI_REGIONS,
   overlapsPlatformUI,
+  planFacecamPlacement,
 };

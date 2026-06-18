@@ -422,6 +422,53 @@ const GAMEPLAY_WEIGHTS = {
 
 function clampUnit(x) { return Math.max(0, Math.min(1, Number.isFinite(x) ? x : 0)); }
 
+// ---------------------------------------------------------------------------
+// Negative content detectors (V12)
+//
+// Honesty boundary: none of these are real visual classifiers (no OCR, no
+// menu/loading-screen template matching, no kill-feed parsing). They are
+// heuristic proxies built from the SAME three measured signals already used
+// for scoring (motion, scene-change, audio), looking for specific
+// combinations and SUSTAIN over real time, not a trained model. They will
+// have false positives/negatives; they're a coarse filter, not a guarantee.
+// Each takes the per-frame signal record `r` (motionN/sceneN/audioLoudN/
+// audioTransN/combat, all 0..1) plus how many CONSECUTIVE SECONDS the
+// pattern has held (sustainSec) so a single noisy frame can't trigger one.
+// ---------------------------------------------------------------------------
+
+const STATIC_SUSTAIN_SEC = 1.5;   // menu/loading/static needs to hold this long
+const IDLE_SUSTAIN_SEC = 2.5;     // idle gameplay (walking/looting, no action) — longer, to avoid punishing a real lull right before a kill
+
+// Loud + sustained (low transient) + static scene + modest motion = talking,
+// not gameplay (e.g. commentary/lobby chat over a relatively still frame).
+function detectConversation(r) {
+  return r.audioLoudN > 0.5 && r.audioTransN < 0.15 && r.sceneN < 0.12 && r.motionN < 0.45;
+}
+
+// Player is moving/looking around but nothing combat-relevant or scene-
+// changing is happening (looting, walking, waiting) — sustained, not a
+// momentary lull.
+function detectIdleGameplay(r, sustainSec) {
+  return r.motionN > 0.1 && r.combat < 0.05 && r.sceneN < 0.1 && sustainSec >= IDLE_SUSTAIN_SEC;
+}
+
+// Near-static composition (low scene-change) with no audio transient,
+// sustained — covers BOTH menus and loading screens, which this proxy
+// can't tell apart without real visual classification (both look like
+// "nothing changing, nothing happening" to motion/scene/audio signals).
+function detectMenuOrLoadingScreen(r, sustainSec) {
+  return r.sceneN < 0.05 && r.audioTransN < 0.05 && sustainSec >= STATIC_SUSTAIN_SEC;
+}
+
+// Everything near zero — motion, scene, audio — sustained. The most
+// conservative of the four; mainly catches truly dead frames that still
+// cleared detectMotion's own raw threshold (e.g. compression noise).
+function detectStaticFrames(r, sustainSec) {
+  return r.motionN < 0.05 && r.sceneN < 0.05 && r.audioLoudN < 0.1 && sustainSec >= STATIC_SUSTAIN_SEC;
+}
+
+const NEGATIVE_CONTENT_PENALTY = 0.15;
+
 const FALLBACK_MIN_HIGHLIGHTS = 2;
 const FALLBACK_MAX_HIGHLIGHTS = 10;
 
@@ -520,9 +567,12 @@ function mergeDetections(motionFrames, audioFrames, sceneFrames, fps, minDuratio
   const mDiv = maxMotion > 0 ? maxMotion : 1;
   const tDiv = maxTrans > 0 ? maxTrans : 1;
 
-  // Pass 2 — gameplay-first composite + conversation suppression.
+  // Pass 2 — gameplay-first composite + negative-content suppression.
   const candidates = [];
   const densityBySec = new Map();
+  let staticStreakStart = null;  // tracks how long a static/idle-looking pattern has held
+  let idleStreakStart = null;
+  let prevT = null;
   for (const r of raw) {
     const motionN = clampUnit(r.motionRaw / mDiv);
     const sceneN = clampUnit(r.sceneRaw);
@@ -536,10 +586,24 @@ function mergeDetections(motionFrames, audioFrames, sceneFrames, fps, minDuratio
     let density = W.motion * motionN + W.combat * combat + W.scene * sceneN;
     if (action) density += W.audioPeak * audioLoudN;
 
-    // Conversation/speech suppression: loud + sustained (low transient) + static
-    // scene + modest motion = talking, not gameplay. Hard-penalize it.
-    const speechLike = audioLoudN > 0.5 && audioTransN < 0.15 && sceneN < 0.12 && motionN < 0.45;
-    if (speechLike) density *= 0.35;
+    const sig = { motionN, sceneN, audioLoudN, audioTransN, combat };
+
+    // A real time gap from the previous entry breaks any streak — it means
+    // we're looking at a fresh, separate stretch, not a continuation.
+    const gapped = prevT !== null && (r.t - prevT) > 1.0;
+    const looksStatic = sig.sceneN < 0.05 && sig.audioTransN < 0.05;
+    const looksIdle = sig.motionN > 0.1 && sig.combat < 0.05 && sig.sceneN < 0.1;
+    staticStreakStart = (looksStatic && !gapped && staticStreakStart !== null) ? staticStreakStart : (looksStatic ? r.t : null);
+    idleStreakStart = (looksIdle && !gapped && idleStreakStart !== null) ? idleStreakStart : (looksIdle ? r.t : null);
+    const staticSustainSec = staticStreakStart !== null ? r.t - staticStreakStart : 0;
+    const idleSustainSec = idleStreakStart !== null ? r.t - idleStreakStart : 0;
+
+    const conversation = detectConversation(sig);
+    const idleGameplay = detectIdleGameplay(sig, idleSustainSec);
+    const menuOrLoading = detectMenuOrLoadingScreen(sig, staticSustainSec);
+    const staticFrame = detectStaticFrames(sig, staticSustainSec);
+    const negativeHit = conversation || idleGameplay || menuOrLoading || staticFrame;
+    if (negativeHit) density *= NEGATIVE_CONTENT_PENALTY;
 
     const score = clampUnit(density);
 
@@ -547,11 +611,19 @@ function mergeDetections(motionFrames, audioFrames, sceneFrames, fps, minDuratio
     if (r.hasScene && sceneN > 0.12) tags.push("scene");
     if (r.hasAudio) tags.push("audio");
     if (action && combat > 0.15) tags.push("combat");
-    if (speechLike) tags.push("speech");
-    const reason = speechLike ? "talking (low gameplay activity)"
+    if (conversation) tags.push("conversation");
+    if (idleGameplay) tags.push("idle-gameplay");
+    if (menuOrLoading) tags.push("menu-or-loading");
+    if (staticFrame) tags.push("static");
+    const reason = conversation ? "talking (low gameplay activity)"
+      : staticFrame ? "static frame (no measurable activity)"
+      : menuOrLoading ? "menu or loading screen (static composition, no audio transient)"
+      : idleGameplay ? "idle gameplay (no combat/scene activity)"
       : tags.includes("combat") ? "combat action"
       : tags.includes("scene") ? "motion + scene change"
       : "motion";
+
+    prevT = r.t;
 
     // Heatmap: max density per whole second.
     const sec = Math.floor(r.t);
@@ -693,4 +765,9 @@ module.exports = {
   getVideoMetadata,
   ANALYSIS_DEFAULTS,
   GAMEPLAY_WEIGHTS,
+  detectConversation,
+  detectIdleGameplay,
+  detectMenuOrLoadingScreen,
+  detectStaticFrames,
+  NEGATIVE_CONTENT_PENALTY,
 };

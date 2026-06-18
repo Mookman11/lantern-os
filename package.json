@@ -10,6 +10,7 @@
     "dev": "node apps/lantern-garage/server.js",
     "convergance": "bash scripts/git-convergance-loop.sh foreground",
     "setup:convergance": "bash scripts/setup-git-convergance-loop.sh",
+    "shorts-research-v12": "node scripts/shorts_research_v12.js",
     "test:ui": "node tests/ui-test.js"
   },
   "engines": {

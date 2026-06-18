@@ -1,0 +1,12 @@
+{
+  "generatedAt": "2026-06-18T02:18:11.335Z",
+  "source": "data/shorts_research/*.json (opening_hook_strength via highlight-engine detectOpeningHookStrength)",
+  "sampleSize": 14,
+  "openingHookStrength": {
+    "mean": 0.9244,
+    "median": 0.9335,
+    "min": 0.882,
+    "max": 0.983
+  },
+  "honestyNote": "detectOpeningHookStrength is known to saturate (~0.98) on most clips and is NOT yet recalibrated (see research/hour_12.md). These weights describe the current detector's behavior, not a validated hook-quality ground truth. Title-text hook density was shown to correlate weakly with engagement."
+}
