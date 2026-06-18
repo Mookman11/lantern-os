@@ -328,6 +328,43 @@ def _tool_dispatch_work(agent: str, task: str) -> Dict[str, Any]:
     }
 
 
+def _tool_task_cancel(task_id: str) -> Dict[str, Any]:
+    """Cancel a queued task by id. Marks it status=cancelled but keeps it in the queue as a record (use task_delete to remove). Matches the full id or a unique prefix."""
+    matches = [t for t in _task_queue if t.get("id") == task_id or t.get("id", "").startswith(task_id)]
+    if not matches:
+        return {"ok": False, "error": "task_not_found", "task_id": task_id, "queue_depth": len(_task_queue)}
+    if len(matches) > 1:
+        return {"ok": False, "error": "ambiguous_prefix", "task_id": task_id,
+                "candidates": [t["id"] for t in matches], "queue_depth": len(_task_queue)}
+    task = matches[0]
+    task["status"] = "cancelled"
+    task["cancelled_at"] = datetime.now(timezone.utc).isoformat()
+    return {"ok": True, "task_id": task["id"], "status": "cancelled", "queue_depth": len(_task_queue)}
+
+
+def _tool_task_delete(task_id: str) -> Dict[str, Any]:
+    """Delete a queued task by id, removing it from the queue entirely. Matches the full id or a unique prefix."""
+    matches = [t for t in _task_queue if t.get("id") == task_id or t.get("id", "").startswith(task_id)]
+    if not matches:
+        return {"ok": False, "error": "task_not_found", "task_id": task_id, "queue_depth": len(_task_queue)}
+    if len(matches) > 1:
+        return {"ok": False, "error": "ambiguous_prefix", "task_id": task_id,
+                "candidates": [t["id"] for t in matches], "queue_depth": len(_task_queue)}
+    removed_id = matches[0]["id"]
+    _task_queue[:] = [t for t in _task_queue if t.get("id") != removed_id]
+    return {"ok": True, "task_id": removed_id, "removed": 1, "queue_depth": len(_task_queue)}
+
+
+def _tool_queue_clear(status: str = "") -> Dict[str, Any]:
+    """Clear the work queue. With no args removes ALL tasks; pass status (e.g. pending, cancelled) to remove only tasks in that state. Returns how many were removed."""
+    before = len(_task_queue)
+    if status:
+        _task_queue[:] = [t for t in _task_queue if t.get("status") != status]
+    else:
+        _task_queue.clear()
+    return {"ok": True, "removed": before - len(_task_queue), "queue_depth": len(_task_queue), "filter": status or "all"}
+
+
 def _tool_boot_check() -> Dict[str, Any]:
     """Check orchestrator boot status. Reports honest slot counts from fleet status file."""
     return _build_boot_status()
@@ -549,6 +586,9 @@ def _tool_web_search(query: str, max_results: int = 5) -> Dict[str, Any]:
 TOOLS_REGISTRY = {
     "queue_status": _tool_queue_status,
     "task_intake": _tool_task_intake,
+    "task_cancel": _tool_task_cancel,
+    "task_delete": _tool_task_delete,
+    "queue_clear": _tool_queue_clear,
     "dispatch_work": _tool_dispatch_work,
     "boot_check": _tool_boot_check,
     "list_skills": _tool_list_skills,
