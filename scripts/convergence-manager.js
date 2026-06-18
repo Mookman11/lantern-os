@@ -41,7 +41,7 @@ const REQUIRED = [
 // Top-level directories allowed to exist (anti-sprawl gate)
 const ALLOWED_TOP = new Set([
   "apps", "archive", "assets", "caad", "config", "content", "csf", "data", "dev", "docs",
-  "dual-boot", "integrations", "lantern-discord", "logs", "lore", "manifests",
+  "dual-boot", "experiments", "integrations", "lantern-discord", "logs", "lore", "manifests",
   "merge-patches", "models", "patches", "private-ip", "rag", "references", "reports",
   "scripts", "services", "skills", "src", "surfaces", "test-results", "tests",
   "training_data", ".claude", ".github", ".windsurf",
