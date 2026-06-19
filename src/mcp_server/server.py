@@ -777,29 +777,38 @@ def _tool_web_search(query: str, max_results: int = 5) -> Dict[str, Any]:
             html = resp.read().decode("utf-8", errors="replace")
 
         results = []
+        # DuckDuckGo-lite markup: <a ... href="URL" class='result-link'>TITLE</a>
+        # and <td class='result-snippet'>SNIPPET</td> (single quotes, varying order).
         link_pattern = re.compile(
-            r'<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>(.*?)</a>',
+            r"""<a\b[^>]*\bhref=["']([^"']+)["'][^>]*\bclass=["']result-link["'][^>]*>(.*?)</a>""",
             re.IGNORECASE | re.DOTALL,
         )
         snippet_pattern = re.compile(
-            r'<td[^>]+class="result__snippet"[^>]*>(.*?)</td>',
+            r"""<td[^>]*\bclass=["']result-snippet["'][^>]*>(.*?)</td>""",
             re.IGNORECASE | re.DOTALL,
         )
 
         links = link_pattern.findall(html)
         snippets = snippet_pattern.findall(html)
 
+        def _normalize(href: str) -> str:
+            if "uddg=" in href:
+                m = re.search(r"uddg=([^&]+)", href)
+                if m:
+                    return urllib.parse.unquote(m.group(1))
+            if href.startswith("//"):
+                return "https:" + href
+            if href.startswith("/"):
+                return "https://duckduckgo.com" + href
+            return href
+
         for i, (href, title_raw) in enumerate(links[:max_results]):
             title = re.sub(r"<[^>]+>", "", title_raw).strip()
-            if href.startswith("//"):
-                href = "https:" + href
-            elif href.startswith("/"):
-                href = "https://duckduckgo.com" + href
             snippet = re.sub(r"<[^>]+>", "", snippets[i]).strip() if i < len(snippets) else ""
             results.append({
                 "rank": i + 1,
                 "title": title,
-                "url": href,
+                "url": _normalize(href),
                 "snippet": snippet,
             })
 
@@ -819,6 +828,66 @@ def _tool_web_search(query: str, max_results: int = 5) -> Dict[str, Any]:
             "error": str(exc),
             "hint": "DuckDuckGo lite search failed. Check network connectivity.",
         }
+
+
+# ── Research Convergence Loop ──
+# Drives the six-stage Convergence Kernel for open research questions:
+# web-search evidence (Observe), persist as memory (Remember), extract claims
+# (Reason), corroborate across independent sources — External Reality Rule (Verify),
+# emit a cited report (Converge). Continuous via a durable JSONL task queue.
+
+_research_program = None
+
+
+def _get_research_program():
+    global _research_program
+    if _research_program is None:
+        from convergence.research import ResearchProgram
+        _research_program = ResearchProgram()
+    return _research_program
+
+
+def _tool_research_run(question: str, max_results: int = 5) -> Dict[str, Any]:
+    """Run the research convergence loop for one question: web-search the evidence,
+    persist it as memory, extract claims, verify each by cross-source corroboration
+    (External Reality Rule), and return a cited report carrying, for every claim,
+    [claim, evidence, confidence, source]."""
+    try:
+        from convergence.research import ResearchLoop
+        report = ResearchLoop().run(question, max_results=int(max_results))
+        return {"success": True, **report.to_dict()}
+    except Exception as exc:
+        logger.exception("research_run failed")
+        return {"success": False, "question": question, "error": str(exc)}
+
+
+def _tool_research_intake(question: str, priority: str = "medium") -> Dict[str, Any]:
+    """Queue a research question for the continuous research program (durable JSONL
+    queue that survives restarts). Drain it with research_run_next."""
+    try:
+        return {"success": True, **_get_research_program().enqueue(question, priority)}
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+
+
+def _tool_research_run_next(max_results: int = 5) -> Dict[str, Any]:
+    """Run the highest-priority pending research task from the queue through the
+    convergence loop. Returns the cited report, or a queue_empty note."""
+    try:
+        out = _get_research_program().run_next(max_results=int(max_results))
+        if out is None:
+            return {"success": True, "status": "queue_empty"}
+        return {"success": True, "report": out}
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+
+
+def _tool_research_status() -> Dict[str, Any]:
+    """Show the research program queue depth and per-status task breakdown."""
+    try:
+        return {"success": True, **_get_research_program().status()}
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
 
 
 # ── JSON-RPC Dispatch ──
@@ -842,6 +911,10 @@ TOOLS_REGISTRY = {
     "mesh_prune": _tool_mesh_prune,
     "update_lantern_os": _tool_update_lantern_os,
     "web_search": _tool_web_search,
+    "research_run": _tool_research_run,
+    "research_intake": _tool_research_intake,
+    "research_run_next": _tool_research_run_next,
+    "research_status": _tool_research_status,
 }
 
 # ── GitHub tools (gh-CLI backed) — mirrors the high-value core of GitHub's MCP ──
@@ -906,12 +979,12 @@ def _handle_jsonrpc(req: Dict[str, Any]) -> Dict[str, Any]:
                 "required": [],
             }
             for param_name, param in sig.parameters.items():
-                if param_name in ("limit",) or param_name in _GITHUB_INT_PARAMS:
+                if param_name in ("limit", "max_results") or param_name in _GITHUB_INT_PARAMS:
                     parameters["properties"][param_name] = {
                         "type": "integer",
-                        "default": param.default if param.default is not inspect.Parameter.empty else 10,
+                        "default": param.default if param.default is not inspect.Parameter.empty else (5 if param_name == "max_results" else 10),
                     }
-                elif param_name in ("description", "agent", "task", "priority"):
+                elif param_name in ("description", "agent", "task", "priority", "question"):
                     parameters["properties"][param_name] = {
                         "type": "string",
                         "default": param.default if param.default is not inspect.Parameter.empty else "",
