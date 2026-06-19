@@ -183,7 +183,56 @@ function saveDebugOverlay(videoPath, best, opts = {}) {
   });
 }
 
+// Real face model (OpenCV via scripts/facecam_face_detect.py). Returns the JSON
+// it prints, or null if Python/opencv/the script is unavailable.
+function detectFaceModel(videoPath, maxSamples = 30) {
+  return new Promise((resolve) => {
+    const py = process.env.LANTERN_PY || "python";
+    const script = path.join(__dirname, "..", "..", "..", "scripts", "facecam_face_detect.py");
+    let proc, done = false;
+    const finish = (v) => { if (done) return; done = true; clearTimeout(t); resolve(v); };
+    try { proc = spawn(py, [script, videoPath, String(maxSamples)], { stdio: ["ignore", "pipe", "ignore"] }); }
+    catch (_) { return resolve(null); }
+    const t = setTimeout(() => { try { proc.kill("SIGKILL"); } catch (_) {} finish(null); }, 90000);
+    let out = "";
+    proc.stdout.on("data", (d) => (out += d));
+    proc.on("error", () => finish(null));
+    proc.on("close", () => { try { finish(JSON.parse(out.trim().split("\n").pop())); } catch (_) { finish(null); } });
+  });
+}
+
 async function detectFacecamV3(videoPath, opts = {}) {
+  // PRIMARY: a real face model. A consistently-detected, stable face IS a facecam
+  // — this is what lets the >=0.85 gate fire reliably on real cams (and stay
+  // silent on pure gameplay). Confidence is built from REAL measurements:
+  // detection rate (face_presence + temporal_consistency), location stability
+  // (static_region), and an edge bonus (cams hug edges).
+  const fm = opts.faceModel === false ? null : await detectFaceModel(videoPath).catch(() => null);
+  if (fm && fm.ok && fm.facecam_box && fm.detection_rate >= 0.25) {
+    const b = fm.facecam_box;
+    const sat = (v, k) => Math.min(1, v / k);
+    // A real facecam's defining trait is a STABLE face location — faces get
+    // missed during head turns/blur, so we don't demand 100% per-frame hits.
+    // Weight location stability highest, with detection rate as presence.
+    const facePresence = sat(fm.detection_rate, 0.35);
+    const temporal = sat(fm.detection_rate, 0.30);
+    const stat = clamp01(fm.stability);
+    const nearEdge = b.x <= 0.06 || b.x + b.width >= 0.94 || b.y <= 0.06 || b.y + b.height >= 0.94;
+    const edge = nearEdge ? 1 : 0.6;
+    const confidence = r3(0.30 * facePresence + 0.35 * stat + 0.20 * temporal + 0.15 * edge);
+    const has = confidence >= 0.25;
+    let debugPath = null;
+    if (opts.debug !== false) { try { debugPath = await saveDebugOverlay(videoPath, { bounds: b }, opts); } catch (_) {} }
+    return {
+      facecam: has ? { corner: cornerOf(b), position: positionLabel(b), bounds: b, confidence, source: "face-model",
+        components: { face_presence: r3(facePresence), static_region: r3(stat), temporal_consistency: r3(temporal), edge: r3(edge), detection_rate: fm.detection_rate } } : null,
+      confidence, meets85: confidence >= 0.85, source: "face-model", framesAnalyzed: fm.samples,
+      faceDetectionRate: fm.detection_rate, debugPath,
+      note: "OpenCV face model (real detection); heuristic search used only when the model is unavailable.",
+    };
+  }
+
+  // FALLBACK: heuristic cell-grid sliding-window search (no face model available).
   const frames = await extractFrames(videoPath, opts);
   if (frames.length < 4) return { facecam: null, confidence: 0, meets85: false, reason: "insufficient frames" };
   const grid = buildGrid(frames);
