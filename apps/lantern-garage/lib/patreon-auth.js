@@ -34,6 +34,43 @@ function generatePkce() {
   return { verifier, challenge };
 }
 
+// ── OAuth state cookie (issue #689) ──────────────────────────────────────────
+// The in-memory session does not survive the cross-site redirect from
+// patreon.com → 127.0.0.1 (or a server restart), causing "State mismatch". We
+// also carry {state, verifier, return_to} in a signed, short-TTL HttpOnly cookie
+// (SameSite=Lax so it returns on the top-level GET redirect) and recover from it
+// on the callback when the session is gone.
+const OAUTH_COOKIE = "lantern_oauth";
+function _oauthSecret() {
+  return process.env.SESSION_SECRET || process.env.PATREON_CLIENT_SECRET || "lantern-oauth-secret";
+}
+function signOauth(payload) {
+  const data = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  const sig = crypto.createHmac("sha256", _oauthSecret()).update(data).digest("base64url");
+  return `${data}.${sig}`;
+}
+function verifyOauth(token) {
+  if (!token || !token.includes(".")) return null;
+  const [data, sig] = token.split(".");
+  const expect = crypto.createHmac("sha256", _oauthSecret()).update(data).digest("base64url");
+  const a = Buffer.from(sig), b = Buffer.from(expect);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  try {
+    const p = JSON.parse(Buffer.from(data, "base64url").toString("utf8"));
+    return (p && p.exp && Date.now() <= p.exp) ? p : null;
+  } catch { return null; }
+}
+function readCookie(req, name) {
+  const raw = req.headers && req.headers.cookie;
+  if (!raw) return null;
+  for (const part of raw.split(";")) {
+    const idx = part.indexOf("=");
+    if (idx === -1) continue;
+    if (part.slice(0, idx).trim() === name) return decodeURIComponent(part.slice(idx + 1).trim());
+  }
+  return null;
+}
+
 /**
  * Start OAuth flow: redirect to Patreon login.
  */
@@ -64,7 +101,13 @@ function handlePatreonStart(req, res, returnTo) {
     code_challenge_method: "S256",
   });
 
-  res.writeHead(302, { Location: `https://www.patreon.com/oauth2/authorize?${params}` });
+  // Belt-and-suspenders: also carry state/verifier in a signed short-TTL cookie
+  // so the callback can recover them if the session was lost (issue #689).
+  const oauthToken = signOauth({ state, verifier, return_to: returnTo || "/", exp: Date.now() + 10 * 60 * 1000 });
+  res.writeHead(302, {
+    Location: `https://www.patreon.com/oauth2/authorize?${params}`,
+    "Set-Cookie": `${OAUTH_COOKIE}=${encodeURIComponent(oauthToken)}; Path=/; Max-Age=600; HttpOnly; SameSite=Lax`,
+  });
   res.end();
 }
 
@@ -85,15 +128,22 @@ async function handlePatreonCallback(req, res, query, deps) {
     return res.end(JSON.stringify({ error: "Missing code or state" }));
   }
 
-  // Verify state
-  if (state !== req.session.oauth_state) {
-    res.writeHead(403, { "Content-Type": "application/json" });
+  // Recover from the signed cookie when the session was lost across the redirect
+  // or a restart (issue #689). Session takes precedence; cookie is the fallback.
+  const oauthCk = verifyOauth(readCookie(req, OAUTH_COOKIE));
+  const expectedState = req.session.oauth_state || (oauthCk && oauthCk.state) || null;
+  const verifier = req.session.pkce_verifier || (oauthCk && oauthCk.verifier) || null;
+  console.log("[AUTH] Cookie oauth recovery:", oauthCk ? "present" : "none");
+
+  // Verify state (constant-time-ish): require a non-empty expected state that matches
+  if (!expectedState || state !== expectedState) {
+    res.writeHead(403, { "Content-Type": "application/json", "Set-Cookie": `${OAUTH_COOKIE}=; Path=/; Max-Age=0` });
     return res.end(JSON.stringify({ error: "State mismatch" }));
   }
 
   try {
     // Exchange code for token (server-side, never expose client secret to browser)
-    const token = await exchangePatreonCode(code, req.session.pkce_verifier);
+    const token = await exchangePatreonCode(code, verifier);
 
     // Fetch user identity and membership data
     const user = await getPatreonUserWithMemberships(token);
@@ -121,18 +171,19 @@ async function handlePatreonCallback(req, res, query, deps) {
     delete req.session.pkce_verifier;
     delete req.session.oauth_state;
 
-    const returnTo = req.session.return_to || "/dream-chat.html";
+    const returnTo = req.session.return_to || (oauthCk && oauthCk.return_to) || "/dream-chat.html";
     delete req.session.return_to;
 
-    // Explicitly save session before redirect
+    // Explicitly save session before redirect; clear the one-time oauth cookie.
     req.session.save((err) => {
+      const clearCookie = `${OAUTH_COOKIE}=; Path=/; Max-Age=0`;
       if (err) {
         console.error("[AUTH] Session save error:", err.message);
-        res.writeHead(500, { "Content-Type": "application/json" });
+        res.writeHead(500, { "Content-Type": "application/json", "Set-Cookie": clearCookie });
         return res.end(JSON.stringify({ error: "Session save failed" }));
       }
       console.log("[AUTH] Session saved, redirecting to:", returnTo);
-      res.writeHead(302, { Location: returnTo });
+      res.writeHead(302, { Location: returnTo, "Set-Cookie": clearCookie });
       res.end();
     });
   } catch (err) {
@@ -319,4 +370,8 @@ module.exports = {
   handleLogout,
   requirePatreonRole,
   mapPatreonTierToRole,
+  // exported for tests (issue #689 oauth-cookie recovery)
+  signOauth,
+  verifyOauth,
+  readCookie,
 };

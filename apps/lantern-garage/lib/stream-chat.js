@@ -698,6 +698,36 @@ async function handleStreamChat(req, url, res) {
     }
   }
 
+  // ── Knowledge Center grounding (base KB index, $0) ──────────────────
+  // Wire the Knowledge Center in: the nearest doc section grounds the LLM, and a
+  // confident hit can answer before any model (Tier 0, below). Off via KB_ROUTER=0.
+  let kbAnswer = null;
+  if (!isKeystoneDebug && surfaceMode !== "three-doors" && message && process.env.KB_ROUTER !== "0") {
+    try {
+      kbAnswer = require("./knowledge-router").answer(message);
+      if (kbAnswer && kbAnswer.hit) {
+        const kbBlock = `Knowledge Center (Lantern OS docs) — grounding from ${kbAnswer.source}:\n${kbAnswer.text}`;
+        groundingContext = groundingContext ? `${groundingContext}\n\n${kbBlock}` : kbBlock;
+      }
+    } catch (e) {
+      console.error("[knowledge-router] grounding failed (non-fatal):", e.message);
+    }
+  }
+
+  // ── Keystone live project context (GitHub issues/PRs + MCP tools) ──────────
+  // Links Keystone chat to the project's real tools/details so ANY provider
+  // (incl. Grok) answers grounded in the live repo, not generic guesses. Cached
+  // 60s, best-effort. Disable with KEYSTONE_MCP=0.
+  if (!isKeystoneDebug && surfaceMode !== "three-doors" && message && process.env.KEYSTONE_MCP !== "0") {
+    try {
+      const { gatherProjectContext } = require("./keystone-context");
+      const proj = await gatherProjectContext({ maxItems: 8 });
+      if (proj) groundingContext = groundingContext ? `${groundingContext}\n\n${proj}` : proj;
+    } catch (e) {
+      console.error("[keystone-context] failed (non-fatal):", e.message);
+    }
+  }
+
   // CSF long-term memory + door state (query-time relevance filtered)
   const csfContext = formatCSFContextForPrompt(message);
   const csfBlock = csfContext ? `\n\nLong-term memory (CSF):\n${csfContext}` : "";
@@ -771,11 +801,25 @@ async function handleStreamChat(req, url, res) {
       convergenceId: routeDecision.convergence_id || null,
       requiresConvergence: routeDecision.requires_convergence || false,
     };
+    // ── Degraded-local indicator (issue #740) ───────────────────────────────
+    // In Auto mode (no explicit provider) the cloud chain (Gemini→Claude→OpenAI→
+    // Grok) can silently fall through to the local Ollama model — which ignores
+    // ROUTER_PROMPT and produces off-tone filler ("calm while wrong"). When that
+    // happens, flag it so the UI shows "degraded — local model" instead of
+    // passing the weak answer off as the normal route. Explicit ollama/local
+    // requests are intentional and not flagged.
+    const isLocalSource = source === "ollama" || source === "offline";
+    const degradedLocal = isLocalSource && !requestedProvider && !isRpMode;
+    let finalRouteLabel = routeLabel;
+    if (degradedLocal) {
+      signature.degraded = true;
+      finalRouteLabel = `${routeLabel} · ⚠ degraded — local model (cloud unreachable)`;
+    }
     // Σ₀ verify: fire-and-forget — logs claims to convergence/records.jsonl
     if (SIGMA0_VERIFY && fullReply && message) {
       verifyResponse(fullReply, message).catch(() => {});
     }
-    return sse.sendDone(res, source, { ...extra, ...signature, routeLabel });
+    return sse.sendDone(res, source, { ...extra, ...signature, routeLabel: finalRouteLabel });
   };
 
   // Emit route event with actual routing decision from server
@@ -1137,6 +1181,75 @@ async function handleStreamChat(req, url, res) {
   const staticChain = OLLAMA_MODEL_CHAIN[intent] || OLLAMA_MODEL_CHAIN.default;
   let modelChain = staticChain;
   try { modelChain = await orderChainByLeaderboard(staticChain, intent); } catch { /* keep static */ }
+
+  // ── Tier 0: cheap Knowledge Center answer before any model ($0, no LLM) ──
+  // Only short-circuit informational queries with a confident KB hit. Coding,
+  // convergence/work, roleplay, explicit-provider, and keystone paths are never
+  // short-circuited — they fall through to the model chain below.
+  // $0 short-circuit threshold. Default favors quality: only very strong near hits
+  // (or exact deterministic ones) answer without the LLM; weaker hits still GROUND
+  // the LLM (better answers). Lower KB_ANSWER_MIN (e.g. 0.2) for cost-aggressive $0.
+  const KB_ANSWER_MIN = parseFloat(process.env.KB_ANSWER_MIN || "0.3");
+  // Live/stateful queries must NOT be answered from a static doc — they need the
+  // LLM with live project context (GitHub/MCP). Only static knowledge short-circuits.
+  const wantsLiveData = /\b(current|currently|now|today|latest|recent|open (issues?|prs?|pull)|status|right now|this (week|sprint)|what'?s? (open|happening|next))\b/i.test(message);
+  if (kbAnswer && kbAnswer.hit && !isKeystoneDebug && !isRpMode && !requestedProvider && !wantsLiveData
+      && !routeDecision.requires_convergence
+      && (kbAnswer.tier === "deterministic" || kbAnswer.score >= KB_ANSWER_MIN)) {
+    const ans = `${kbAnswer.text}\n\n— from the Knowledge Center: ${kbAnswer.source}`;
+    sendToken(ans);
+    await appendConversationEntry({
+      recordedAt: new Date().toISOString(), surface: "dream-chat-stream",
+      role: "lantern", text: ans.slice(0, maxConversationTextLength),
+    }).catch(() => {});
+    try { recordProviderSuccess("knowledge"); } catch (_e) {}
+    sendDone("knowledge", {
+      agent: doneAgentName, online: true, cleanText: ans, suggestions: [],
+      model: "knowledge-center", source: "knowledge",
+      tier: kbAnswer.tier, score: kbAnswer.score,
+    });
+    return;
+  }
+
+  // ── Ouro looped reasoning: adaptive depth + Q-exit CDF (arXiv 2510.25741) ──
+  // Implements the paper at the API level on OUR local model: refine across loops,
+  // exit when the confidence CDF crosses threshold or plateaus (lib/loop-reasoner.js).
+  // Opt-in via LOOP_REASONER=1; applies to reasoning/coding intents. Emits
+  // loop_n/confidence/exit_reason for the "Ouro Σ₀ CDF exit" panel the UI reads.
+  // Falls through to normal streaming on any error.
+  if (process.env.LOOP_REASONER === "1" && !isKeystoneDebug && !isRpMode && !requestedProvider
+      && (intent === "coding" || intent === "reasoning")) {
+    try {
+      const http = require("http");
+      const { loopedReason } = require("./loop-reasoner");
+      const u = new URL(process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434");
+      const loopModel = modelChain[0];
+      const callLLM = (p, sys) => new Promise((resolve, reject) => {
+        const body = JSON.stringify({ model: loopModel, stream: false, messages: buildProviderMessages(sys, compacted, p) });
+        const rq = http.request({ hostname: u.hostname, port: u.port || 11434, path: "/api/chat", method: "POST",
+          headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) } }, (resp) => {
+          let d = ""; resp.on("data", (c) => (d += c));
+          resp.on("end", () => { try { resolve(JSON.parse(d).message?.content || ""); } catch (e) { reject(e); } });
+        });
+        rq.on("error", reject);
+        rq.setTimeout(120000, () => { rq.destroy(); reject(new Error("ollama_timeout")); });
+        rq.write(body); rq.end();
+      });
+      const lr = await loopedReason({ prompt: message, systemPrompt, callLLM, maxLoops: 4 });
+      if (lr && lr.reply) {
+        const { cleanText, suggestions } = doorsOrFallback(lr.reply, true);
+        await appendConversationEntry({ recordedAt: new Date().toISOString(), surface: "dream-chat-stream",
+          role: "lantern", text: cleanText.slice(0, maxConversationTextLength) }).catch(() => {});
+        sendToken(cleanText);
+        try { recordProviderSuccess("ollama"); recordModelOutcome(loopModel, intent, true, 0); } catch (_e) {}
+        sendDone("ollama", { agent: doneAgentName, online: true, cleanText, suggestions, model: loopModel,
+          source: "ollama", loop_n: lr.loop_n, confidence: lr.confidence, exit_reason: lr.exit_reason });
+        return;
+      }
+    } catch (e) {
+      console.error("[loop-reasoner] failed (non-fatal, falling through):", e.message);
+    }
+  }
 
   const ollamaLocalFirst = (!requestedProvider || requestedProvider === "ollama" || requestedProvider === "local") && !autoPrefersAnthropic;
   if (ollamaLocalFirst && message && !isKeystoneDebug) {
