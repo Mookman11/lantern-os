@@ -109,8 +109,10 @@ Per the External Reality Rule, before this leap is trusted:
 - [x] All `[implemented]` claims point at real code (`NUM_DIMENSIONS=12`, `3**12=531441`,
       `converge_step`, `QuantumDustField`).
 - [x] No new runtime subsystem introduced (anti-sprawl).
-- [ ] Falsifiable experiments **X1–X4** queued (round-trip, minimal-wavefront, dust≈BitNet-sparsity,
-      contraction) — numbers do not exist yet; the design is **not** trusted until they land.
+- [x] **X3** (dust vs BitNet sparsity) and **X4** (`converge_step` contraction instrument) run +
+      3-lens adversarially verified on 2026-06-19 → X3 `refined`, X4 `supported` (semantics). See
+      [`TESSERACT-CSF-SINGULARITY.md`](TESSERACT-CSF-SINGULARITY.md) §6.1.
+- [ ] **X1** (CSF round-trip integrity) and **X2** (wavefront minimality) still queued.
 
 Sanity command (does not prove the thesis, only that the substrate runs):
 ```bash
@@ -130,12 +132,18 @@ object (the `3**12` lattice). Five canon docs + one skill now point at a single 
 representation, they are one object — consolidate the docs before the code drifts.* The repo
 had two vocabularies for `{-1,0,+1}^12`; the fix was documentation, not code.
 
-**Next sprint backlog (out of scope for this 8-hour block):**
-1. Run X3 (measure `dust_percentage` of a converged field on real memory; compare to BitNet
-   ~2/3 zeros).
-2. Run X4 (`mean_contraction` per axis from `converge_step`).
-3. Adopt balanced ternary `{-1,0,+1}` end-to-end (engine currently stores unsigned `pos % 3`).
-4. Wire `ConvergenceRecord` to lattice points (a record = a contraction step toward `h*`).
+**Measured this leap (2026-06-19):** X3 → `refined` (value-sparsity is population-dependent, not
+BitNet's learned 2/3 mass); X4 → `supported` (the contraction instrument is not fooled by
+orbit/divergence). Both 3-lens adversarially verified (6/6 lenses sound, reproduced). Details and
+numbers in [`TESSERACT-CSF-SINGULARITY.md`](TESSERACT-CSF-SINGULARITY.md) §6.1.
+
+**Next sprint backlog:**
+1. Run X1 (CSF round-trip integrity: pack→unpack→diff a `QuantumDustField`).
+2. Run X2 (wavefront minimality: active-cell count vs 531,441 over a session).
+3. Real-model X4: run `converge_step` over an actual Ouro-1.4B trajectory once a CUDA box /
+   fixed `huggingface-hub` is available (CPU-only blocked it this round).
+4. Adopt balanced ternary `{-1,0,+1}` end-to-end (engine currently stores unsigned `pos % 3`).
+5. Wire `ConvergenceRecord` to lattice points (a record = a contraction step toward `h*`).
 
 ---
 
