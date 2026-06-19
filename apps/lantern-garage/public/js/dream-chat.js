@@ -1586,6 +1586,9 @@
       isListening = false; voiceBtn.classList.remove("listening");
       inputEl.placeholder = "Tell me a dream…";
     };
+    // Share this single recognition instance with the composer's voice button
+    // (dream-chat-ui.js startVoiceInput() reads window.recognition).
+    window.recognition = recognition;
   }
 
   function toggleVoice() {
@@ -1600,6 +1603,8 @@
       try { recognition.start(); } catch(e) { isListening = false; voiceBtn.classList.remove("listening"); inputEl.placeholder = "Tell me a dream…"; }
     }
   }
+  // Expose the working toggle so the nav mic button can start/stop listening in one click.
+  window.toggleVoice = toggleVoice;
 
   let ttsAudio = null;
 
