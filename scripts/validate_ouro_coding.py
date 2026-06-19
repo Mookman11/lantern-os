@@ -67,7 +67,29 @@ def run_task(model, t):
     res.update(parsed=True, passed=passed, total=len(t["checks"]))
     return res
 
+def _preflight_ram(min_free_gb=3.0):
+    """Turn the cryptic 'OSError 1455: paging file too small' (fp16 load of a 1.4B model
+    on a RAM-starved box) into an actionable message BEFORE the load (#781 item 5).
+    psutil-optional; override with OURO_FORCE_LOAD=1."""
+    if os.environ.get("OURO_FORCE_LOAD") == "1":
+        return
+    try:
+        import psutil
+    except Exception:
+        return  # guard is best-effort; don't add a hard dependency
+    min_free_gb = float(os.environ.get("OURO_MIN_FREE_GB", min_free_gb))
+    avail = psutil.virtual_memory().available / 1e9
+    if avail < min_free_gb:
+        print(f"ERROR: only {avail:.1f} GB RAM free; loading Ouro-1.4B (fp16) needs "
+              f"~{min_free_gb:.0f} GB and will otherwise fail with 'OSError 1455: paging "
+              f"file too small'.\nRemedies: free RAM, raise the Windows paging file, or "
+              f"run on the GPU training box (.venv-train). Override: OURO_FORCE_LOAD=1.",
+              file=sys.stderr, flush=True)
+        sys.exit(2)
+
+
 def main():
+    _preflight_ram()
     from sigma0.loop_lm import Sigma0LoopLM
     print(f"Loading Ouro-1.4B + adapter={ADAPTER} ...", flush=True)
     m = Sigma0LoopLM.load("ByteDance/Ouro-1.4B", adapter=ADAPTER)
