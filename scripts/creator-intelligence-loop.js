@@ -28,6 +28,21 @@ const fs = require("fs");
 const path = require("path");
 
 const REPO = path.join(__dirname, "..");
+
+// Load .env.local then .env from repo root (so YOUTUBE_API_KEY etc. work for the
+// CLI / scheduled task, matching server.js). Existing env vars win.
+for (const envFile of [".env.local", ".env"]) {
+  const p = path.join(REPO, envFile);
+  try {
+    if (require("fs").existsSync(p)) {
+      require("fs").readFileSync(p, "utf8").split("\n").forEach((line) => {
+        const m = line.replace(/\r$/, "").match(/^([A-Z0-9_]+)\s*=\s*(.*)$/);
+        if (m && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^['"]/, "").replace(/['"]$/, "");
+      });
+    }
+  } catch (_) { /* ignore */ }
+}
+
 const DIR = path.join(REPO, "research", "ci_loop");
 const CHECKPOINT = path.join(DIR, "checkpoint.json");
 const VIRAL_RESEARCH = path.join(DIR, "viralResearch.jsonl");
@@ -55,10 +70,13 @@ async function discoverMetadata({ query = "gaming shorts", max = 25 } = {}) {
   try {
     const su = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoDuration=short&maxResults=${Math.min(50, max)}&q=${encodeURIComponent(query)}&key=${key}`;
     const sr = await (await fetch(su)).json();
+    // Surface API failures honestly — never treat an error body as "0 results".
+    if (sr.error) return { ok: false, confidence: "insufficient_data", reason: `YouTube API: ${sr.error.message}`, items: [] };
     const ids = (sr.items || []).map((i) => i.id && i.id.videoId).filter(Boolean);
-    if (!ids.length) return { ok: true, confidence: "directional", items: [] };
+    if (!ids.length) return { ok: true, confidence: "insufficient_data", reason: "no results for query", items: [] };
     const vu = `https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics,contentDetails&id=${ids.join(",")}&key=${key}`;
     const vr = await (await fetch(vu)).json();
+    if (vr.error) return { ok: false, confidence: "insufficient_data", reason: `YouTube API: ${vr.error.message}`, items: [] };
     const items = (vr.items || []).map((v) => {
       const s = v.statistics || {}, sn = v.snippet || {};
       const tags = (sn.title || "").match(/#\w+/g) || [];
@@ -69,7 +87,7 @@ async function discoverMetadata({ query = "gaming shorts", max = 25 } = {}) {
         hashtags: tags, uploadAge: sn.publishedAt || null, collectedAt: new Date().toISOString(),
       };
     });
-    return { ok: true, confidence: "directional", items };
+    return { ok: true, confidence: "ok", items };
   } catch (e) {
     return { ok: false, confidence: "insufficient_data", reason: "API error: " + e.message, items: [] };
   }
