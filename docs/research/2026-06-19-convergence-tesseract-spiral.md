@@ -143,11 +143,7 @@ fixed point, no spiral, and the paper collapses to a relabeling of Q-exit. We pr
 ## 7. Honest scope
 
 - Theorem 1 is proven **only for normal operators**; convergence-exit's guarantee is conditional
-  and the non-normal case is open ([certificate](../SIGMA0-COLLAPSE-CERTIFICATE.md)). **External
-  candidate closure [grounded]:** STARS ([arXiv:2605.26733](https://arxiv.org/html/2605.26733))
-  drives looped-LM latents to *asymptotically stable* fixed points via Jacobian Spectral Radius
-  Regularisation — a training-time route to the contraction this paper assumes. It does not
-  prove our conditional case, but it is the literature's direct attack on it (test in E3).
+  and the non-normal case is open ([certificate](../SIGMA0-COLLAPSE-CERTIFICATE.md)).
 - "Tesseract" is a geometric claim (3-cube × ℝ), **not** a physics result.
 - Everything here is **inference-time**: no pretraining (Ouro needed 7.7T tokens), no new weights.
 - Only the `mode="converge"` path and `converge_step` are code; §4–5 are formal/▮hypothesis.
@@ -159,7 +155,4 @@ fixed point, no spiral, and the paper collapses to a relabeling of Q-exit. We pr
 ### Sources
 - Ouro LoopLM — [arXiv:2510.25741](https://arxiv.org/abs/2510.25741)
 - Coconut (continuous latent reasoning) — [arXiv:2412.06769](https://arxiv.org/abs/2412.06769)
-- Geiping et al., recurrent-depth latent reasoning (emergent orbit/convergence) — [arXiv:2502.05171](https://arxiv.org/pdf/2502.05171)
-- STARS, stabilizing recurrent dynamics to stable fixed points — [arXiv:2605.26733](https://arxiv.org/html/2605.26733)
-- SpiralFormer (looped multi-resolution recursion) — [arXiv:2602.11698](https://arxiv.org/pdf/2602.11698)
-- Internal: [`loop_lm.py`](../../src/sigma0/loop_lm.py) · [`SIGMA0-COLLAPSE-CERTIFICATE.md`](../SIGMA0-COLLAPSE-CERTIFICATE.md) · [`CONVERGANCE-SIGMA0-BRIEFING.md`](../CONVERGANCE-SIGMA0-BRIEFING.md) · [`TESSERACT-CSF-SINGULARITY.md`](../TESSERACT-CSF-SINGULARITY.md)
+- Internal: [`loop_lm.py`](../../src/sigma0/loop_lm.py) · [`SIGMA0-COLLAPSE-CERTIFICATE.md`](../SIGMA0-COLLAPSE-CERTIFICATE.md) · [`CONVERGANCE-SIGMA0-BRIEFING.md`](../CONVERGANCE-SIGMA0-BRIEFING.md)
