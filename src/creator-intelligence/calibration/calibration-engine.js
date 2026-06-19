@@ -13,6 +13,7 @@
 "use strict";
 
 const store = require("./outcome-store");
+const retention = require("./retention-analysis");
 
 // Graduated thresholds, consistent with score-engine's culture of honest floors.
 const MIN_FOR_CORRELATION = 30;   // below this, report nothing
@@ -151,7 +152,7 @@ function outcomeSignature(videoRef, outcome) {
   return videoRef + "|" + keys.map((k) => `${k}=${outcome[k]}`).join(",");
 }
 
-function ingest({ analyticsRows, links, featuresByEntryId = {}, outcomeSource = "youtube_studio_csv", persistLinks = true }) {
+function ingest({ analyticsRows, links, featuresByEntryId = {}, retentionByEntryId = {}, outcomeSource = "youtube_studio_csv", persistLinks = true }) {
   const linkByRef = new Map();
   for (const l of links || []) linkByRef.set(l.videoRef, l);
 
@@ -204,6 +205,19 @@ function ingest({ analyticsRows, links, featuresByEntryId = {}, outcomeSource = 
       outcomeSource,
       collectedAt: nowIso(),
     };
+
+    // A4→B2 (additive): if a retention curve + the edit's segment list are supplied
+    // for this entry, merge the retention metrics into the outcome and attach the
+    // cliffSegment attribution that the drop-off model (B2) learns from. Rows
+    // without a curve are untouched.
+    const ret = retentionByEntryId[entryId];
+    if (ret && Array.isArray(ret.points)) {
+      const enr = retention.enrichFromCurve(ret.points, ret.segments, ret.durationSec);
+      if (enr.outcomeMetrics && Object.keys(enr.outcomeMetrics).length) {
+        outcomeRow.outcome = { ...outcomeRow.outcome, ...enr.outcomeMetrics };
+      }
+      if (enr.cliffSegment) outcomeRow.cliffSegment = enr.cliffSegment;
+    }
 
     try {
       store.appendOutcome(outcomeRow);
