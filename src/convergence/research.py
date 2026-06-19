@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 import urllib.parse
 import urllib.request
 import uuid
@@ -115,55 +116,80 @@ def _slugify(text: str, limit: int = 60) -> str:
 
 # ───────────────────────────── default searcher ─────────────────────────────
 
-def duckduckgo_search(query: str, max_results: int = 5) -> List[Dict[str, Any]]:
+# Rotated across retries — DuckDuckGo soft-blocks a repeated client signature.
+_USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15",
+    "Mozilla/5.0 (X11; Linux x86_64; rv:125.0) Gecko/20100101 Firefox/125.0",
+]
+
+
+def _ddg_fetch(query: str, max_results: int, user_agent: str) -> List[Dict[str, Any]]:
+    """One DuckDuckGo-lite request → parsed results (raises on transport error)."""
+    url = "https://lite.duckduckgo.com/lite/"
+    data = urllib.parse.urlencode({"q": query, "kl": "us-en"}).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=data,
+        headers={
+            "User-Agent": user_agent,
+            "Accept": "text/html,application/xhtml+xml",
+            "Accept-Language": "en-US,en;q=0.9",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        html = resp.read().decode("utf-8", errors="replace")
+
+    # DuckDuckGo-lite markup: organic results are
+    #   <a ... href="URL" class='result-link'>TITLE</a>
+    #   <td class='result-snippet'>SNIPPET</td>
+    # (attribute order and single quotes both vary — match permissively).
+    link_pat = re.compile(
+        r"""<a\b[^>]*\bhref=["']([^"']+)["'][^>]*\bclass=["']result-link["'][^>]*>(.*?)</a>""",
+        re.IGNORECASE | re.DOTALL,
+    )
+    snip_pat = re.compile(
+        r"""<td[^>]*\bclass=["']result-snippet["'][^>]*>(.*?)</td>""",
+        re.IGNORECASE | re.DOTALL,
+    )
+    links = link_pat.findall(html)
+    snippets = snip_pat.findall(html)
+
+    results: List[Dict[str, Any]] = []
+    for i, (href, title_raw) in enumerate(links[:max_results]):
+        title = re.sub(r"<[^>]+>", "", title_raw).strip()
+        results.append({
+            "rank": i + 1,
+            "title": title,
+            "url": _normalize_ddg_url(href),
+            "snippet": re.sub(r"<[^>]+>", "", snippets[i]).strip() if i < len(snippets) else "",
+        })
+    return results
+
+
+def duckduckgo_search(query: str, max_results: int = 5, retries: int = 3,
+                      _sleep: Callable[[float], None] = time.sleep) -> List[Dict[str, Any]]:
     """Stdlib DuckDuckGo-lite search (no API key). Mirrors the MCP web_search tool.
 
-    Returns [] on any failure so the loop degrades gracefully (offline → empty
-    evidence → an honest "no corroborated claims" report rather than a crash).
+    Hardened against DuckDuckGo's soft rate-limiting (under a burst it answers 200 with
+    an empty result page): retries on an empty result set with exponential backoff and
+    a rotated User-Agent. Returns [] only after all retries fail, so the loop still
+    degrades gracefully (offline → an honest "no corroborated claims" report).
+
+    The searcher is pluggable — pass a different `searcher` to ResearchLoop to use a
+    keyed API or the host's web-search tool instead of this default.
     """
-    try:
-        url = "https://lite.duckduckgo.com/lite/"
-        data = urllib.parse.urlencode({"q": query, "kl": "us-en"}).encode("utf-8")
-        req = urllib.request.Request(
-            url,
-            data=data,
-            headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                "Accept": "text/html",
-                "Accept-Language": "en-US,en;q=0.9",
-            },
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            html = resp.read().decode("utf-8", errors="replace")
-
-        # DuckDuckGo-lite markup: organic results are
-        #   <a ... href="URL" class='result-link'>TITLE</a>
-        #   <td class='result-snippet'>SNIPPET</td>
-        # (attribute order and single quotes both vary — match permissively).
-        link_pat = re.compile(
-            r"""<a\b[^>]*\bhref=["']([^"']+)["'][^>]*\bclass=["']result-link["'][^>]*>(.*?)</a>""",
-            re.IGNORECASE | re.DOTALL,
-        )
-        snip_pat = re.compile(
-            r"""<td[^>]*\bclass=["']result-snippet["'][^>]*>(.*?)</td>""",
-            re.IGNORECASE | re.DOTALL,
-        )
-        links = link_pat.findall(html)
-        snippets = snip_pat.findall(html)
-
-        results: List[Dict[str, Any]] = []
-        for i, (href, title_raw) in enumerate(links[:max_results]):
-            title = re.sub(r"<[^>]+>", "", title_raw).strip()
-            results.append({
-                "rank": i + 1,
-                "title": title,
-                "url": _normalize_ddg_url(href),
-                "snippet": re.sub(r"<[^>]+>", "", snippets[i]).strip() if i < len(snippets) else "",
-            })
-        return results
-    except Exception:
-        return []
+    for attempt in range(max(1, retries)):
+        try:
+            results = _ddg_fetch(query, max_results, _USER_AGENTS[attempt % len(_USER_AGENTS)])
+        except Exception:
+            results = []
+        if results:
+            return results
+        if attempt < retries - 1:
+            _sleep(0.8 * (2 ** attempt))  # 0.8s, 1.6s, 3.2s … lets a soft block clear
+    return []
 
 
 def _normalize_ddg_url(href: str) -> str:
