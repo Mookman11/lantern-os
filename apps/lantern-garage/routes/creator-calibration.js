@@ -70,7 +70,8 @@ module.exports = async function creatorCalibrationRoutes(req, res, url, deps) {
   }
 
   // POST /api/creator/calibration/import
-  // body: { csvText, manualLinks?: [{videoRef, entryId}], dryRun?: bool }
+  // body: { csvText, manualLinks?: [{videoRef, entryId}], dryRun?: bool,
+  //         retentionByEntryId?: { [entryId]: { curveText|points, segments, durationSec } } }
   if (P === "/api/creator/calibration/import" && req.method === "POST") {
     try {
       const raw = await collectRequestBody(req);
@@ -96,6 +97,11 @@ module.exports = async function creatorCalibrationRoutes(req, res, url, deps) {
       const result = ci.calibration.importCsvText(csvText, {
         manualLinks: Array.isArray(body.manualLinks) ? body.manualLinks : undefined,
         dryRun: body.dryRun === true,
+        // #iii: optional retention curves + segment lists per entry. Parsed and
+        // validated defensively inside importCsvText (rows without a curve are
+        // unaffected), so a passthrough here is safe.
+        retentionByEntryId: (body.retentionByEntryId && typeof body.retentionByEntryId === "object")
+          ? body.retentionByEntryId : undefined,
       });
       const code = result.status === "error" ? 422 : 200;
       sendJson(res, result, code);
