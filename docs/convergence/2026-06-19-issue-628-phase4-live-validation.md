@@ -5,7 +5,7 @@ Branch: claude/sigma0-coder-gate-628 (PR #2)
 
 ## Instructions
 
-[2026-06-19] - This is the Phase 4 validation record. Numbers come from a live run against a real local model (qwen2.5-coder via Ollama 0.30.10), not from unit tests. Harness: experiments/phase4_coder_validation.py. Raw receipt: data/phase4-coder-validation.json.
+[2026-06-19] - This is the Phase 4 validation record. Numbers come from a live run against a real local model (qwen2.5-coder via Ollama 0.30.10), not from unit tests. Harness: scripts/phase4_coder_validation.py. Raw receipt: data/phase4-coder-validation.json.
 
 ## Two real bugs the live run surfaced (and fixed)
 

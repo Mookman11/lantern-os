@@ -15,8 +15,8 @@ This is NOT a unit test (it needs a running Ollama with qwen2.5-coder pulled), s
 lives in experiments/ and is invoked manually:
 
     ollama pull qwen2.5-coder
-    python experiments/phase4_coder_validation.py
-    python experiments/phase4_coder_validation.py --benchmark anthropic
+    python scripts/phase4_coder_validation.py
+    python scripts/phase4_coder_validation.py --benchmark anthropic
 
 Honesty rule: this records the real numbers. If the local model does not comply with
 the contract, that is the finding — we do not fabricate a passing rate.
