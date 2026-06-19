@@ -129,6 +129,14 @@ function importCsvFile(csvPath, opts = {}) {
   return importCsvText(fs.readFileSync(csvPath, "utf8"), opts);
 }
 
+// B4 callable: propose calibrated scoring weights from the live correlation set.
+// Returns insufficient_data (priors unchanged) until calibration readiness is ok.
+const PRIOR_WEIGHTS = require("../research/viral_patterns.json").weights;
+function proposeCalibratedWeights(opts = {}) {
+  const corr = engine.correlations(opts);
+  return weightCalibration.calibrateWeights(PRIOR_WEIGHTS, corr, opts);
+}
+
 module.exports = {
   parseAnalyticsCsv,
   loadEntries,
@@ -151,6 +159,8 @@ module.exports = {
   dropoffPenalty: dropoff.dropoffPenalty,
   // B4 — propose calibrated scoring weights (gated; priors unchanged until ready).
   calibrateWeights: weightCalibration.calibrateWeights,
+  proposeCalibratedWeights,
+  priorWeights: () => ({ ...PRIOR_WEIGHTS }),
   COMPONENT_FEATURES: weightCalibration.COMPONENT_FEATURES,
   count: store.count,
   usableRows: store.usableRows,

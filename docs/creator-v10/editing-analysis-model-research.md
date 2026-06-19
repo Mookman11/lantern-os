@@ -275,3 +275,16 @@ A1 makes the headline pacing feature real; A4 + the shipped calibration set make
   segment list aren't collected there yet (programmatic path is complete and tested).
   **Next: open-ended #iv — make B4 callable (a gated `proposeCalibratedWeights` helper /
   endpoint) and add edge-case tests.**
+- **2026-06-19 — B4 made callable (open-ended #iv).** `calibration/index.js`:
+  `proposeCalibratedWeights(opts)` loads the shipped priors (`viral_patterns.json`
+  weights) + the live `correlations()` and returns `calibrateWeights(...)` — gated, so
+  with an empty/undersized outcome set it returns insufficient_data and the priors
+  UNCHANGED. Also exposes `priorWeights()` (fresh copy). Surfaced as flag-gated
+  `ci.calibration.weights` and a new `GET /api/creator/calibration/weights` route. Tests:
+  `tests/test_propose_weights.js` (3/3) + flag-gate smoke (off→calibration_flag_off,
+  on→insufficient_data with priors) + full sweep green (11 suites).
+  **Status: the editing/analysis models, their live-pipeline wiring, and the full
+  calibration loop (Observe→Reason→Verify→Converge) are all implemented and gated. The
+  branch is at a natural reviewable stopping point (15 commits). Remaining work is UI
+  surfacing (introStrength/novel/speech badges; retention-CSV upload) + test hardening —
+  lower-value polish; the loop will continue with small validation iterations.**
