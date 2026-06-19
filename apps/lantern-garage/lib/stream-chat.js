@@ -1,6 +1,18 @@
 const https = require("https");
 const http = require("http");
 const path = require("path");
+
+// On Windows, Node's bundled CA store sometimes can't verify cloud-provider certs
+// ("unable to verify the first certificate"). Without this, every cloud request
+// throws, the auto cascade swallows the error, and the chat silently degrades to the
+// weak local Ollama model — the "calm while wrong" failure in #740. Mirror the
+// self-edit-engine / routes/providers workaround, but scope it to Windows (or an
+// explicit opt-in) so TLS verification is not disabled on other platforms. Set
+// LANTERN_INSECURE_TLS=0 to force-disable, =1 to force-enable anywhere.
+const INSECURE_TLS = process.env.LANTERN_INSECURE_TLS === "1" ||
+  (process.platform === "win32" && process.env.LANTERN_INSECURE_TLS !== "0");
+const llmAgent = INSECURE_TLS ? new https.Agent({ rejectUnauthorized: false }) : undefined;
+
 const { AGENT_PERSONAS, DREAM_DOORS, selectAgent, parseBangCommand, verifyResponse } = require("./dream-chat");
 const { modelFor } = require("./provider-models");
 const { readRecentDreams, normalizeDreamerUser } = require("./dreamer-store");
@@ -704,7 +716,21 @@ async function handleStreamChat(req, url, res) {
   let kbAnswer = null;
   if (!isKeystoneDebug && surfaceMode !== "three-doors" && message && process.env.KB_ROUTER !== "0") {
     try {
-      kbAnswer = require("./knowledge-router").answer(message);
+      const kr = require("./knowledge-router");
+      kbAnswer = kr.answer(message);
+      // New-user orientation anchor. The most natural identity questions —
+      // "what is this", "what is this app?", "what can you do" — are mostly
+      // stop-words or get diluted below the TF-IDF threshold, so they MISS the KB
+      // and fall through to whatever weak fallback model is up (e.g. local Ollama
+      // when the cloud providers are unreachable), which improvises dream-journal
+      // filler. Anchor those to the canonical product section so the Tier-0
+      // short-circuit answers them deterministically. The lookahead keeps
+      // "what is this FUNCTION/file/error…" out (those are real technical asks).
+      const isOrientation = /\b(?:what(?:'s| is| are)?\s+this(?=[\s?!.]*$|\s+(?:app|thing|site|place|tool|project))|what(?:'s| is)?\s+lantern\s*os|what\s+can\s+you\s+do|who\s+are\s+you|how\s+do\s+i\s+(?:get\s+)?start)/i.test(String(message).trim());
+      if (isOrientation && (!kbAnswer || !kbAnswer.hit || (kbAnswer.tier !== "deterministic" && (kbAnswer.score || 0) < 0.3))) {
+        const canonical = kr.answer("what is lantern os");
+        if (canonical && canonical.hit) kbAnswer = canonical;
+      }
       if (kbAnswer && kbAnswer.hit) {
         const kbBlock = `Knowledge Center (Keystone OS docs) — grounding from ${kbAnswer.source}:\n${kbAnswer.text}`;
         groundingContext = groundingContext ? `${groundingContext}\n\n${kbBlock}` : kbBlock;
@@ -775,7 +801,11 @@ async function handleStreamChat(req, url, res) {
         : (ROUTE_LABEL_MAP[converganceIntent] || "Keystone · router");
 
   // Plain Keystone desk prompt — no persona voice, no doors. Dream Chat is Keystone-only.
-  const ROUTER_PROMPT = `You are Keystone, the engineering desk agent for Keystone OS. Answer directly, technically, and concisely — no roleplay, no dream personas, no door suggestions. IMPORTANT: Your very first token must be substantive content — never output only your name, "Keystone,", "Keystone, engineering desk.", or any greeting. Go straight to the answer. If the user asks for roleplay, Keystone, or the Three Doors game, tell them to open the Explore tab (/three-doors-game.html).\n\n${_realtimeCtx}\n\nContext:\n${dreamContext}${csfBlock}${groundingContext ? "\n\n" + groundingContext : ""}`;
+  // The product-fact line gives even a weak fallback model (e.g. local Ollama, when the
+  // cloud providers are unavailable) a correct, concrete answer to "what is this?" so new
+  // users get an orientation instead of improvised dream-journal filler. The journal block
+  // is explicitly labelled background so the model does not narrate it as if it were the app.
+  const ROUTER_PROMPT = `You are Keystone, the engineering desk agent for Keystone OS — a local-first, private journaling and reasoning app (journal, chat, and trading tools) that runs on the user's own machine with no account required. Answer directly, technically, and concisely — no roleplay, no dream personas, no door suggestions. If the user asks "what is this?", "what can you do?", or anything about the app itself, give a plain one- or two-sentence description of Keystone OS; do NOT describe the journal entries below as if they were the app, and do NOT use mystical or "dream" language. IMPORTANT: Your very first token must be substantive content — never output only your name, "Keystone,", "Keystone, engineering desk.", or any greeting. Go straight to the answer. If the user asks for roleplay, Keystone, or the Three Doors game, tell them to open the Explore tab (/three-doors-game.html).\n\n${_realtimeCtx}\n\nBackground (the user's recent journal entries — do not treat as the subject unless they ask about their journal):\n${dreamContext}${csfBlock}${groundingContext ? "\n\n" + groundingContext : ""}`;
 
   const systemPrompt = isKeystoneDebug
     ? KEYSTONE_DEBUG_PROMPT
@@ -787,14 +817,6 @@ async function handleStreamChat(req, url, res) {
   const sendToken = (token) => sse.sendToken(res, token);
   const sendRoute = (route) => sse.sendRoute(res, route);
   const sendReceipt = (receipt) => sse.sendReceipt(res, receipt);
-
-  // Degradation tracking (issue #740): set true once we attempt any CLOUD
-  // provider. If the cascade then falls through to the local Ollama last-resort
-  // fallback, every attempted cloud provider failed and we are answering with the
-  // weak local model — surfaced via sendDone's degraded flag below. Local-first
-  // Ollama (Provider 0) is intended and does NOT set this flag. Declared here so
-  // the sendDone closure can read it (it is only invoked after the cascade runs).
-  let cloudAttempted = false;
 
   // Consistent sendDone with Σ₀ PCSF signature for all responses
   const sendDone = (source, extra = {}) => {
@@ -816,17 +838,11 @@ async function handleStreamChat(req, url, res) {
     // happens, flag it so the UI shows "degraded — local model" instead of
     // passing the weak answer off as the normal route. Explicit ollama/local
     // requests are intentional and not flagged.
-    //
-    // Gate on `cloudAttempted`: only flag when a cloud provider was actually tried
-    // and failed. On a local-first install with no cloud keys (the product's
-    // "runs locally, no account/cloud required" mode) Ollama is the intended path,
-    // not a degradation — flagging it there would be a false positive.
     const isLocalSource = source === "ollama" || source === "offline";
-    const degradedLocal = isLocalSource && !requestedProvider && !isRpMode && cloudAttempted;
+    const degradedLocal = isLocalSource && !requestedProvider && !isRpMode;
     let finalRouteLabel = routeLabel;
     if (degradedLocal) {
       signature.degraded = true;
-      signature.degradedReason = "Cloud providers unreachable — answered with the local model";
       finalRouteLabel = `${routeLabel} · ⚠ degraded — local model (cloud unreachable)`;
     }
     // Σ₀ verify: fire-and-forget — logs claims to convergence/records.jsonl
@@ -972,6 +988,7 @@ async function handleStreamChat(req, url, res) {
       const result = await new Promise((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error("verify_timeout")), VERIFY_TIMEOUT_MS);
         const req = https.request({
+          agent: llmAgent,
           hostname: "api.anthropic.com",
           path: "/v1/messages",
           method: "POST",
@@ -1381,7 +1398,6 @@ async function handleStreamChat(req, url, res) {
   // Provider 1: Gemini (streaming) — cloud fallback
   const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
   if (geminiKey && message && ((!requestedProvider && !autoPrefersAnthropic) || requestedProvider === "gemini" || requestedProvider === "google" || requestedProvider.startsWith("gemini-"))) {
-    cloudAttempted = true;
     // Gemini model fallback chain: primary -> fallbacks on 429/quota
     // Note: gemini-2.0-flash-lite shut down June 1 2026; gemini-3.5-flash is GA with free grounding
     const GEMINI_MODEL_CHAIN = [
@@ -1408,6 +1424,7 @@ async function handleStreamChat(req, url, res) {
       const payload = JSON.stringify(geminiPayloadBase);
       await new Promise((resolve, reject) => {
         const req2 = https.request({
+          agent: llmAgent,
           hostname: "generativelanguage.googleapis.com",
           path: `/v1beta/models/${geminiModel}:streamGenerateContent?alt=sse&key=${geminiKey}`,
           method: "POST",
@@ -1492,7 +1509,6 @@ async function handleStreamChat(req, url, res) {
   // Provider 2: Anthropic Claude (streaming)
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
   if (anthropicKey && message && (!requestedProvider || requestedProvider === "claude" || requestedProvider === "anthropic" || requestedProvider === "claude-sonnet")) {
-    cloudAttempted = true;
     try {
       let claudeModel = "claude-haiku-4-5-20251001";
       if (requestedProvider === "claude-sonnet") {
@@ -1515,6 +1531,7 @@ async function handleStreamChat(req, url, res) {
       });
       await new Promise((resolve, reject) => {
         const req2 = https.request({
+          agent: llmAgent,
           hostname: "api.anthropic.com",
           path: "/v1/messages",
           method: "POST",
@@ -1598,7 +1615,6 @@ async function handleStreamChat(req, url, res) {
   // Provider 3: OpenAI (streaming)
   const openaiKey = process.env.OPENAI_API_KEY;
   if (openaiKey && message && (!requestedProvider || requestedProvider === "openai" || requestedProvider === "gpt")) {
-    cloudAttempted = true;
     try {
       const payload = JSON.stringify({
         model: modelFor("openai"),
@@ -1608,6 +1624,7 @@ async function handleStreamChat(req, url, res) {
 
       await new Promise((resolve, reject) => {
         const req2 = https.request({
+          agent: llmAgent,
           hostname: "api.openai.com",
           path: "/v1/chat/completions",
           method: "POST",
@@ -1677,7 +1694,6 @@ async function handleStreamChat(req, url, res) {
   // Provider 4: Grok / xAI (streaming — OpenAI-compatible)
   const xaiKey = process.env.XAI_API_KEY;
   if (xaiKey && message && (!requestedProvider || requestedProvider === "grok" || requestedProvider === "xai")) {
-    cloudAttempted = true;
     try {
       const xaiModel = modelFor("xai");
       const payload = JSON.stringify({
@@ -1686,6 +1702,7 @@ async function handleStreamChat(req, url, res) {
       });
       await new Promise((resolve, reject) => {
         const req2 = require("https").request({
+          agent: llmAgent,
           hostname: "api.x.ai", path: "/v1/chat/completions", method: "POST",
           headers: { "Content-Type": "application/json", "Authorization": `Bearer ${xaiKey}`, "Content-Length": Buffer.byteLength(payload) },
         }, (upstream) => {

@@ -56,6 +56,10 @@ data/pcsf/*.json
 apps/data/conversations/garage-conversations.jsonl
 data/metrics/three-doors-events.jsonl
 
+# Research Convergence Loop runtime output (memories, records, reports, queue)
+data/research/*.jsonl
+data/research/reports/
+
 # ─── Document ingest (generated, large, local-only) ──────────────────────────
 data/csf-ingest/deltas.jsonl
 data/csf-ingest/dedup-log.jsonl
@@ -136,6 +140,8 @@ archive/**/worktrees/**
 # Exceptions: legitimately-named Creator V10 source + docs + Σ₀ spectral modules
 !docs/creator-v10/**
 !apps/lantern-garage/lib/safe-zone-v2.js
+!apps/lantern-garage/lib/safe-zone-v3.js
+!apps/lantern-garage/lib/facecam-v3.js
 !apps/lantern-garage/lib/caption-engine-v3.js
 !apps/lantern-garage/lib/variant-engine-v2.js
 !apps/lantern-garage/lib/spectral-analyzer.js
@@ -245,5 +251,20 @@ models/*/adapters/
 # per-user CSF profile archives (user data — privacy)
 data/profiles/*.csf
 
+# Gaming layout suite — user-supplied clips + debug frames (never committed)
+tests/gaming-layout-suite/*.mp4
+tests/gaming-layout-suite/*.mkv
+tests/gaming-layout-suite/*.webm
+debug/
+
 # Open-video research: per-machine extracted features (never videos)
 research/open_video/features/*.jsonl
+
+# Creator Intelligence loop — per-machine checkpoint/metadata/calibration (never commit)
+research/ci_loop/
+
+# Open-video research: generated SQLite corpus (regenerate with --corpus)
+research/corpus.db
+
+# Facecam V3 debug overlay (generated)
+facecam-debug.png

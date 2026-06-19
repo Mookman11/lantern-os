@@ -62,7 +62,7 @@
       });
     var text = clone.innerText || "";
     // Normalise whitespace.
-    text = text.replace(/ /g, " ").replace(/[ \t]+/g, " ");
+    text = text.replace(/ /g, " ").replace(/[ \t]+/g, " ");
     // Split on sentence enders and hard line breaks, keep it readable.
     var raw = text
       .split(/(?<=[.!?…])\s+|\n{1,}/)
@@ -278,8 +278,6 @@
       .join("");
     if (!state.voices.length) {
       ui.voice.style.display = "none";
-    } else {
-      ui.voice.style.display = "";
     }
   }
 

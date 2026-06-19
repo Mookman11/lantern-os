@@ -8,7 +8,12 @@ const { analyzeVideoForHighlights } = require("./highlight-engine");
 const { generateCaptions } = require("./caption-engine");
 const { detectSafeZones } = require("./safe-zone-detector");
 const { reencodeToShortForm, renderSegments, probeSource, burnCaptionsToVideo } = require("./video-export");
-const { analyzeForCrop } = require("./safe-zone-v2");
+// Facecam V3-aware crop analysis: same plan as safe-zone-v2 but the facecam
+// region is upgraded by the thorough multi-window + border detector with edge-aware
+// position and a real OpenCV face model (via facecam-v3's detectFacecamV3, which
+// safe-zone-v3 wraps), plus platform-UI exclusion zones. Falls back to the v2 plan
+// on any error.
+const { analyzeForCropV3: analyzeForCrop } = require("./safe-zone-v3");
 const ci = require("../../../src/creator-intelligence");
 
 // Stage manifests — defines named stages and their progress weight for each job type.
@@ -519,20 +524,33 @@ async function processExportJob(job, repoRoot, ctx) {
         cropPlan = { status: "unavailable", note: "fell back to center crop", reason: "source dimensions unknown (probe failed)" };
         ctx.log("Safe-zone detection unavailable — falling back to center crop");
       } else {
+        let _fcg = job.input.facecamGuidance || null;
+        if (!_fcg && job.input.entryId) { try { _fcg = require("./entry-store").getEntry(repoRoot, job.input.entryId)?.facecamGuidance || null; } catch {} }
+        if (_fcg) ctx.log(`Applying facecam guidance: ${_fcg}`);
         const plan = await analyzeForCrop(fullPath, {
           srcWidth: meta.width,
           srcHeight: meta.height,
+          facecamGuidance: _fcg,
         });
         if (plan.status === "ok") {
           if (plan.cropPlan && plan.cropPlan.mode === "horizontal") {
             cropRect = plan.cropPlan.cropRect;
           }
           cropPlan = { ...(plan.cropPlan || {}), regions: plan.regions, framesSampled: plan.framesSampled };
-          // A confident facecam drives the facecam-top layout (locked to the top).
-          const fc = (plan.regions || []).find((r) => r.type === "facecam" && !r.needsDeclaration);
+          // PRODUCTION RULE: gameplay is sacred. Only split to facecam-top when a
+          // facecam is detected with HIGH confidence (>= 0.85). Below that we do
+          // NOT guess — facecam is treated as absent and the clip renders as full
+          // centred gameplay (see effectiveFit below).
+          const PROD_FACECAM_CONF = 0.85;
+          const fc = (plan.regions || []).find((r) => r.type === "facecam" && !r.needsDeclaration && (r.confidence || 0) >= PROD_FACECAM_CONF);
           if (fc) {
             facecamRect = fc.bounds;
-            ctx.log(`Facecam detected (${fc.corner}, conf ${fc.confidence}) — locking to top band`);
+            ctx.log(`Facecam confident (${fc.position || fc.corner}, conf ${fc.confidence}) — facecam-top split`);
+          } else {
+            const weak = (plan.regions || []).find((r) => r.type === "facecam");
+            ctx.log(weak
+              ? `Facecam low-confidence (${weak.confidence} < ${PROD_FACECAM_CONF}) — protecting gameplay: full centred gameplay`
+              : "No facecam — full centred gameplay");
           }
           ctx.log(`Safe zones detected — ${(plan.regions || []).length} region(s)`);
         } else {
@@ -547,17 +565,24 @@ async function processExportJob(job, repoRoot, ctx) {
     }
   }
 
-  // Lock a detected facecam to the top: an explicit facecam-top request OR any
-  // crop-mode export that found a confident facecam upgrades to the split layout.
-  // facecam-top without a facecam falls back to a safe fit (never a broken split).
+  // Layout decision (gameplay-first):
+  //  - CONFIDENT facecam (>=0.85): facecam-top split, gameplay centred beneath.
+  //  - otherwise: FULL CENTRED GAMEPLAY — a pure centre crop. We deliberately do
+  //    NOT use an off-centre safe-zone crop or letterbox padding here, so the
+  //    gameplay subject never leaves centre (RULE 1) and there's no empty top box.
   let effectiveFit = job.input.fit;
   if (facecamRect && (wantsFacecamTop || job.input.fit === "crop")) {
     effectiveFit = "facecam-top";
-    ctx.log("Facecam locked to top band (facecam-top layout)");
-  } else if (wantsFacecamTop && !facecamRect) {
-    effectiveFit = cropRect ? "crop" : "pad";
-    ctx.log(`No confident facecam — facecam-top falls back to ${effectiveFit}`);
+    ctx.log("Confident facecam → facecam-top split (gameplay centred below)");
+  } else if (wantsFacecamTop || job.input.fit === "crop") {
+    effectiveFit = "crop";
+    cropRect = null; // pure centre crop keeps the gameplay subject centred
+    ctx.log("Full centred gameplay (no confident facecam)");
   }
+
+  // Layout priors (design defaults) drive the facecam band height.
+  let gamingLayoutTopFrac = 0.23;
+  try { gamingLayoutTopFrac = require(path.join(repoRoot, "research", "gaming_layout_priors.json")).facecam_top_height || 0.23; } catch {}
 
   // A variant export supplies a segment cut-list -> trim+concat render.
   // Otherwise re-encode the whole clip to spec.
@@ -578,7 +603,9 @@ async function processExportJob(job, repoRoot, ctx) {
     ctx.log(`Rendering ${segments.length} highlight segments`);
     encodeInfo = await renderSegments(fullPath, exportFile, segments, {
       width: job.input.width, height: job.input.height, fps: job.input.fps,
-      fit: effectiveFit, cropRect, facecam: facecamRect, gameplayRect: cropRect,
+      fit: effectiveFit, cropRect, facecam: facecamRect,
+      gameplayRect: null, // RULE 1: gameplay stays CENTRED (centre crop), never off-centre
+      facecamTopFrac: gamingLayoutTopFrac,
       maxDuration: job.input.maxDuration,
     });
   } else {
@@ -594,7 +621,8 @@ async function processExportJob(job, repoRoot, ctx) {
       maxDuration: job.input.maxDuration,
       cropRect, // null → center crop; set → safe-zone-aware crop
       facecam: facecamRect, // facecam-top: lift this box to the top band
-      gameplayRect: cropRect, // facecam-top: gameplay window (avoids the facecam)
+      gameplayRect: null, // RULE 1: gameplay stays CENTRED (centre crop)
+      facecamTopFrac: gamingLayoutTopFrac,
     });
   }
   if (cropPlan) encodeInfo.cropPlan = cropPlan;
@@ -764,7 +792,10 @@ async function processSafeZonesJob(job, repoRoot, ctx) {
     result = { status: "unavailable", reason: "source dimensions unknown (probe failed)" };
     ctx.log("Detection unavailable — source dimensions unknown");
   } else {
-    const plan = await analyzeForCrop(fullPath, { srcWidth: meta.width, srcHeight: meta.height });
+    let _fcg = job.input.facecamGuidance || null;
+    if (!_fcg && job.input.entryId) { try { _fcg = require("./entry-store").getEntry(repoRoot, job.input.entryId)?.facecamGuidance || null; } catch {} }
+    if (_fcg) ctx.log(`Applying facecam guidance: ${_fcg}`);
+    const plan = await analyzeForCrop(fullPath, { srcWidth: meta.width, srcHeight: meta.height, facecamGuidance: _fcg });
     result = plan; // { status, regions, cropPlan, framesSampled, ... } — honest "unavailable" when detection fails
     const regionCount = Array.isArray(plan.regions) ? plan.regions.length : 0;
     ctx.log(`Detection complete — ${regionCount} region(s) found (${plan.framesSampled || 0} frames sampled)`);
