@@ -22,6 +22,7 @@ const { swarmOrchestrate } = require("./swarm-orchestrator");
 const { unifiedAgentStreamSSE } = require("./unified-agent");
 const sse = require("./stream-chat/sse");
 const { parseStreamChatRequest } = require("./stream-chat/request");
+const { assembleSessionContext } = require("./session-summary-store");
 const { formatCSFContextForPrompt, saveDoorChoice } = require("./csf-memory");
 const { route: converganceRoute, buildBehaviorPreamble } = require("./convergance-os/model-router");
 const { THREE_DOORS_PREAMBLE } = require("./convergance-os/profiles");
@@ -671,7 +672,25 @@ async function handleStreamChat(req, url, res) {
 
   // Compact history once; providers reuse this via buildProviderMessages.
   // historyContext is kept for Keystone debug prompt only — not injected into dream system prompt.
-  const compacted = compactHistory(history);
+  //
+  // #772 REMEMBER stage: assemble a token-budgeted context — a rolling summary of
+  // older turns plus recent verbatim turns within the active model's window — from
+  // the FULL session log instead of the client's fixed last-6 slice. Drop-in for
+  // compactHistory(history) (same { role, text }[] shape). Best-effort: any failure
+  // degrades to the pre-#772 fixed-slice behaviour so a chat reply never breaks.
+  let compacted;
+  try {
+    const budgeted = assembleSessionContext({
+      sessionId: parsed.sessionId,
+      clientHistory: history,
+      currentMessage: message,
+      requestedProvider,
+      surfaceMode,
+    });
+    compacted = Array.isArray(budgeted && budgeted.compacted) ? budgeted.compacted : compactHistory(history);
+  } catch {
+    compacted = compactHistory(history);
+  }
   const historyContext = compacted.length > 0
     ? `\nPrior conversation turns:\n${compacted.map(h => `${h.role === "assistant" ? "Keystone" : "Dreamer"}: ${h.text}`).join("\n")}`
     : "";
