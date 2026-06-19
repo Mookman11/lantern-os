@@ -268,25 +268,4 @@ async function detectFacecamV3(videoPath, opts = {}) {
   };
 }
 
-// Drop-in for safe-zone-v2.analyzeForCrop that UPGRADES the facecam region with
-// Facecam V3 (thorough multi-window + border search). V3 replaces v2's facecam
-// only when at least as confident (or v2 found none); crop / HUD / safe-zones are
-// unchanged, and any V3 error falls back to the v2 plan — never breaks a render.
-async function analyzeForCropV3(videoPath, opts = {}) {
-  const sz2 = require("./safe-zone-v2");
-  const plan = await sz2.analyzeForCrop(videoPath, opts).catch(() => ({ status: "unavailable", regions: [] }));
-  try {
-    const v3 = await detectFacecamV3(videoPath, { fps: 2, maxSeconds: 40, debug: false });
-    const regions = Array.isArray(plan.regions) ? [...plan.regions] : [];
-    const existing = regions.find((r) => r.type === "facecam");
-    if (v3.facecam && (!existing || v3.facecam.confidence >= (existing.confidence || 0))) {
-      const upgraded = { type: "facecam", corner: v3.facecam.corner, position: v3.facecam.position, bounds: v3.facecam.bounds, confidence: v3.facecam.confidence, source: "facecam-v3", components: v3.facecam.components };
-      if (existing) Object.assign(existing, upgraded); else regions.push(upgraded);
-    }
-    return { ...plan, regions, facecamV3: { confidence: v3.confidence, corner: v3.facecam ? v3.facecam.corner : null, position: v3.facecam ? v3.facecam.position : null, meets85: v3.meets85 } };
-  } catch (_) {
-    return plan;
-  }
-}
-
-module.exports = { detectFacecamV3, analyzeForCropV3, buildGrid, scoreRegion, extractFrames };
+module.exports = { detectFacecamV3, buildGrid, scoreRegion, extractFrames };

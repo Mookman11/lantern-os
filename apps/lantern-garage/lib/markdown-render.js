@@ -100,8 +100,9 @@ function renderMarkdownDocument(markdown, sourcePath) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${escapeHtml(title)} — Lantern OS</title>
+  <title>${escapeHtml(title)} — Keystone OS</title>
   <link rel="stylesheet" href="/css/site.css">
+  <link rel="stylesheet" href="/css/narrator.css">
   <style>
     .md-page { max-width: 880px; margin: 0 auto; padding: 32px 20px 80px; }
     .md-page h1 { font-size: 2rem; font-weight: 800; margin: 0 0 12px; line-height: 1.15; }
@@ -121,7 +122,7 @@ function renderMarkdownDocument(markdown, sourcePath) {
 <nav class="site-nav">
   <a class="nav-brand" href="/">
     <img src="/mandala.svg" alt="" aria-hidden="true" style="width:18px;height:18px;vertical-align:middle">
-    Lantern OS
+    Keystone OS
   </a>
   <div class="nav-links">
     <a href="/">Home</a>
@@ -137,17 +138,20 @@ function renderMarkdownDocument(markdown, sourcePath) {
 
 <div class="md-page">
   <div class="md-source">${escapeHtml(sourcePath)}</div>
+  <article data-narrate>
   ${body.join("\n")}
+  </article>
 </div>
 
 <footer class="site-footer">
   <div class="footer-inner">
-    <span><strong>Lantern OS</strong> · <a href="/">Home</a> · <a href="/dream-chat.html">Journal</a> · <a href="/three-doors-game.html">Explore</a></span>
+    <span><strong>Keystone OS</strong> · <a href="/">Home</a> · <a href="/dream-chat.html">Journal</a> · <a href="/three-doors-game.html">Explore</a></span>
     <span style="margin-left: auto;"><a href="/knowledgecenter.html">Help</a></span>
   </div>
 </footer>
 
 <script src="/js/theme-toggle.js"></script>
+<script src="/js/narrator.js" defer></script>
 </body>
 </html>`;
 }
