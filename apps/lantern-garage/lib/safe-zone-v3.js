@@ -78,4 +78,14 @@ async function computeSafeZonesV3(videoPath, opts = {}) {
   };
 }
 
-module.exports = { computeSafeZonesV3, bestCaptionBand, PLATFORM_UI };
+// Platform-specific safe-zone mask (not a universal one). Returns the UI
+// exclusion rects + the recommended caption band for the platform.
+function getSafeZones(platform = "youtube") {
+  const key = String(platform).toLowerCase();
+  const ui = PLATFORM_UI[key] || PLATFORM_UI.youtube;
+  // default caption band = clear of all UI for an empty (no-content) frame
+  const band = bestCaptionBand(ui);
+  return { platform: key, exclusionZones: ui, captionBand: band, knownLayouts: Object.keys(PLATFORM_UI) };
+}
+
+module.exports = { computeSafeZonesV3, bestCaptionBand, getSafeZones, PLATFORM_UI };

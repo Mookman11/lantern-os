@@ -254,6 +254,28 @@ function aggregateHighlightPriors() {
   return { ok: true, file: _writeResearch("highlight_priors.json", priors), priors };
 }
 
+// ── Facecam priors (where/how big creators place the cam) ──────────────────
+function aggregateFacecamPriors() {
+  const rows = _readRows();
+  if (!rows.length) return { ok: false, reason: "no features yet" };
+  const withCam = rows.filter((r) => r.facecam && r.facecam.corner);
+  const dist = {};
+  withCam.forEach((r) => { dist[r.facecam.corner] = (dist[r.facecam.corner] || 0) + 1; });
+  const dominant = Object.entries(dist).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+  const sizes = withCam.map((r) => r.facecam.bounds ? r.facecam.bounds.width * r.facecam.bounds.height : null).filter(Number.isFinite);
+  const priors = {
+    _comment: "Learned facecam priors from open-license video. Regenerate: node scripts/open-video-research.js --facecam-priors",
+    samples: rows.length,
+    facecam_present_rate: Number((withCam.length / rows.length).toFixed(3)),
+    facecam_position: dominant,
+    facecam_distribution: dist,
+    facecam_size: _median(sizes),                 // area fraction of frame
+    facecam_confidence: _median(withCam.map((r) => r.facecam.confidence)),
+    updatedAt: new Date().toISOString(),
+  };
+  return { ok: true, file: _writeResearch("facecam_priors.json", priors), priors };
+}
+
 // ── Persistent corpus.db (SQLite via node:sqlite) ──────────────────────────
 function rebuildCorpusDb() {
   let DatabaseSync;
@@ -397,6 +419,7 @@ async function researchNightly({ limit = 200, sources = Object.keys(SOURCES), qu
   const priors = aggregateEditingPriors();  // updates editing_priors.json
   aggregateHookPriors();                     // research/hook_priors.json
   aggregateHighlightPriors();                // research/highlight_priors.json
+  aggregateFacecamPriors();                  // research/facecam_priors.json
   const corpus = rebuildCorpusDb();          // research/corpus.db
   const deltas = calibrateWeights();         // research/weight_deltas.json
   const report = writeNightlyReport({ started, candidates: candidates.length, queue: queue.length, analyzed, failed, perSource, priors, sources, queries });
@@ -437,7 +460,7 @@ function writeNightlyReport(x) {
   return file;
 }
 
-module.exports = { downloadVideo, analyzeForResearch, research, storeFeatures, aggregateEditingPriors, aggregateHookPriors, aggregateHighlightPriors, rebuildCorpusDb, calibrateWeights, researchNightly, searchArchiveOrg, searchPeerTube, searchWikimedia };
+module.exports = { downloadVideo, analyzeForResearch, research, storeFeatures, aggregateEditingPriors, aggregateHookPriors, aggregateHighlightPriors, aggregateFacecamPriors, rebuildCorpusDb, calibrateWeights, researchNightly, searchArchiveOrg, searchPeerTube, searchWikimedia };
 
 // ── CLI ─────────────────────────────────────────────────────────────────────
 if (require.main === module) {
@@ -445,6 +468,7 @@ if (require.main === module) {
     if (process.argv.includes("--aggregate")) { console.log(JSON.stringify(aggregateEditingPriors(), null, 2)); return; }
     if (process.argv.includes("--hook-priors")) { console.log(JSON.stringify(aggregateHookPriors(), null, 2)); return; }
     if (process.argv.includes("--highlight-priors")) { console.log(JSON.stringify(aggregateHighlightPriors(), null, 2)); return; }
+    if (process.argv.includes("--facecam-priors")) { console.log(JSON.stringify(aggregateFacecamPriors(), null, 2)); return; }
     if (process.argv.includes("--corpus")) { console.log(JSON.stringify(rebuildCorpusDb(), null, 2)); return; }
     if (process.argv.includes("--calibrate")) { console.log(JSON.stringify(calibrateWeights(), null, 2)); return; }
     if (process.argv.includes("--nightly")) {

@@ -1214,6 +1214,7 @@ async function loadResearchStatus() {
         <span style="color:var(--muted);">learned priors:</span> hook ${s.priors.opening_hook_strength ?? '—'} · cut/s ${s.priors.avg_cut_rate ?? '—'} · motion ${s.priors.motion_target ?? '—'} · facecam ${s.priors.facecam ?? '—'}<br>
         ${s.hookPriors ? `<span style="color:var(--muted);">hook priors (n=${s.hookPriors.samples}):</span> opening-motion ${s.hookPriors.opening_motion ?? '—'} · cuts/3s ${s.hookPriors.scene_cuts_first3s ?? '—'} · ramp ${s.hookPriors.motion_ramp ?? '—'}<br>` : ''}
         ${s.highlightPriors ? `<span style="color:var(--muted);">highlight priors (n=${s.highlightPriors.samples}):</span> motion-range ${JSON.stringify(s.highlightPriors.best_motion_range)} · cut-freq ${s.highlightPriors.best_cut_frequency ?? '—'} · cut-gap ${s.highlightPriors.median_cut_gap_sec ?? '—'}s<br>` : ''}
+        ${s.facecamPriors ? `<span style="color:var(--muted);">facecam priors:</span> ${s.facecamPriors.facecam_position ?? '—'} · present ${Math.round((s.facecamPriors.facecam_present_rate||0)*100)}% · size ${s.facecamPriors.facecam_size ?? '—'}<br>` : ''}
         <span style="color:var(--muted);">last nightly:</span> ${last}
         ${s.adaptation.priorInformed ? '' : `<br><span style="color:var(--muted);">${s.adaptation.samplesNeeded} more open-license clips until weights adapt.</span>`}
       </div>`;

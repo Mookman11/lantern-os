@@ -69,6 +69,7 @@ function getResearchStatus(repoRoot) {
     weightDeltas: deltas ? deltas.weights : null,
     hookPriors: readJsonSafe(path.join(repoRoot, "research", "hook_priors.json")),
     highlightPriors: readJsonSafe(path.join(repoRoot, "research", "highlight_priors.json")),
+    facecamPriors: readJsonSafe(path.join(repoRoot, "research", "facecam_priors.json")),
     lastNightly,
     generatedAt: new Date().toISOString(),
   };
