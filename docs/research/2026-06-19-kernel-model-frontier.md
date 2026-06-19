@@ -1,5 +1,35 @@
 # Re-grounding the "Lantern OS kernel" model question — Ouro LoopLM vs the 2026 dense small-model frontier
 
+> ## 📖 In plain English (start here)
+>
+> **What this is about:** every AI assistant needs a "brain" — the model that does the
+> actual thinking. Lantern's brain is a small model called **Ouro**, and this page asks a
+> simple question: *is Ouro still the right pick, or has something better come out?*
+>
+> **Why we even checked.** Someone ran a ChatGPT/Google report suggesting which model
+> Lantern should use. It had two problems: it **never mentioned Ouro** (the brain we
+> already run), and its suggestions were **about a year out of date**. So we redid the
+> homework against real, checkable sources.
+>
+> **What makes Ouro special.** Most AI gets smarter by getting *bigger*. Ouro gets smarter
+> by *thinking in loops* — re-reading a hard problem a few times instead of answering in
+> one pass. That lets a tiny model (1.4 billion "knobs") keep up with models several times
+> its size on reasoning — while still fitting on a normal gaming GPU.
+>
+> **The honest comparison.** The fair contest is Ouro against today's best small open
+> models — **Qwen3-4B, Phi-4-mini, and Gemma 3n** (the tiny phone-friendly one from
+> Google). Not the older models the original report listed.
+>
+> **The catch — we measure, we don't guess.** We score these brains on *Lantern's own
+> tests* (does it continue a thought correctly? does it cite real sources? does it call the
+> right tool?), not on generic trivia quizzes. Right now only Ouro has real scores
+> (**80% correct**). So this page is a **plan for what to test next** — not a final pick.
+> Nothing here changes the running system.
+>
+> *🎙️ Want it read aloud? Press the **Listen** bar at the bottom of this page.*
+>
+> The rest of this page is the precise, technical version. ↓
+
 **Date:** 2026-06-19
 **Type:** Research note (grounded follow-up to an external ChatGPT/Google shortlist)
 **Status:** Research-only. No serving code changed; no model selected. Recommends what to *bench*, not what to *ship*.
