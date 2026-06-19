@@ -83,12 +83,26 @@ function importCsvText(text, opts = {}) {
   const featuresByEntryId = {};
   for (const e of entries) featuresByEntryId[e.id] = e.features;
 
+  // Optional A4→B2 enrichment: { entryId: { curveText, segments, durationSec } }.
+  // Parse each retention CSV to points here; ingest does the (pure) attribution.
+  const retentionByEntryId = {};
+  if (opts.retentionByEntryId && typeof opts.retentionByEntryId === "object") {
+    for (const [entryId, ret] of Object.entries(opts.retentionByEntryId)) {
+      if (!ret) continue;
+      const points = ret.points || (ret.curveText ? parseRetentionCsv(ret.curveText).points : []);
+      if (points && points.length >= 2) {
+        retentionByEntryId[entryId] = { points, segments: ret.segments, durationSec: ret.durationSec };
+      }
+    }
+  }
+
   const ingested = opts.dryRun
     ? { written: 0, usable: 0, skipped: [], dryRun: true }
     : engine.ingest({
         analyticsRows: parsed.rows,
         links: proposals,
         featuresByEntryId,
+        retentionByEntryId,
         outcomeSource: opts.outcomeSource || "youtube_studio_csv",
       });
 
@@ -131,6 +145,7 @@ module.exports = {
   retentionCurveMetrics: retention.curveMetrics,
   retentionOutcomeMetrics: retention.retentionOutcomeMetrics,
   attributeCliffToSegments: retention.attributeCliffToSegments,
+  enrichFromCurve: retention.enrichFromCurve,
   // B2 — drop-off-aware cutting (gated; no-op until calibrated).
   buildDropoffProfile: dropoff.buildDropoffProfile,
   dropoffPenalty: dropoff.dropoffPenalty,
