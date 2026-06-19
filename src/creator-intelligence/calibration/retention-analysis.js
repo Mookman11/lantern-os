@@ -102,6 +102,37 @@ function retentionOutcomeMetrics(points, opts = {}) {
   return out;
 }
 
+/**
+ * Combine a retention curve with the edit's segment list into the pieces an
+ * outcome row carries: the numeric retention metrics (for correlations) and the
+ * `cliffSegment` attribution (tags + magnitude) that feeds the B2 drop-off model.
+ * Pure. Sparse curve / no cliff / no segment hit → empty metrics / null cliff.
+ *
+ * @param {Array<{position,retention}>} points
+ * @param {Array<{start,end,tags?}>} segments  seconds
+ * @param {number} durationSec
+ * @returns {{outcomeMetrics:Object, cliffSegment:{tags,drop,atTimeSec,segmentIndex}|null}}
+ */
+function enrichFromCurve(points, segments, durationSec, opts = {}) {
+  const out = { outcomeMetrics: {}, cliffSegment: null };
+  if (!Array.isArray(points) || points.length < 2) return out;
+  const o = { introSeconds: opts.introSeconds ?? 3, durationSec };
+  out.outcomeMetrics = retentionOutcomeMetrics(points, o);
+  const m = curveMetrics(points, o);
+  if (m.maxCliff && Array.isArray(segments) && Number.isFinite(durationSec) && durationSec > 0) {
+    const hit = attributeCliffToSegments(m.maxCliff, segments, durationSec);
+    if (hit && hit.segment) {
+      out.cliffSegment = {
+        tags: Array.isArray(hit.segment.tags) ? hit.segment.tags : [],
+        drop: m.maxCliff.drop,
+        atTimeSec: hit.cliffTimeSec,
+        segmentIndex: hit.segmentIndex,
+      };
+    }
+  }
+  return out;
+}
+
 module.exports = {
-  retentionAt, curveMetrics, attributeCliffToSegments, retentionOutcomeMetrics,
+  retentionAt, curveMetrics, attributeCliffToSegments, retentionOutcomeMetrics, enrichFromCurve,
 };

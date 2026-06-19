@@ -260,3 +260,18 @@ A1 makes the headline pacing feature real; A4 + the shipped calibration set make
   `tests/test_speech_attach.js` (4/4) + full sweep green (9 suites). **Next: open-ended
   #iii — wire A4 retention import + cliffSegment attribution into the calibration import
   flow so B2 gets real cliff-labeled data.**
+- **2026-06-19 — A4→B2 data path WIRED (open-ended #iii).** New pure
+  `enrichFromCurve(points, segments, durationSec)` in `retention-analysis.js` →
+  `{outcomeMetrics, cliffSegment{tags,drop,atTimeSec,segmentIndex}}`. `ingest()` accepts
+  an additive `retentionByEntryId` map and, per written row, merges the retention
+  metrics into `outcome` and attaches `cliffSegment` (rows without a curve are
+  untouched). `index.js importCsvText` threads an optional
+  `retentionByEntryId:{entryId:{curveText|points, segments, durationSec}}` (parses each
+  curve to points). This closes the loop end-to-end: real retention curve → cliff→edit
+  attribution → ingested outcome row → consumable by B2's `buildDropoffProfile` (verified
+  in-test). Tests: `tests/test_retention_enrich.js` (5/5, incl. additive no-curve case +
+  B2 consumption) + full sweep green (10 suites). *Remaining glue:* the HTTP route/UI
+  still upload only the analytics table CSV — per-video retention CSVs + the rendered
+  segment list aren't collected there yet (programmatic path is complete and tested).
+  **Next: open-ended #iv — make B4 callable (a gated `proposeCalibratedWeights` helper /
+  endpoint) and add edge-case tests.**
