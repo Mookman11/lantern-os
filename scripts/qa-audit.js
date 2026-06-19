@@ -15,6 +15,51 @@ const BASE_URL = 'http://127.0.0.1:4177';
 const TIMEOUT = 30000; // 30 seconds per operation
 const REPORT_DIR = './reports';
 
+// Issue #585 safeguards
+const SCENARIO_TIMEOUT_MS = 120000; // abort a single page/scenario after 120s
+const GOTO_MAX_ATTEMPTS = 3;        // retry transient 5xx / network errors this many times
+const GOTO_RETRY_DELAY_MS = 1000;   // backoff between navigation attempts
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Race a promise against a timeout. On timeout the returned promise rejects with a
+ * tagged error (code SCENARIO_TIMEOUT) so the runner can record a finding and move
+ * to the next scenario instead of hanging the whole run.
+ */
+function withTimeout(promise, ms, label) {
+  let timer;
+  const timeout = new Promise((_resolve, reject) => {
+    timer = setTimeout(() => {
+      const err = new Error(`Scenario timed out after ${ms}ms: ${label}`);
+      err.code = 'SCENARIO_TIMEOUT';
+      reject(err);
+    }, ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * Detect errors that mean the Playwright browser/page process died, so the runner
+ * can restart the browser and resume the remaining scenarios.
+ */
+function isBrowserCrashError(err) {
+  if (!err) return false;
+  const msg = String(err.message || err);
+  return /Target (?:page|frame|context)?\s*closed|Target closed|Browser(?:Context)? (?:has been )?closed|browser has (?:been )?(?:closed|disconnected)|Connection closed|Protocol error|crash/i.test(msg);
+}
+
+/**
+ * Classify an HTTP status for network-resilience decisions.
+ *   server-error (5xx) → transient, retry; client-error (4xx) → not retried; ok → 2xx/3xx.
+ */
+function classifyStatus(status) {
+  if (typeof status !== 'number' || Number.isNaN(status)) return 'unknown';
+  if (status >= 500) return 'server-error';
+  if (status >= 400) return 'client-error';
+  return 'ok';
+}
+
 // All pages discovered in public/
 const PAGES = [
   '/',
@@ -72,8 +117,42 @@ class QAAudit {
       jsErrors: [],
       themeIssues: [],
       missingRoutes: [],
+      networkErrors: [], // issue #585: transient-retried + persistent network findings
+      timeouts: [],      // issue #585: scenarios aborted at the 120s ceiling
+      crashes: [],       // issue #585: browser crashes survived via restart+resume
     };
     this.browser = null;
+    this._activeContext = null; // set during a scenario so a timeout can tear it down
+    // Tunable safeguards (issue #585) — overridable in tests; defaults are production values.
+    this.scenarioTimeoutMs = SCENARIO_TIMEOUT_MS;
+    this.gotoMaxAttempts = GOTO_MAX_ATTEMPTS;
+    this.gotoRetryDelayMs = GOTO_RETRY_DELAY_MS;
+  }
+
+  /** True while the Playwright browser is launched and connected. */
+  isBrowserAlive() {
+    return !!(this.browser && typeof this.browser.isConnected === 'function' && this.browser.isConnected());
+  }
+
+  /** Close a browser context without throwing (used in finally + timeout cleanup). */
+  async _closeContextSafe(context) {
+    try {
+      if (context) await context.close();
+    } catch (_e) {
+      // context may already be gone (timeout/crash) — closing twice is harmless
+    }
+    if (this._activeContext === context) this._activeContext = null;
+  }
+
+  /** Tear down the browser and launch a fresh one (crash recovery). */
+  async restartBrowser() {
+    try {
+      if (this.browser) await this.browser.close();
+    } catch (_e) {
+      // already dead
+    }
+    this.browser = null;
+    await this.initialize();
   }
 
   async initialize() {
@@ -87,8 +166,68 @@ class QAAudit {
     }
   }
 
+  /**
+   * Navigate with network resilience (issue #585). Retries transient 5xx responses
+   * and network errors (no response) up to GOTO_MAX_ATTEMPTS; if the failure persists
+   * it records a networkErrors finding and returns { response: null }. Browser-crash
+   * errors are re-thrown so the caller can restart Playwright.
+   * @returns {Promise<{response: import('playwright').Response|null, persistent: boolean}>}
+   */
+  async navigateWithResilience(page, fullUrl, pageUrl) {
+    let lastStatus = null;
+    for (let attempt = 1; attempt <= this.gotoMaxAttempts; attempt++) {
+      let response = null;
+      try {
+        response = await page.goto(fullUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
+      } catch (err) {
+        // A crash message OR a browser that is no longer connected means Playwright
+        // died — propagate so run() restarts it instead of retrying a dead browser.
+        if (isBrowserCrashError(err) || !this.isBrowserAlive()) throw err;
+        response = null; // transient network error — fall through to retry logic
+      }
+
+      if (!response) {
+        if (attempt < this.gotoMaxAttempts) {
+          await sleep(this.gotoRetryDelayMs * attempt);
+          continue;
+        }
+        // Persistent network error → always produce a finding (acceptance criterion).
+        this.results.networkErrors.push({
+          page: pageUrl,
+          url: fullUrl,
+          error: 'No response (network error)',
+          attempts: attempt,
+          persistent: true,
+        });
+        return { response: null, persistent: true };
+      }
+
+      lastStatus = response.status();
+      if (classifyStatus(lastStatus) === 'server-error') {
+        if (attempt < this.gotoMaxAttempts) {
+          await sleep(this.gotoRetryDelayMs * attempt);
+          continue;
+        }
+        // Persistent 5xx → flag it, but still return the response so the page can be inspected.
+        this.results.networkErrors.push({
+          page: pageUrl,
+          url: fullUrl,
+          statusCode: lastStatus,
+          error: `Persistent ${lastStatus} after ${attempt} attempts`,
+          attempts: attempt,
+          persistent: true,
+        });
+        return { response, persistent: true };
+      }
+
+      return { response, persistent: false };
+    }
+    return { response: null, persistent: true };
+  }
+
   async testPage(pageUrl) {
     const context = await this.browser.newContext();
+    this._activeContext = context;
     const page = await context.newPage();
 
     const apiCalls = [];
@@ -129,14 +268,16 @@ class QAAudit {
       const fullUrl = `${BASE_URL}${pageUrl}`;
       console.log(`\n📄 Testing: ${pageUrl}`);
 
-      const response = await page.goto(fullUrl, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => null);
+      const { response } = await this.navigateWithResilience(page, fullUrl, pageUrl);
 
       if (!response) {
+        // navigateWithResilience already recorded a networkErrors finding; also note
+        // it in errors so the summary's "did not load" count stays accurate.
         this.results.errors.push({
           page: pageUrl,
-          error: 'Page did not load',
+          error: 'Page did not load (network error)',
         });
-        await context.close();
+        await this._closeContextSafe(context);
         return;
       }
 
@@ -149,11 +290,11 @@ class QAAudit {
         });
       }
 
-      // Get all buttons/clickable elements
-      const buttons = await this.discoverButtons(page, pageUrl);
+      // Get all buttons/clickable elements (null-guard: always an array)
+      const buttons = (await this.discoverButtons(page, pageUrl)) || [];
 
       // Check theme consistency
-      const themeIssues = await this.checkTheme(page, pageUrl);
+      const themeIssues = (await this.checkTheme(page, pageUrl)) || [];
       if (themeIssues.length > 0) {
         this.results.themeIssues.push(...themeIssues);
       }
@@ -188,25 +329,34 @@ class QAAudit {
       }
 
     } catch (error) {
+      // A browser crash (by message OR a now-disconnected browser) must bubble up so
+      // run() can restart Playwright and resume; ordinary scenario errors are recorded
+      // as findings and the run continues.
+      if (isBrowserCrashError(error) || !this.isBrowserAlive()) {
+        throw error;
+      }
       this.results.errors.push({
         page: pageUrl,
         error: error.message,
       });
     } finally {
-      await context.close();
+      await this._closeContextSafe(context);
     }
   }
 
   async discoverButtons(page, pageUrl) {
     const buttons = [];
+    if (!page) return buttons; // null-guard: no page, no buttons
 
     for (const selector of CLICKABLE_SELECTORS) {
       try {
         const elements = await page.$$eval(selector, els => {
+          if (!Array.isArray(els)) return [];
           return els.map(el => {
+            if (!el) return null;
             const rect = el.getBoundingClientRect();
             // Only include visible elements
-            if (rect.width === 0 || rect.height === 0) return null;
+            if (!rect || rect.width === 0 || rect.height === 0) return null;
 
             return {
               label: el.textContent?.trim().substring(0, 50) || el.getAttribute('aria-label') || el.name || '(unlabeled)',
@@ -220,6 +370,8 @@ class QAAudit {
           }).filter(Boolean);
         });
 
+        // $$eval resolves to an array, but guard anyway before iterating.
+        if (!Array.isArray(elements)) continue;
         for (const el of elements) {
           // Avoid duplicates
           const exists = buttons.some(b =>
@@ -244,16 +396,20 @@ class QAAudit {
   }
 
   async testButton(page, button, pageUrl, apiCalls) {
+    // Null-guard: skip silently if the page or the discovered selector is missing.
+    if (!page || !button || !button.selector) return;
     try {
       const beforeUrl = page.url();
 
-      // Click the button
+      // Click the button. locator().first() returns a handle even when nothing
+      // matches; the click() then rejects and is caught below as a button error.
+      const locator = page.locator(button.selector).first();
       try {
-        await page.locator(button.selector).first().click({ timeout: 2000 });
+        await locator.click({ timeout: 2000 });
       } catch (e) {
         // Try scrolling and clicking if direct click fails
-        await page.locator(button.selector).first().scrollIntoViewIfNeeded();
-        await page.locator(button.selector).first().click({ timeout: 2000 });
+        await locator.scrollIntoViewIfNeeded();
+        await locator.click({ timeout: 2000 });
       }
 
       // Wait briefly for potential navigation or changes
@@ -289,6 +445,7 @@ class QAAudit {
 
   async checkTheme(page, pageUrl) {
     const issues = [];
+    if (!page) return issues; // null-guard
     try {
       // Check for Bootstrap-only pages
       const hasBootstrap = await page.evaluate(() => {
@@ -399,6 +556,16 @@ class QAAudit {
       );
     }
 
+    // Resilience findings (issue #585): network errors, timeouts, crashes
+    if (this.results.networkErrors.length > 0 ||
+        this.results.timeouts.length > 0 ||
+        this.results.crashes.length > 0) {
+      fs.writeFileSync(
+        path.join(REPORT_DIR, 'resilience-findings.md'),
+        this.generateResilienceReport()
+      );
+    }
+
     // Full results JSON
     fs.writeFileSync(
       path.join(REPORT_DIR, 'qa-results.json'),
@@ -425,6 +592,9 @@ class QAAudit {
 - **JS Errors:** ${this.results.jsErrors.length}
 - **Missing Routes:** ${this.results.missingRoutes.length}
 - **Theme Issues:** ${this.results.themeIssues.length}
+- **Network Errors (5xx/no-response):** ${this.results.networkErrors.length}
+- **Scenario Timeouts (≥120s):** ${this.results.timeouts.length}
+- **Browser Crashes (recovered):** ${this.results.crashes.length}
 
 ## Pages Tested
 
@@ -582,14 +752,77 @@ ${this.results.apiFailures.slice(0, 50).map(call => `
 `;
   }
 
+  /**
+   * Run a single scenario with the 120s ceiling and crash recovery (issue #585).
+   * Never throws — one scenario can never kill the whole run.
+   * @returns {Promise<'ok'|'timeout'|'crashed'|'error'>}
+   */
+  async runScenario(pageUrl) {
+    try {
+      await withTimeout(this.testPage(pageUrl), this.scenarioTimeoutMs, pageUrl);
+      return 'ok';
+    } catch (err) {
+      if (err && err.code === 'SCENARIO_TIMEOUT') {
+        this.results.timeouts.push({ page: pageUrl, error: err.message });
+        console.warn(`⏱  ${err.message}`);
+        // The orphaned scenario may still hold a context — tear it down.
+        await this._closeContextSafe(this._activeContext);
+        return 'timeout';
+      }
+      if (isBrowserCrashError(err) || !this.isBrowserAlive()) {
+        this.results.crashes.push({ page: pageUrl, error: String((err && err.message) || err) });
+        console.warn(`💥 Browser crashed on ${pageUrl} — restarting and resuming`);
+        await this.restartBrowser();
+        return 'crashed';
+      }
+      this.results.errors.push({ page: pageUrl, error: String((err && err.message) || err) });
+      return 'error';
+    }
+  }
+
+  generateResilienceReport() {
+    const fmt = (rows, render) => rows.length ? rows.map(render).join('\n') : '_none_';
+    return `# Resilience Findings (issue #585)
+
+**Generated:** ${new Date().toISOString()}
+
+## Network Errors (${this.results.networkErrors.length})
+
+Transient 5xx / no-response navigations that were retried; \`persistent: true\` means
+they still failed after ${GOTO_MAX_ATTEMPTS} attempts.
+
+${fmt(this.results.networkErrors, n =>
+  `- \`${n.page}\` — ${n.error}${n.statusCode ? ` (status ${n.statusCode})` : ''} [attempts: ${n.attempts || 'n/a'}${n.persistent ? ', persistent' : ''}]`)}
+
+## Scenario Timeouts (${this.results.timeouts.length})
+
+Scenarios aborted at the ${SCENARIO_TIMEOUT_MS / 1000}s ceiling so the run could continue.
+
+${fmt(this.results.timeouts, t => `- \`${t.page}\` — ${t.error}`)}
+
+## Browser Crashes Recovered (${this.results.crashes.length})
+
+Playwright died mid-scenario; the browser was restarted and the run resumed.
+
+${fmt(this.results.crashes, c => `- \`${c.page}\` — ${c.error}`)}
+`;
+  }
+
   async run() {
     try {
       await this.initialize();
 
       console.log(`🚀 Starting QA Audit for ${PAGES.length} pages...\n`);
 
-      for (const pageUrl of PAGES) {
-        await this.testPage(pageUrl);
+      // Resume-friendly loop: each scenario is isolated. A timeout or crash on one
+      // page records a finding and the run continues with the rest. On a crash the
+      // browser is restarted (inside runScenario) and the page is retried once on the
+      // fresh browser before moving on (issue #585: restart and resume).
+      for (let i = 0; i < PAGES.length; i++) {
+        const outcome = await this.runScenario(PAGES[i]);
+        if (outcome === 'crashed') {
+          await this.runScenario(PAGES[i]); // one retry on the freshly restarted browser
+        }
       }
 
       console.log('\n📊 Generating reports...');
@@ -606,6 +839,18 @@ ${this.results.apiFailures.slice(0, 50).map(call => `
   }
 }
 
-// Run audit
-const audit = new QAAudit();
-audit.run().catch(console.error);
+module.exports = {
+  QAAudit,
+  withTimeout,
+  isBrowserCrashError,
+  classifyStatus,
+  SCENARIO_TIMEOUT_MS,
+  GOTO_MAX_ATTEMPTS,
+};
+
+// Run audit only when invoked directly, so tests can require() this module without
+// launching a browser.
+if (require.main === module) {
+  const audit = new QAAudit();
+  audit.run().catch(console.error);
+}
