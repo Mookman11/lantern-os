@@ -215,13 +215,15 @@ async function getJson(url, ms = 12000) {
 }
 
 async function searchArchiveOrg(query, limit = 25) {
-  const q = encodeURIComponent(`${query} AND mediatype:(movies)`);
-  const url = `https://archive.org/advancedsearch.php?q=${q}&fl[]=identifier&fl[]=title&fl[]=creator&fl[]=licenseurl&rows=${limit}&output=json`;
+  // Require an explicit license in the QUERY so we only ever get genuinely
+  // open items (CC/PD) — never unlicensed uploads of copyrighted footage.
+  const q = encodeURIComponent(`${query} AND mediatype:(movies) AND licenseurl:[* TO *]`);
+  const url = `https://archive.org/advancedsearch.php?q=${q}&fl[]=identifier&fl[]=title&fl[]=creator&fl[]=licenseurl&rows=${limit}&output=json&sort[]=downloads+desc`;
   const j = await getJson(url).catch(() => null);
   const docs = (j && j.response && j.response.docs) || [];
   return docs
-    .filter((d) => d.identifier && (d.licenseurl || /public.?domain/i.test(d.title || ""))) // keep clearly-licensed
-    .map((d) => ({ url: `https://archive.org/details/${d.identifier}`, title: d.title || d.identifier, license: d.licenseurl || "public-domain?", creator: d.creator || null, source: "archive.org" }));
+    .filter((d) => d.identifier && /creativecommons|publicdomain/i.test(d.licenseurl || "")) // CC / public domain only
+    .map((d) => ({ url: `https://archive.org/details/${d.identifier}`, title: d.title || d.identifier, license: d.licenseurl, creator: d.creator || null, source: "archive.org" }));
 }
 
 async function searchPeerTube(query, limit = 25) {
@@ -255,23 +257,36 @@ const SOURCES = { allowlist: searchAllowlist, wikimedia: searchWikimedia, archiv
 const DEFAULT_QUERIES = ["gaming gameplay", "minecraft gameplay", "fps gameplay", "speedrun"];
 
 // ── Nightly research-at-scale (search → download → analyze → DELETE → learn) ─
-async function researchNightly({ limit = 200, sources = Object.keys(SOURCES), queries = DEFAULT_QUERIES, politeDelayMs = 1200 } = {}) {
+async function researchNightly({ limit = 200, sources = Object.keys(SOURCES), queries = DEFAULT_QUERIES, politeDelayMs = 1200, dlTimeoutMs = 90000 } = {}) {
   const started = new Date();
   const candidates = [];
   const per = Math.max(1, Math.ceil(limit / (sources.length * queries.length)));
+  // De-dupe inline by URL so the limit counts UNIQUE candidates. (A
+  // query-independent source like the allowlist returns the same items every
+  // query; without inline de-dupe it would flood the cap before other sources
+  // ever run.)
+  const seen = new Set();
+  // Skip anything already in the corpus so repeated nightly runs ACCUMULATE
+  // unique videos instead of re-analyzing (and double-counting) the same ones.
+  try {
+    for (const l of fs.readFileSync(FEATURES_FILE, "utf8").trim().split("\n")) {
+      try { const u = JSON.parse(l).source; if (u) seen.add(u); } catch (_) {}
+    }
+  } catch (_) {}
   for (const src of sources) {
     for (const q of queries) {
-      try { (await SOURCES[src](q, per)).forEach((c) => candidates.push(c)); } catch (_) { /* a dead source shouldn't sink the run */ }
+      let found = [];
+      try { found = await SOURCES[src](q, per); } catch (_) { /* a dead source shouldn't sink the run */ }
+      for (const c of found) { if (c.url && !seen.has(c.url)) { seen.add(c.url); candidates.push(c); } }
       if (candidates.length >= limit) break;
     }
     if (candidates.length >= limit) break;
   }
-  const seen = new Set();
-  const queue = candidates.filter((c) => c.url && !seen.has(c.url) && seen.add(c.url)).slice(0, limit);
+  const queue = candidates.slice(0, limit);
 
   let analyzed = 0, failed = 0; const perSource = {};
   for (const c of queue) {
-    const r = await research(c.url, { source: c.url, title: c.title, creator: c.creator, license: c.license });
+    const r = await research(c.url, { source: c.url, title: c.title, creator: c.creator, license: c.license, timeoutMs: dlTimeoutMs });
     perSource[c.source] = perSource[c.source] || { found: 0, analyzed: 0 };
     perSource[c.source].found++;
     if (r.ok) { analyzed++; perSource[c.source].analyzed++; } else { failed++; }
