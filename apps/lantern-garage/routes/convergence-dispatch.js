@@ -157,6 +157,23 @@ module.exports = async (req, res, url, deps) => {
           );
         });
 
+        // Guard: never switch branches over an uncommitted working tree. The
+        // patch is applied *after* this point, so anything dirty here is
+        // unrelated in-flight work that a checkout would silently discard.
+        const dirtyTree = await new Promise((resolve) => {
+          execFile("git", ["status", "--porcelain"], { cwd: REPO_ROOT, timeout: 5000, windowsHide: true },
+            (err, stdout) => resolve(err ? "" : String(stdout).trim()));
+        });
+        if (dirtyTree) {
+          sendJson(res, {
+            ok: false,
+            error: "git_tree_dirty",
+            issue: issueNumber,
+            message: "Working tree has uncommitted changes; refusing to switch branches. Commit or stash first.",
+          }, 409);
+          return;
+        }
+
         // Always use a fresh issue-specific branch — never reuse current branch
         const branchName = `auto/issue-${issueNumber}`;
         if (currentBranch !== branchName) {
