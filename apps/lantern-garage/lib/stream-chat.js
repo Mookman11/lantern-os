@@ -22,6 +22,7 @@ const { swarmOrchestrate } = require("./swarm-orchestrator");
 const { unifiedAgentStreamSSE } = require("./unified-agent");
 const sse = require("./stream-chat/sse");
 const { parseStreamChatRequest } = require("./stream-chat/request");
+const { assembleSessionContext } = require("./session-summary-store");
 const { formatCSFContextForPrompt, saveDoorChoice } = require("./csf-memory");
 const { route: converganceRoute, buildBehaviorPreamble } = require("./convergance-os/model-router");
 const { THREE_DOORS_PREAMBLE } = require("./convergance-os/profiles");
@@ -291,6 +292,9 @@ async function handleStreamChat(req, url, res) {
     collectRequestBody,
   });
   let { message, user, requestedAgent, requestedProvider, history, mcpFlag, routeIntent } = parsed;
+  // sessionId scopes the conversation log so the REMEMBER stage can rebuild the
+  // full session server-side (issue #772). Tagged onto every turn we persist.
+  const sessionId = parsed.sessionId || null;
 
   // Surface mode: dream-chat (default) or three-doors.
   // The game page declares itself via body.surface; bang commands can also flip it below.
@@ -666,7 +670,31 @@ async function handleStreamChat(req, url, res) {
 
   // Compact history once; providers reuse this via buildProviderMessages.
   // historyContext is kept for Keystone debug prompt only — not injected into dream system prompt.
-  const compacted = compactHistory(history);
+  // REMEMBER stage (issue #772): when the turn is session-scoped, rebuild the
+  // FULL session from the log and assemble a token-budgeted context (recent turns
+  // verbatim + a rolling summary of older ones) sized to the active model's
+  // window — instead of the fixed 6-turn slice the client sends, which silently
+  // dropped everything older. No sessionId → unchanged pre-#772 behaviour.
+  let contextMeta = null;
+  let compacted;
+  if (sessionId) {
+    try {
+      const assembled = assembleSessionContext({
+        sessionId,
+        clientHistory: history,
+        currentMessage: message,
+        requestedProvider,
+        surfaceMode,
+      });
+      compacted = assembled.compacted;
+      contextMeta = assembled.meta;
+    } catch (e) {
+      console.error("[context-budget] assembly failed (non-fatal):", e.message);
+      compacted = compactHistory(history);
+    }
+  } else {
+    compacted = compactHistory(history);
+  }
   const historyContext = compacted.length > 0
     ? `\nPrior conversation turns:\n${compacted.map(h => `${h.role === "assistant" ? "Keystone" : "Dreamer"}: ${h.text}`).join("\n")}`
     : "";
@@ -836,6 +864,9 @@ async function handleStreamChat(req, url, res) {
       intent: converganceIntent,
       convergenceId: routeDecision.convergence_id || null,
       requiresConvergence: routeDecision.requires_convergence || false,
+      // REMEMBER stage (issue #772): how the context was assembled this turn —
+      // null when not session-scoped. Lets the UI show "summarised N older turns".
+      context: contextMeta,
     };
     // ── Degraded-local indicator (issue #740) ───────────────────────────────
     // In Auto mode (no explicit provider) the cloud chain (Gemini→Claude→OpenAI→
@@ -1079,12 +1110,18 @@ async function handleStreamChat(req, url, res) {
     sendDone("offline", { agent: doneAgentName, online: false, error: reason || "no_provider_configured", suggestions: FALLBACK_DOORS });
   };
 
-  await appendConversationEntry({
+  // Single choke point for persisting a turn. Tags the sessionId so the REMEMBER
+  // stage can rebuild the full session next turn (issue #772) — previously every
+  // append here wrote without it, so the session log could not be reconstructed.
+  const logTurn = (role, text) => appendConversationEntry({
     recordedAt: new Date().toISOString(),
     surface: "dream-chat-stream",
-    role: "operator",
-    text: message.slice(0, maxConversationTextLength),
+    role,
+    text: String(text == null ? "" : text).slice(0, maxConversationTextLength),
+    sessionId,
   }).catch(() => {});
+
+  await logTurn("operator", message);
 
   // Generate 3 web suggestions based on user query topics
   const webSuggestions = generateWebSuggestions(message);
@@ -1108,12 +1145,7 @@ async function handleStreamChat(req, url, res) {
       timeoutMs: Number(process.env.CONVERGENCE_ROUTE_TIMEOUT_MS || 20000),
     });
     if (convResult.reply && !convResult.error) {
-      await appendConversationEntry({
-        recordedAt: new Date().toISOString(),
-        surface: "dream-chat-stream",
-        role: "lantern",
-        text: String(convResult.reply).slice(0, maxConversationTextLength),
-      }).catch(() => {});
+      await logTurn("lantern", convResult.reply);
       sendToken(convResult.reply);
       sendDone("convergence", {
         agent: convResult.agent || routeDecision.agent,
@@ -1189,7 +1221,15 @@ async function handleStreamChat(req, url, res) {
   // Ollama/Gemini first-attempts so the chosen reasoning provider handles the
   // turn. OpenAI + the local fallback below still backstop a Claude failure.
   const autoHintProvider = (!requestedProvider && primaryProviderHint) ? primaryProviderHint.provider : null;
-  const autoPrefersAnthropic = autoHintProvider === "anthropic";
+  // Generalized cloud preference (LEADERBOARD_ROUTING / Σ₀ gate): when Auto mode
+  // picks a CLOUD provider, skip local-first + the cloud blocks BEFORE it so the
+  // chosen provider answers first; blocks at/after it + the local fallback below
+  // still backstop. preferIdx < 0 ⇒ no cloud preferred ⇒ legacy local-first order.
+  const CLOUD_ORDER = ["gemini", "anthropic", "openai", "xai"];
+  const preferIdx = (autoHintProvider && CLOUD_ORDER.includes(autoHintProvider)) ? CLOUD_ORDER.indexOf(autoHintProvider) : -1;
+  const autoPrefersCloud = preferIdx >= 0;
+  const cloudAuto = (prov) => preferIdx < 0 || CLOUD_ORDER.indexOf(prov) >= preferIdx;
+  const autoPrefersAnthropic = autoHintProvider === "anthropic"; // legacy alias
 
   // ── Provider 0: Ollama LOCAL-FIRST (dream chat prefers local models) ──────
   // When no specific cloud provider is requested, try all local Ollama models in sequence
@@ -1238,6 +1278,26 @@ async function handleStreamChat(req, url, res) {
   let modelChain = staticChain;
   try { modelChain = await orderChainByLeaderboard(staticChain, intent); } catch { /* keep static */ }
 
+  // LEADERBOARD_ROUTING: when a cloud provider answers, feed the global leaderboard
+  // and — since local was skipped (cloud preferred) or failed — capture the turn as
+  // Ouro distillation training data (prompt -> the winner's better answer).
+  const captureCloudWin = (provider, model, reply) => {
+    if (process.env.LEADERBOARD_ROUTING !== "1") return;
+    try {
+      const { recordProviderOutcome, recordOuroLoss } = require("./leaderboard-routing");
+      recordProviderOutcome(provider, intent, true, 0);
+      recordOuroLoss({
+        taskType: intent,
+        prompt: message,
+        localModel: (Array.isArray(modelChain) && modelChain[0]) || null,
+        winnerProvider: provider,
+        winnerModel: model || provider,
+        winnerReply: reply,
+        reason: autoPrefersCloud ? "leaderboard_outscored_local" : "local_unavailable_or_failed",
+      }).catch(() => {});
+    } catch { /* non-fatal */ }
+  };
+
   // ── Tier 0: cheap Knowledge Center answer before any model ($0, no LLM) ──
   // Only short-circuit informational queries with a confident KB hit. Coding,
   // convergence/work, roleplay, explicit-provider, and keystone paths are never
@@ -1254,10 +1314,7 @@ async function handleStreamChat(req, url, res) {
       && (kbAnswer.tier === "deterministic" || kbAnswer.score >= KB_ANSWER_MIN)) {
     const ans = `${kbAnswer.text}\n\n— from the Knowledge Center: ${kbAnswer.source}`;
     sendToken(ans);
-    await appendConversationEntry({
-      recordedAt: new Date().toISOString(), surface: "dream-chat-stream",
-      role: "lantern", text: ans.slice(0, maxConversationTextLength),
-    }).catch(() => {});
+    await logTurn("lantern", ans);
     try { recordProviderSuccess("knowledge"); } catch (_e) {}
     sendDone("knowledge", {
       agent: doneAgentName, online: true, cleanText: ans, suggestions: [],
@@ -1301,8 +1358,7 @@ async function handleStreamChat(req, url, res) {
       const lr = await loopedReason({ prompt: message, systemPrompt, callLLM, maxLoops: 4 });
       if (lr && lr.reply) {
         const { cleanText, suggestions } = doorsOrFallback(lr.reply, true);
-        await appendConversationEntry({ recordedAt: new Date().toISOString(), surface: "dream-chat-stream",
-          role: "lantern", text: cleanText.slice(0, maxConversationTextLength) }).catch(() => {});
+        await logTurn("lantern", cleanText);
         sendToken(cleanText);
         try { recordProviderSuccess("ollama"); recordModelOutcome(loopModel, intent, true, 0); } catch (_e) {}
         sendDone("ollama", { agent: doneAgentName, online: true, cleanText, suggestions, model: loopModel,
@@ -1314,7 +1370,7 @@ async function handleStreamChat(req, url, res) {
     }
   }
 
-  const ollamaLocalFirst = (!requestedProvider || requestedProvider === "ollama" || requestedProvider === "local") && !autoPrefersAnthropic;
+  const ollamaLocalFirst = (!requestedProvider || requestedProvider === "ollama" || requestedProvider === "local") && !autoPrefersCloud;
   if (ollamaLocalFirst && message && !isKeystoneDebug) {
     
     for (const ollamaModel of modelChain) {
@@ -1360,12 +1416,7 @@ async function handleStreamChat(req, url, res) {
         if (fullReply) {
           const { cleanText, suggestions } = doorsOrFallback(fullReply, isKeystoneDebug || !isRpMode);
           const imageEntryId = triggerImageGeneration({ cleanText, suggestions, surfaceMode, symbolMesh });
-          await appendConversationEntry({
-            recordedAt: new Date().toISOString(),
-            surface: "dream-chat-stream",
-            role: "lantern",
-            text: cleanText.slice(0, maxConversationTextLength),
-          }).catch(() => {});
+          await logTurn("lantern", cleanText);
           recordProviderSuccess("ollama");
           recordModelOutcome(ollamaModel, intent, true, Date.now() - _ollamaStart); // feed leaderboard
           const ollamaReceipt = buildPcsfReceipt("ollama", ollamaModel, true);
@@ -1405,12 +1456,7 @@ async function handleStreamChat(req, url, res) {
       if (sseErr) throw sseErr;
       if (fullReply) {
         const { cleanText, suggestions } = doorsOrFallback(fullReply, isKeystoneDebug || !isRpMode);
-        await appendConversationEntry({
-          recordedAt: new Date().toISOString(),
-          surface: "dream-chat-stream",
-          role: "lantern",
-          text: cleanText.slice(0, maxConversationTextLength),
-        }).catch(() => {});
+        await logTurn("lantern", cleanText);
         recordProviderSuccess("keystone-ft");
         await recordConvergenceSignature("keystone-ft", "keystone-ft-claude", cleanText, true);
         const keystoneFtReceipt = buildPcsfReceipt("keystone-ft", "keystone-ft-claude", true);
@@ -1429,7 +1475,7 @@ async function handleStreamChat(req, url, res) {
 
   // Provider 1: Gemini (streaming) — cloud fallback
   const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-  if (geminiKey && message && ((!requestedProvider && !autoPrefersAnthropic) || requestedProvider === "gemini" || requestedProvider === "google" || requestedProvider.startsWith("gemini-"))) {
+  if (geminiKey && message && ((!requestedProvider && cloudAuto("gemini")) || requestedProvider === "gemini" || requestedProvider === "google" || requestedProvider.startsWith("gemini-"))) {
     // Gemini model fallback chain: primary -> fallbacks on 429/quota
     // Note: gemini-2.0-flash-lite shut down June 1 2026; gemini-3.5-flash is GA with free grounding
     const GEMINI_MODEL_CHAIN = [
@@ -1510,14 +1556,10 @@ async function handleStreamChat(req, url, res) {
           geminiSigma0 = { corrected: vr.corrected, claims: vr.records.length };
         } catch { /* non-fatal */ }
       }
-      await appendConversationEntry({
-        recordedAt: new Date().toISOString(),
-        surface: "dream-chat-stream",
-        role: "lantern",
-        text: geminiClean.slice(0, maxConversationTextLength),
-      }).catch(() => {});
+      await logTurn("lantern", geminiClean);
       recordProviderSuccess("gemini");
       const geminiModelName = modelFor("gemini");
+      captureCloudWin("gemini", geminiModelName, geminiClean);
       await recordConvergenceSignature("gemini", geminiModelName, geminiClean, true);
       const geminiReceipt = buildPcsfReceipt("gemini", geminiModelName, true);
       sendReceipt(geminiReceipt);
@@ -1540,7 +1582,7 @@ async function handleStreamChat(req, url, res) {
 
   // Provider 2: Anthropic Claude (streaming)
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
-  if (anthropicKey && message && (!requestedProvider || requestedProvider === "claude" || requestedProvider === "anthropic" || requestedProvider === "claude-sonnet")) {
+  if (anthropicKey && message && ((!requestedProvider && cloudAuto("anthropic")) || requestedProvider === "claude" || requestedProvider === "anthropic" || requestedProvider === "claude-sonnet")) {
     try {
       let claudeModel = "claude-haiku-4-5-20251001";
       if (requestedProvider === "claude-sonnet") {
@@ -1617,15 +1659,11 @@ async function handleStreamChat(req, url, res) {
           anthropicSigma0 = { corrected: vr.corrected, claims: vr.records.length };
         } catch { /* non-fatal */ }
       }
-      await appendConversationEntry({
-        recordedAt: new Date().toISOString(),
-        surface: "dream-chat-stream",
-        role: "lantern",
-        text: anthropicClean.slice(0, maxConversationTextLength),
-      }).catch(() => {});
+      await logTurn("lantern", anthropicClean);
       recordProviderSuccess("anthropic");
       recordProviderSuccessRouter("anthropic");
       const modelName = claudeModel; // receipt MUST reflect the model actually sent
+      captureCloudWin("anthropic", claudeModel, anthropicClean);
       await recordConvergenceSignature("anthropic", modelName, anthropicClean, true);
       const anthropicReceipt = buildPcsfReceipt("anthropic", modelName, true);
       sendReceipt(anthropicReceipt);
@@ -1646,7 +1684,7 @@ async function handleStreamChat(req, url, res) {
 
   // Provider 3: OpenAI (streaming)
   const openaiKey = process.env.OPENAI_API_KEY;
-  if (openaiKey && message && (!requestedProvider || requestedProvider === "openai" || requestedProvider === "gpt")) {
+  if (openaiKey && message && ((!requestedProvider && cloudAuto("openai")) || requestedProvider === "openai" || requestedProvider === "gpt")) {
     try {
       const payload = JSON.stringify({
         model: modelFor("openai"),
@@ -1696,15 +1734,11 @@ async function handleStreamChat(req, url, res) {
         req2.end();
       });
       const { cleanText: openaiClean, suggestions: openaiDoors } = doorsOrFallback(fullReply, isKeystoneDebug || !isRpMode);
-      await appendConversationEntry({
-        recordedAt: new Date().toISOString(),
-        surface: "dream-chat-stream",
-        role: "lantern",
-        text: openaiClean.slice(0, maxConversationTextLength),
-      }).catch(() => {});
+      await logTurn("lantern", openaiClean);
       recordProviderSuccess("openai");
       recordProviderSuccessRouter("openai");
       const openaiModelName = modelFor("openai");
+      captureCloudWin("openai", openaiModelName, openaiClean);
       await recordConvergenceSignature("openai", openaiModelName, openaiClean, true);
       const openaiReceipt = buildPcsfReceipt("openai", openaiModelName, true);
       sendReceipt(openaiReceipt);
@@ -1725,7 +1759,7 @@ async function handleStreamChat(req, url, res) {
 
   // Provider 4: Grok / xAI (streaming — OpenAI-compatible)
   const xaiKey = process.env.XAI_API_KEY;
-  if (xaiKey && message && (!requestedProvider || requestedProvider === "grok" || requestedProvider === "xai")) {
+  if (xaiKey && message && ((!requestedProvider && cloudAuto("xai")) || requestedProvider === "grok" || requestedProvider === "xai")) {
     try {
       const xaiModel = modelFor("xai");
       const payload = JSON.stringify({
@@ -1757,9 +1791,10 @@ async function handleStreamChat(req, url, res) {
         req2.write(payload); req2.end();
       });
       const { cleanText: xaiClean, suggestions: xaiDoors } = doorsOrFallback(fullReply, isKeystoneDebug || !isRpMode);
-      await appendConversationEntry({ recordedAt: new Date().toISOString(), surface: "dream-chat-stream", role: "lantern", text: xaiClean.slice(0, maxConversationTextLength) }).catch(() => {});
+      await logTurn("lantern", xaiClean);
       recordProviderSuccess("xai");
       const grokModelName = xaiModel; // receipt MUST reflect the model actually sent
+      captureCloudWin("xai", grokModelName, xaiClean);
       await recordConvergenceSignature("grok", grokModelName, xaiClean, true);
       const grokReceipt = buildPcsfReceipt("grok", grokModelName, true);
       sendReceipt(grokReceipt);
@@ -1797,12 +1832,7 @@ async function handleStreamChat(req, url, res) {
         if (sseErr) throw sseErr;
         if (fullReply) {
           const { cleanText, suggestions } = doorsOrFallback(fullReply, isKeystoneDebug || !isRpMode);
-          await appendConversationEntry({
-            recordedAt: new Date().toISOString(),
-            surface: "dream-chat-stream",
-            role: "lantern",
-            text: cleanText.slice(0, maxConversationTextLength),
-          }).catch(() => {});
+          await logTurn("lantern", cleanText);
           recordProviderSuccess("ollama");
           const ollamaConnectorReceipt = buildPcsfReceipt("ollama", "unified-agent", true);
           sendReceipt(ollamaConnectorReceipt);
@@ -1871,12 +1901,7 @@ async function handleStreamChat(req, url, res) {
       });
       if (ollamaOk) {
         const { cleanText: ollamaClean, suggestions: ollamaDoors } = doorsOrFallback(fullReply, isKeystoneDebug || !isRpMode);
-        await appendConversationEntry({
-          recordedAt: new Date().toISOString(),
-          surface: "dream-chat-stream",
-          role: "lantern",
-          text: ollamaClean.slice(0, maxConversationTextLength),
-        }).catch(() => {});
+        await logTurn("lantern", ollamaClean);
         recordProviderSuccess("ollama");
         const ollamaHttpReceipt = buildPcsfReceipt("ollama", ollamaModel, true);
         sendReceipt(ollamaHttpReceipt);
