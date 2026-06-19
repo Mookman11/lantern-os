@@ -122,6 +122,36 @@ function buildVideoFilter(fit, w, h, fps, cropRect) {
   };
 }
 
+function clamp01v(x) { return Math.max(0, Math.min(1, Number.isFinite(x) ? x : 0)); }
+
+/**
+ * Facecam-top composite: lift the detected facecam into a top band — scaled to
+ * fit and PADDED so it is perfectly centred horizontally (and vertically) — with
+ * the gameplay filling the rest. The gameplay crop is position-aware so it skips
+ * the strip the cam occupied (left/right/top/bottom). Returns the two filter
+ * chains + band heights; the caller wires split → [cam]/[game] → vstack.
+ */
+function buildFacecamTopChains(facecam, cfg) {
+  const W = cfg.width, H = cfg.height;
+  let bandH = Math.round(H * Number(cfg.facecamBand || 0.30));
+  bandH -= bandH % 2;                      // even for yuv420p
+  const gameH = H - bandH;
+  const b = facecam.bounds || { x: 0, y: 0, width: 0.22, height: 0.22 };
+  const fx = clamp01v(b.x), fy = clamp01v(b.y), fw = clamp01v(b.width) || 0.22, fh = clamp01v(b.height) || 0.22;
+  const pos = facecam.position || facecam.corner || "center";
+
+  // Gameplay window that avoids the facecam strip (keep >=45% so gameplay stays usable).
+  let gx = 0, gy = 0, gw = 1, gh = 1;
+  if (/left/.test(pos)) { gw = Math.max(0.45, 1 - fw); gx = 1 - gw; }
+  else if (/right/.test(pos)) { gw = Math.max(0.45, 1 - fw); gx = 0; }
+  else if (pos === "top_edge") { gh = Math.max(0.45, 1 - fh); gy = 1 - gh; }
+  else if (pos === "bottom_edge") { gh = Math.max(0.45, 1 - fh); gy = 0; }
+
+  const camChain = `crop=iw*${fw}:ih*${fh}:iw*${fx}:ih*${fy},scale=${W}:${bandH}:force_original_aspect_ratio=decrease,pad=${W}:${bandH}:(ow-iw)/2:(oh-ih)/2:color=black`;
+  const gameChain = `crop=iw*${gw}:ih*${gh}:iw*${gx}:ih*${gy},scale=${W}:${gameH}:force_original_aspect_ratio=increase,crop=${W}:${gameH}`;
+  return { camChain, gameChain, bandH, gameH };
+}
+
 /**
  * Re-encode a source video to a short-form-conforming output.
  * @param {string} inputPath  absolute path to source
@@ -284,14 +314,29 @@ async function renderSegments(inputPath, outputPath, segments, options = {}) {
   }
   if (clean.length === 0) throw new Error("no valid segments after clamping");
 
-  // Per-segment frame filter (reuse pad/crop; blur falls back to pad for concat).
-  const { vf } = buildVideoFilter(cfg.fit === "blur" ? "pad" : cfg.fit, cfg.width, cfg.height, cfg.fps, options.cropRect || null);
+  // Facecam-top composite (lift the cam into a centred top band) when requested
+  // and a facecam region is available; otherwise the usual pad/crop filter.
+  const fpsEnd = `fps=${cfg.fps},format=yuv420p,setsar=1`;
+  const facecamTop = cfg.fit === "facecam-top" && options.facecam && options.facecam.bounds;
+  const fcChains = facecamTop ? buildFacecamTopChains(options.facecam, cfg) : null;
+  const { vf } = buildVideoFilter(
+    cfg.fit === "blur" || cfg.fit === "facecam-top" ? "pad" : cfg.fit, // non-facecam fallback
+    cfg.width, cfg.height, cfg.fps, options.cropRect || null
+  );
   const hasAudio = meta.hasAudio;
 
   const chains = [];
   const concatInputs = [];
   clean.forEach((s, i) => {
-    chains.push(`[0:v]trim=start=${s.start}:end=${s.end},setpts=PTS-STARTPTS,${vf}[v${i}]`);
+    const base = `[0:v]trim=start=${s.start}:end=${s.end},setpts=PTS-STARTPTS`;
+    if (fcChains) {
+      chains.push(`${base},split=2[fcsrc${i}][gpsrc${i}]`);
+      chains.push(`[fcsrc${i}]${fcChains.camChain}[cam${i}]`);
+      chains.push(`[gpsrc${i}]${fcChains.gameChain}[game${i}]`);
+      chains.push(`[cam${i}][game${i}]vstack=inputs=2,${fpsEnd}[v${i}]`);
+    } else {
+      chains.push(`${base},${vf}[v${i}]`);
+    }
     if (hasAudio) {
       chains.push(`[0:a]atrim=start=${s.start}:end=${s.end},asetpts=PTS-STARTPTS,aresample=async=1[a${i}]`);
       concatInputs.push(`[v${i}][a${i}]`);
@@ -397,4 +442,4 @@ function srtTime(secs) {
 function p2(n) { return String(Math.floor(n)).padStart(2, "0"); }
 function p3(n) { return String(Math.floor(n)).padStart(3, "0"); }
 
-module.exports = { reencodeToShortForm, renderSegments, probeSource, buildVideoFilter, burnCaptionsToVideo, DEFAULTS };
+module.exports = { reencodeToShortForm, renderSegments, probeSource, buildVideoFilter, buildFacecamTopChains, burnCaptionsToVideo, DEFAULTS };

@@ -255,3 +255,7 @@ research/corpus.db
 
 # Facecam V3 debug overlay (generated)
 facecam-debug.png
+
+# Facecam render test artifacts (generated)
+facecam-top-test.mp4
+band-top.png

@@ -537,6 +537,13 @@ async function processExportJob(job, repoRoot, ctx) {
     }
   }
 
+  // Facecam-top layout: when a confident facecam is detected (Facecam V3), lift
+  // it into a perfectly-centred top band over the gameplay (segment renders).
+  // An explicit non-default fit still wins.
+  const fcRegion = cropPlan && Array.isArray(cropPlan.regions) ? cropPlan.regions.find((r) => r.type === "facecam") : null;
+  const useFacecamTop = !!(fcRegion && fcRegion.bounds && (fcRegion.confidence || 0) >= 0.45 && (!job.input.fit || job.input.fit === "facecam-top"));
+  if (useFacecamTop) ctx.log(`Facecam-top layout: ${fcRegion.position || fcRegion.corner} @ ${(fcRegion.confidence || 0).toFixed(2)} (centred top band)`);
+
   // A variant export supplies a segment cut-list -> trim+concat render.
   // Otherwise re-encode the whole clip to spec.
   ctx.stage("encode");
@@ -556,7 +563,9 @@ async function processExportJob(job, repoRoot, ctx) {
     ctx.log(`Rendering ${segments.length} highlight segments`);
     encodeInfo = await renderSegments(fullPath, exportFile, segments, {
       width: job.input.width, height: job.input.height, fps: job.input.fps,
-      fit: job.input.fit, cropRect, maxDuration: job.input.maxDuration,
+      fit: useFacecamTop ? "facecam-top" : job.input.fit,
+      facecam: useFacecamTop ? fcRegion : null,
+      cropRect, maxDuration: job.input.maxDuration,
     });
   } else {
     ctx.progress(30, "Re-encoding to short-form (1080x1920)");
