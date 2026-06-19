@@ -56,6 +56,10 @@ data/pcsf/*.json
 apps/data/conversations/garage-conversations.jsonl
 data/metrics/three-doors-events.jsonl
 
+# Research Convergence Loop runtime output (memories, records, reports, queue)
+data/research/*.jsonl
+data/research/reports/
+
 # ─── Document ingest (generated, large, local-only) ──────────────────────────
 data/csf-ingest/deltas.jsonl
 data/csf-ingest/dedup-log.jsonl
@@ -255,6 +259,9 @@ debug/
 
 # Open-video research: per-machine extracted features (never videos)
 research/open_video/features/*.jsonl
+
+# Creator Intelligence loop — per-machine checkpoint/metadata/calibration (never commit)
+research/ci_loop/
 
 # Open-video research: generated SQLite corpus (regenerate with --corpus)
 research/corpus.db
