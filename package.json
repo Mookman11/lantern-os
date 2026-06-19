@@ -10,7 +10,8 @@
     "dev": "node apps/lantern-garage/server.js",
     "convergance": "bash scripts/git-convergance-loop.sh foreground",
     "setup:convergance": "bash scripts/setup-git-convergance-loop.sh",
-    "test:ui": "node tests/ui-test.js"
+    "test:ui": "node tests/ui-test.js",
+    "creator-intelligence": "node scripts/creator-intelligence-loop.js --forever"
   },
   "engines": {
     "node": ">=20"
