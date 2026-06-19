@@ -88,6 +88,8 @@ module.exports = {
       flags.isEnabled("calibration", env) ? calibration.correlations(opts) : disabledResult("calibration_flag_off"),
     recommendations: (opts, env) =>
       flags.isEnabled("calibration", env) ? calibration.calibratedRecommendations(opts) : disabledResult("calibration_flag_off"),
+    weights: (opts, env) =>
+      flags.isEnabled("calibration", env) ? calibration.proposeCalibratedWeights(opts) : disabledResult("calibration_flag_off"),
     count: () => calibration.count(),
     thresholds: () => calibration.thresholds,
     loadEntries: () => calibration.loadEntries(),

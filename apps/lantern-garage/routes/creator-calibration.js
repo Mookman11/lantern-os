@@ -62,6 +62,13 @@ module.exports = async function creatorCalibrationRoutes(req, res, url, deps) {
     return true;
   }
 
+  // GET /api/creator/calibration/weights  (B4: proposed calibrated scoring weights;
+  // insufficient_data with priors unchanged until readiness is ok)
+  if (P === "/api/creator/calibration/weights" && req.method === "GET") {
+    sendJson(res, ci.calibration.weights({}));
+    return true;
+  }
+
   // POST /api/creator/calibration/import
   // body: { csvText, manualLinks?: [{videoRef, entryId}], dryRun?: bool }
   if (P === "/api/creator/calibration/import" && req.method === "POST") {
