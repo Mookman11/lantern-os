@@ -40,6 +40,7 @@ function looksDirectMedia(url) { return /\.(ogv|ogg|webm|mp4|mov|m4v|avi|mkv|m2t
 
 // Direct media URLs (e.g. Wikimedia Commons upload.* files) — a plain GET with a
 // descriptive User-Agent (Wikimedia 403s generic ones). No yt-dlp needed.
+const MAX_DIRECT_BYTES = 150 * 1024 * 1024; // skip huge files (e.g. multi-GB benchmark clips)
 async function downloadDirect(url, out, timeoutMs, attempt = 0) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
@@ -52,7 +53,16 @@ async function downloadDirect(url, out, timeoutMs, attempt = 0) {
       return downloadDirect(url, out, timeoutMs, attempt + 1);
     }
     if (!r.ok) return { ok: false, reason: "direct HTTP " + r.status };
-    fs.writeFileSync(out, Buffer.from(await r.arrayBuffer()));
+    const cl = Number(r.headers.get("content-length") || 0);
+    if (cl && cl > MAX_DIRECT_BYTES) return { ok: false, reason: `too large (${Math.round(cl / 1e6)}MB)` };
+    // Stream with a hard cap so we never buffer a multi-GB file into memory.
+    const chunks = []; let total = 0;
+    for await (const chunk of r.body) {
+      total += chunk.length;
+      if (total > MAX_DIRECT_BYTES) { try { ctrl.abort(); } catch (_) {} return { ok: false, reason: `too large (>${Math.round(MAX_DIRECT_BYTES / 1e6)}MB)` }; }
+      chunks.push(chunk);
+    }
+    fs.writeFileSync(out, Buffer.concat(chunks));
     return { ok: true, path: out };
   } catch (e) { return { ok: false, reason: "direct download: " + e.message }; }
   finally { clearTimeout(t); }

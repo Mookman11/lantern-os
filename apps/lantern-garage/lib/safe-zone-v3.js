@@ -15,6 +15,7 @@
 "use strict";
 
 const sz2 = require("./safe-zone-v2");
+const { detectFacecamV3 } = require("./facecam-v3");
 
 // Exclusion rects as {id, x, y, w, h} normalized to 0..1 of the output 9:16 frame.
 const PLATFORM_UI = {
@@ -88,4 +89,25 @@ function getSafeZones(platform = "youtube") {
   return { platform: key, exclusionZones: ui, captionBand: band, knownLayouts: Object.keys(PLATFORM_UI) };
 }
 
-module.exports = { computeSafeZonesV3, bestCaptionBand, getSafeZones, PLATFORM_UI };
+// Drop-in for safe-zone-v2.analyzeForCrop that upgrades the facecam region with
+// Facecam V3 (thorough multi-window detector). V3's facecam REPLACES v2's only
+// when it's at least as confident (or v2 found none); everything else in the
+// plan — crop, HUD, safe zones — is unchanged. Never breaks the render: any V3
+// error falls back to the v2 plan as-is.
+async function analyzeForCropV3(videoPath, opts = {}) {
+  const plan = await sz2.analyzeForCrop(videoPath, opts).catch(() => ({ status: "unavailable", regions: [] }));
+  try {
+    const v3 = await detectFacecamV3(videoPath, { fps: 2, maxSeconds: 40, debug: false });
+    const regions = Array.isArray(plan.regions) ? [...plan.regions] : [];
+    const existing = regions.find((r) => r.type === "facecam");
+    if (v3.facecam && (!existing || v3.facecam.confidence >= (existing.confidence || 0))) {
+      const upgraded = { type: "facecam", corner: v3.facecam.corner, bounds: v3.facecam.bounds, confidence: v3.facecam.confidence, source: "facecam-v3", components: v3.facecam.components };
+      if (existing) Object.assign(existing, upgraded); else regions.push(upgraded);
+    }
+    return { ...plan, regions, facecamV3: { confidence: v3.confidence, corner: v3.facecam ? v3.facecam.corner : null, meets85: v3.meets85 } };
+  } catch (_) {
+    return plan; // V3 must never break a render
+  }
+}
+
+module.exports = { computeSafeZonesV3, bestCaptionBand, getSafeZones, analyzeForCropV3, PLATFORM_UI };
