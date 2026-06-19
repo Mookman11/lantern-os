@@ -26,27 +26,69 @@ const FEATURES_FILE = path.join(RESEARCH_DIR, "features", "features.jsonl");
 const PRIORS_FILE = path.join(REPO, "editing_priors.json");
 
 // ── Temporary download (open-license sources only) ──────────────────────────
-// Returns { ok, path } or { ok:false, reason }. yt-dlp is required for remote
-// URLs; if it's absent we say so plainly rather than pretending to fetch.
+// Returns { ok, path } or { ok:false, reason }. Uses yt-dlp via `python -m
+// yt_dlp` (override with LANTERN_YTDLP). For research efficiency we fetch at
+// most 480p and only the first 120s — enough to learn editing patterns without
+// pulling multi-GB files. If yt-dlp is absent we say so plainly.
+function spawnYtDlp(args) {
+  const cmd = process.env.LANTERN_YTDLP; // e.g. "yt-dlp" or a full path to the exe
+  return cmd
+    ? spawn(cmd, args, { stdio: ["ignore", "ignore", "pipe"] })
+    : spawn("python", ["-m", "yt_dlp", ...args], { stdio: ["ignore", "ignore", "pipe"] });
+}
+function looksDirectMedia(url) { return /\.(ogv|ogg|webm|mp4|mov|m4v|avi|mkv|m2ts)(\?|$)/i.test(url); }
+
+// Direct media URLs (e.g. Wikimedia Commons upload.* files) — a plain GET with a
+// descriptive User-Agent (Wikimedia 403s generic ones). No yt-dlp needed.
+async function downloadDirect(url, out, timeoutMs, attempt = 0) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const r = await fetch(url, { signal: ctrl.signal, headers: { "user-agent": "lantern-os-open-video-research/1.0 (open-license editing research; deletes after analysis)" } });
+    if (r.status === 429 && attempt < 4) { // be polite: respect Wikimedia rate limiting
+      clearTimeout(t);
+      const ra = Number(r.headers.get("retry-after")) || Math.pow(2, attempt) * 2;
+      await new Promise((res) => setTimeout(res, Math.min(30, ra) * 1000));
+      return downloadDirect(url, out, timeoutMs, attempt + 1);
+    }
+    if (!r.ok) return { ok: false, reason: "direct HTTP " + r.status };
+    fs.writeFileSync(out, Buffer.from(await r.arrayBuffer()));
+    return { ok: true, path: out };
+  } catch (e) { return { ok: false, reason: "direct download: " + e.message }; }
+  finally { clearTimeout(t); }
+}
+
 function downloadVideo(url, opts = {}) {
   return new Promise((resolve) => {
     if (opts.localFile) {
       return resolve(fs.existsSync(url) ? { ok: true, path: url, local: true } : { ok: false, reason: "local file not found" });
     }
-    const out = path.join(os.tmpdir(), `ovr_${Date.now()}.mp4`);
-    let proc;
-    try {
-      proc = spawn("yt-dlp", ["-f", "mp4/bestvideo+bestaudio/best", "--no-playlist", "-o", out, url],
-        { stdio: ["ignore", "ignore", "pipe"] });
-    } catch (e) {
-      return resolve({ ok: false, reason: "yt-dlp not available: " + e.message });
+    const prefix = `ovr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    if (looksDirectMedia(url)) {
+      const ext = (url.match(/\.(ogv|ogg|webm|mp4|mov|m4v|avi|mkv|m2ts)/i) || [])[0] || ".mp4";
+      const outd = path.join(os.tmpdir(), prefix + ext);
+      return downloadDirect(url, outd, opts.timeoutMs || 150000).then(resolve);
     }
+    const out = path.join(os.tmpdir(), prefix + ".mp4");
+    const args = [
+      "-f", "best[height<=480][ext=mp4]/best[height<=480]/worst[ext=mp4]/worst",
+      "--no-playlist", "--no-warnings",
+      "--download-sections", "*0-120", "--force-keyframes-at-cuts",
+      "--merge-output-format", "mp4", "-o", out, url,
+    ];
+    let proc, done = false;
+    const finish = (r) => { if (done) return; done = true; clearTimeout(timer); resolve(r); };
+    try { proc = spawnYtDlp(args); }
+    catch (e) { return resolve({ ok: false, reason: "yt-dlp not available: " + e.message }); }
+    const timer = setTimeout(() => { try { proc.kill("SIGKILL"); } catch (_) {} finish({ ok: false, reason: "download timeout" }); }, opts.timeoutMs || 150000);
     let err = "";
     proc.stderr.on("data", (d) => (err += d));
-    proc.on("error", (e) => resolve({ ok: false, reason: "yt-dlp not installed (" + (e.code || e.message) + ")" }));
+    proc.on("error", (e) => finish({ ok: false, reason: "yt-dlp not runnable (" + (e.code || e.message) + ")" }));
     proc.on("close", (code) => {
-      if (code !== 0) return resolve({ ok: false, reason: `yt-dlp exit ${code}: ${err.split("\n").slice(-2).join(" ").trim()}` });
-      resolve(fs.existsSync(out) ? { ok: true, path: out } : { ok: false, reason: "download produced no file" });
+      let produced = fs.existsSync(out) ? out : null;
+      if (!produced) { try { const f = fs.readdirSync(os.tmpdir()).find((n) => n.startsWith(prefix)); if (f) produced = path.join(os.tmpdir(), f); } catch (_) {} }
+      if (!produced) return finish({ ok: false, reason: `yt-dlp exit ${code}: ${err.split("\n").filter(Boolean).slice(-2).join(" ").trim().slice(0, 200)}` });
+      finish({ ok: true, path: produced });
     });
   });
 }
@@ -203,7 +245,7 @@ const SOURCES = { archive: searchArchiveOrg, peertube: searchPeerTube, wikimedia
 const DEFAULT_QUERIES = ["gaming gameplay", "minecraft gameplay", "fps gameplay", "speedrun"];
 
 // ── Nightly research-at-scale (search → download → analyze → DELETE → learn) ─
-async function researchNightly({ limit = 200, sources = Object.keys(SOURCES), queries = DEFAULT_QUERIES } = {}) {
+async function researchNightly({ limit = 200, sources = Object.keys(SOURCES), queries = DEFAULT_QUERIES, politeDelayMs = 1200 } = {}) {
   const started = new Date();
   const candidates = [];
   const per = Math.max(1, Math.ceil(limit / (sources.length * queries.length)));
@@ -214,7 +256,8 @@ async function researchNightly({ limit = 200, sources = Object.keys(SOURCES), qu
     }
     if (candidates.length >= limit) break;
   }
-  const queue = candidates.slice(0, limit);
+  const seen = new Set();
+  const queue = candidates.filter((c) => c.url && !seen.has(c.url) && seen.add(c.url)).slice(0, limit);
 
   let analyzed = 0, failed = 0; const perSource = {};
   for (const c of queue) {
@@ -222,6 +265,7 @@ async function researchNightly({ limit = 200, sources = Object.keys(SOURCES), qu
     perSource[c.source] = perSource[c.source] || { found: 0, analyzed: 0 };
     perSource[c.source].found++;
     if (r.ok) { analyzed++; perSource[c.source].analyzed++; } else { failed++; }
+    await new Promise((res) => setTimeout(res, politeDelayMs)); // be a good citizen
   }
 
   const priors = aggregateEditingPriors();  // updates editing_priors.json
