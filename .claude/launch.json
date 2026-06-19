@@ -12,7 +12,8 @@
       "runtimeExecutable": "node",
       "runtimeArgs": ["apps/lantern-garage/server.js"],
       "port": 4177,
-      "autoPort": true
+      "autoPort": true,
+      "env": { "LEADERBOARD_ROUTING": "1" }
     }
   ]
 }
