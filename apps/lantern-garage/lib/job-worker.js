@@ -9,8 +9,10 @@ const { generateCaptions } = require("./caption-engine");
 const { detectSafeZones } = require("./safe-zone-detector");
 const { reencodeToShortForm, renderSegments, probeSource, burnCaptionsToVideo } = require("./video-export");
 // Facecam V3-aware crop analysis: same plan as safe-zone-v2 but the facecam
-// region is upgraded by the thorough multi-window + border detector (edge-aware
-// position). Falls back to the v2 plan on any error.
+// region is upgraded by the thorough multi-window + border detector with edge-aware
+// position and a real OpenCV face model (via facecam-v3's detectFacecamV3, which
+// safe-zone-v3 wraps), plus platform-UI exclusion zones. Falls back to the v2 plan
+// on any error.
 const { analyzeForCropV3: analyzeForCrop } = require("./safe-zone-v3");
 const ci = require("../../../src/creator-intelligence");
 
