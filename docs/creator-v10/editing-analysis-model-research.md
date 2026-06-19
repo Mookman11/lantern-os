@@ -304,3 +304,11 @@ A1 makes the headline pacing feature real; A4 + the shipped calibration set make
   never inferred. Additive/guarded; full module sweep green (12 suites, 72 checks).
   Remaining: a `novel`-tag indicator on a per-highlight list, and the retention-CSV
   upload affordance — both low value.
+- **2026-06-19 — API: expose #iii retention curves through the import route
+  (open-ended polish).** `routes/creator-calibration.js` POST /import now passes an
+  optional `retentionByEntryId` ({entryId:{curveText|points, segments, durationSec}})
+  through to `importCsvText` — completing the HTTP surface for the A4→B2 data path
+  (previously programmatic-only). Validated defensively downstream (rows without a
+  curve unaffected); whole body already size-capped. Additive 3-line passthrough; full
+  sweep green (12 suites). A retention-upload *UI* on calibration.html is the only
+  remaining (low-value) item; the model/data/loop work is otherwise complete.
