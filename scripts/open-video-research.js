@@ -148,17 +148,69 @@ function aggregateEditingPriors() {
   return { ok: true, priors };
 }
 
-module.exports = { downloadVideo, analyzeForResearch, research, storeFeatures, aggregateEditingPriors };
+// ── License-gated dataset adapter ───────────────────────────────────────────
+// Ingest a named dataset (research/sources/datasets.json) into editing priors —
+// but ONLY when it is genuinely redistributable. The gate refuses anything
+// NonCommercial / NoDerivatives / proprietary / unclear, because extracting
+// features is a derivative use. Ingest still deletes every source video.
+const DATASETS_FILE = path.join(REPO, "research", "sources", "datasets.json");
+const LICENSE_FORBIDDEN = /\b(nc|non[-\s]?commercial|nd|no[-\s]?deriv\w*|all[-\s]?rights|proprietary|unclear|unknown)\b/i;
+const LICENSE_PERMISSIVE = /\b(cc0|public[-\s]?domain|cc[-\s]?by[-\s]?sa|cc[-\s]?by|gpl\w*|mit|apache)\b/i;
+
+function licenseAllowed(entry) {
+  if (!entry) return { ok: false, reason: "unknown dataset" };
+  const lic = String(entry.license || "");
+  if (entry.redistributable !== true) return { ok: false, reason: `marked non-redistributable (license: ${lic || "?"})` };
+  if (LICENSE_FORBIDDEN.test(lic)) return { ok: false, reason: `license not derivative/redistribution-safe: ${lic}` };
+  if (!LICENSE_PERMISSIVE.test(lic)) return { ok: false, reason: `license not on the permissive allowlist: ${lic}` };
+  return { ok: true };
+}
+
+function loadDatasets() {
+  try { return JSON.parse(fs.readFileSync(DATASETS_FILE, "utf8")).datasets || []; }
+  catch (_) { return []; }
+}
+
+function listDatasets() {
+  return loadDatasets().map((d) => {
+    const g = licenseAllowed(d);
+    return { name: d.name, license: d.license, redistributable: d.redistributable === true, ingestable: g.ok, reason: g.ok ? "allowed" : g.reason };
+  });
+}
+
+// Gate → download → analyze → DELETE → priors. Refused datasets never download.
+async function ingestDataset(name, opts = {}) {
+  const entry = loadDatasets().find((d) => d.name === name);
+  const gate = licenseAllowed(entry);
+  if (!gate.ok) return { ok: false, refused: true, dataset: name, reason: gate.reason };
+  if (!entry.source || entry.source.type !== "urls" || !Array.isArray(entry.source.urls)) {
+    return { ok: false, refused: false, dataset: name, reason: "no automatable URLs (source.type must be 'urls')" };
+  }
+  const urls = entry.source.urls.slice(0, opts.limit || entry.source.urls.length);
+  let analyzed = 0, failed = 0;
+  for (const url of urls) {
+    const r = await research(url, { source: url, dataset: name, license: entry.license });
+    if (r.ok) analyzed++; else failed++;
+  }
+  const priors = aggregateEditingPriors();
+  return { ok: true, dataset: name, license: entry.license, analyzed, failed, priorsSamples: priors.ok ? priors.priors.samples : 0 };
+}
+
+module.exports = { downloadVideo, analyzeForResearch, research, storeFeatures, aggregateEditingPriors, licenseAllowed, listDatasets, ingestDataset };
 
 // ── CLI ─────────────────────────────────────────────────────────────────────
 if (require.main === module) {
   (async () => {
-    if (process.argv.includes("--aggregate")) {
-      console.log(JSON.stringify(aggregateEditingPriors(), null, 2));
+    if (process.argv.includes("--aggregate")) { console.log(JSON.stringify(aggregateEditingPriors(), null, 2)); return; }
+    if (process.argv.includes("--list-datasets")) { console.log(JSON.stringify(listDatasets(), null, 2)); return; }
+    const dsArg = process.argv.find((a) => a.startsWith("--dataset="));
+    if (dsArg) {
+      const limArg = process.argv.find((a) => a.startsWith("--limit="));
+      console.log(JSON.stringify(await ingestDataset(dsArg.split("=")[1], { limit: limArg ? Number(limArg.split("=")[1]) : undefined }), null, 2));
       return;
     }
     const src = process.argv[2];
-    if (!src) { console.error("usage: node open-video-research.js <url|file [--local]> | --aggregate"); process.exit(1); }
+    if (!src) { console.error("usage: open-video-research.js <url|file [--local]> | --aggregate | --list-datasets | --dataset=<name> [--limit=N]"); process.exit(1); }
     const r = await research(src, { source: src, localFile: process.argv.includes("--local") });
     console.log(JSON.stringify(r, null, 2));
     if (!r.ok) process.exit(1);
