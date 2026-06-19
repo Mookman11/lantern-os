@@ -59,7 +59,9 @@ class Sigma0LoopLM:
         if tok.pad_token is None:
             tok.pad_token = tok.eos_token
         model = AutoModelForCausalLM.from_pretrained(
-            base, trust_remote_code=True, dtype=getattr(torch, dtype), device_map="auto")
+            base, trust_remote_code=True, dtype=getattr(torch, dtype), device_map="auto",
+            low_cpu_mem_usage=True)  # avoid the double state-dict materialization that
+            # triggers 'OSError 1455: paging file too small' on RAM-starved boxes (#781)
         if adapter:
             from peft import PeftModel
             model = PeftModel.from_pretrained(model, adapter)
