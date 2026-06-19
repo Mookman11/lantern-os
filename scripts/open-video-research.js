@@ -116,10 +116,27 @@ async function analyzeForResearch(videoPath) {
   const avg = mean(mNorm);
   const variance = mNorm.length ? mean(mNorm.map((d) => (d - avg) ** 2)) : 0;
   const hookVals = motion.filter((f) => f.timestamp < 3).map((f) => norm(f.motion)); // opening 3s
-  const audioPeaks = audio.filter((a) => a.transient || a.loudness > 0.7).length;
+  const loud = (a) => a.transient || a.loudness > 0.7;
+  const audioPeaks = audio.filter(loud).length;
 
   const szRes = await sz.analyzeForCrop(videoPath, { fps: 1 }).catch(() => ({ status: "unavailable" }));
   const facecam = szRes.status === "ok" ? (szRes.regions || []).find((r) => r.type === "facecam") : null;
+
+  // ── Hook sub-features (first 3s) ──
+  const m01 = motion.filter((f) => f.timestamp < 1).map((f) => norm(f.motion));
+  const m13 = motion.filter((f) => f.timestamp >= 1 && f.timestamp < 3).map((f) => norm(f.motion));
+  const hook = {
+    opening_motion: mean(hookVals),
+    scene_cuts_3s: scenes.filter((s) => s.timestamp < 3).length,
+    audio_spikes_3s: audio.filter((a) => a.timestamp < 3 && loud(a)).length,
+    motion_ramp: mean(m13) - mean(m01), // negative = opens hot then settles
+  };
+
+  // ── Highlight / pacing features ──
+  const pctl = (arr, p) => { if (!arr.length) return 0; const s = [...arr].sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(p * s.length))]; };
+  const cutTimes = scenes.map((s) => s.timestamp).sort((a, b) => a - b);
+  const gaps = []; for (let i = 1; i < cutTimes.length; i++) gaps.push(cutTimes[i] - cutTimes[i - 1]);
+  const medianGap = gaps.length ? [...gaps].sort((a, b) => a - b)[gaps.length >> 1] : 0;
 
   const r3 = (n) => Number((n || 0).toFixed(3));
   return {
@@ -131,6 +148,8 @@ async function analyzeForResearch(videoPath) {
     motion: { avg: r3(avg), variance: Number(variance.toFixed(4)), rawPeak: Number(peak.toFixed(4)) },
     facecam: facecam ? { corner: facecam.corner, bounds: facecam.bounds, confidence: facecam.confidence } : null,
     safezone_status: szRes.status,
+    hook: { opening_motion: r3(hook.opening_motion), scene_cuts_3s: hook.scene_cuts_3s, audio_spikes_3s: hook.audio_spikes_3s, motion_ramp: r3(hook.motion_ramp) },
+    highlight: { motion_p25: r3(pctl(mNorm, 0.25)), motion_p75: r3(pctl(mNorm, 0.75)), audio_peak_rate: r3(dur ? audioPeaks / dur : 0), median_cut_gap: r3(medianGap) },
   };
 }
 
@@ -190,6 +209,83 @@ function aggregateEditingPriors() {
   return { ok: true, priors };
 }
 
+function _readRows() {
+  if (!fs.existsSync(FEATURES_FILE)) return [];
+  return fs.readFileSync(FEATURES_FILE, "utf8").trim().split("\n").filter(Boolean)
+    .map((l) => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(Boolean);
+}
+function _median(arr) { const a = arr.filter(Number.isFinite).sort((x, y) => x - y); return a.length ? a[a.length >> 1] : null; }
+function _writeResearch(name, obj) {
+  const file = path.join(RESEARCH_DIR, "..", name);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(obj, null, 2) + "\n");
+  return file;
+}
+
+// ── Hook priors (opening 3s patterns) ──────────────────────────────────────
+function aggregateHookPriors() {
+  const rows = _readRows().filter((r) => r.hook);
+  if (!rows.length) return { ok: false, reason: "no hook features yet" };
+  const priors = {
+    _comment: "Learned hook priors (opening 3s) from open-license video. Regenerate: node scripts/open-video-research.js --hook-priors",
+    samples: rows.length,
+    updatedAt: new Date().toISOString(),
+    opening_motion: _median(rows.map((r) => r.hook.opening_motion)),
+    scene_cuts_first3s: _median(rows.map((r) => r.hook.scene_cuts_3s)),
+    audio_spikes_first3s: _median(rows.map((r) => r.hook.audio_spikes_3s)),
+    motion_ramp: _median(rows.map((r) => r.hook.motion_ramp)),
+  };
+  return { ok: true, file: _writeResearch("hook_priors.json", priors), priors };
+}
+
+// ── Highlight priors (what an exciting segment looks like) ──────────────────
+function aggregateHighlightPriors() {
+  const rows = _readRows().filter((r) => r.highlight);
+  if (!rows.length) return { ok: false, reason: "no highlight features yet" };
+  const priors = {
+    _comment: "Learned highlight priors from open-license video. Regenerate: node scripts/open-video-research.js --highlight-priors",
+    samples: rows.length,
+    updatedAt: new Date().toISOString(),
+    best_motion_range: [_median(rows.map((r) => r.highlight.motion_p25)), _median(rows.map((r) => r.highlight.motion_p75))],
+    best_cut_frequency: _median(rows.map((r) => r.cut_rate_per_sec)),
+    best_audio_peak_rate: _median(rows.map((r) => r.highlight.audio_peak_rate)),
+    median_cut_gap_sec: _median(rows.map((r) => r.highlight.median_cut_gap)),
+  };
+  return { ok: true, file: _writeResearch("highlight_priors.json", priors), priors };
+}
+
+// ── Persistent corpus.db (SQLite via node:sqlite) ──────────────────────────
+function rebuildCorpusDb() {
+  let DatabaseSync;
+  try { ({ DatabaseSync } = require("node:sqlite")); } catch (e) { return { ok: false, reason: "node:sqlite unavailable: " + e.message }; }
+  const rows = _readRows();
+  if (!rows.length) return { ok: false, reason: "no features yet" };
+  const dbPath = path.join(RESEARCH_DIR, "..", "corpus.db");
+  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+  const db = new DatabaseSync(dbPath);
+  db.exec(`CREATE TABLE IF NOT EXISTS videos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, url TEXT UNIQUE, title TEXT, license TEXT, source TEXT,
+    duration REAL, hook_score REAL, motion_avg REAL, motion_peak REAL, scene_cut_rate REAL,
+    audio_peak_rate REAL, facecam_position TEXT, safe_zone_status TEXT, analyzed_at TEXT);`);
+  const up = db.prepare(`INSERT INTO videos
+    (url,title,license,source,duration,hook_score,motion_avg,motion_peak,scene_cut_rate,audio_peak_rate,facecam_position,safe_zone_status,analyzed_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+    ON CONFLICT(url) DO UPDATE SET title=excluded.title, hook_score=excluded.hook_score,
+      motion_avg=excluded.motion_avg, scene_cut_rate=excluded.scene_cut_rate, analyzed_at=excluded.analyzed_at;`);
+  const srcLabel = (s) => (s || "").includes("archive") ? "archive" : (s || "").includes("wiki") ? "wikimedia" : "other";
+  for (const r of rows) {
+    if (!r.source) continue;
+    up.run(r.source, r.title || null, r.license || null, srcLabel(r.source),
+      r.durationSec ?? null, r.opening_hook_strength ?? null, (r.motion ? r.motion.avg : null) ?? null,
+      (r.motion ? r.motion.rawPeak : null) ?? null, r.cut_rate_per_sec ?? null,
+      (r.highlight ? r.highlight.audio_peak_rate : null) ?? null,
+      (r.facecam && r.facecam.corner) || null, r.safezone_status || null, r.analyzedAt || null);
+  }
+  const count = db.prepare("SELECT COUNT(*) n FROM videos").get().n;
+  db.close();
+  return { ok: true, dbPath, videos: count };
+}
+
 // ── Σ₀ self-calibration: baseline vs prior-informed weights ─────────────────
 function calibrateWeights() {
   const basePriors = require("../src/creator-intelligence/research/viral_patterns.json");
@@ -214,16 +310,21 @@ async function getJson(url, ms = 12000) {
   } finally { clearTimeout(t); }
 }
 
+// Archive.org's self-reported license tags are NOT trustworthy — copyrighted
+// films get uploaded with bogus CC/PD tags (we caught "Mrs. Doubtfire" passing a
+// licenseurl filter). So restrict to CURATED genuinely-open collections instead:
+// Prelinger (public-domain ephemeral film) + the community Open Source Movies set,
+// still license-checked. The Blender CC films come from the allowlist.
+const ARCHIVE_OPEN_COLLECTIONS = "prelinger OR opensource_movies OR open_source_movies";
 async function searchArchiveOrg(query, limit = 25) {
-  // Require an explicit license in the QUERY so we only ever get genuinely
-  // open items (CC/PD) — never unlicensed uploads of copyrighted footage.
-  const q = encodeURIComponent(`${query} AND mediatype:(movies) AND licenseurl:[* TO *]`);
-  const url = `https://archive.org/advancedsearch.php?q=${q}&fl[]=identifier&fl[]=title&fl[]=creator&fl[]=licenseurl&rows=${limit}&output=json&sort[]=downloads+desc`;
+  const q = encodeURIComponent(`${query} AND mediatype:(movies) AND collection:(${ARCHIVE_OPEN_COLLECTIONS})`);
+  const url = `https://archive.org/advancedsearch.php?q=${q}&fl[]=identifier&fl[]=title&fl[]=creator&fl[]=licenseurl&fl[]=collection&rows=${limit}&output=json&sort[]=downloads+desc`;
   const j = await getJson(url).catch(() => null);
   const docs = (j && j.response && j.response.docs) || [];
   return docs
-    .filter((d) => d.identifier && /creativecommons|publicdomain/i.test(d.licenseurl || "")) // CC / public domain only
-    .map((d) => ({ url: `https://archive.org/details/${d.identifier}`, title: d.title || d.identifier, license: d.licenseurl, creator: d.creator || null, source: "archive.org" }));
+    // Prelinger is PD by curation; for the community set still require a CC/PD tag.
+    .filter((d) => d.identifier && (String(d.collection || "").includes("prelinger") || /creativecommons|publicdomain/i.test(d.licenseurl || "")))
+    .map((d) => ({ url: `https://archive.org/details/${d.identifier}`, title: d.title || d.identifier, license: d.licenseurl || "public-domain (Prelinger)", creator: d.creator || null, source: "archive.org" }));
 }
 
 async function searchPeerTube(query, limit = 25) {
@@ -294,9 +395,12 @@ async function researchNightly({ limit = 200, sources = Object.keys(SOURCES), qu
   }
 
   const priors = aggregateEditingPriors();  // updates editing_priors.json
-  const deltas = calibrateWeights();         // updates research/weight_deltas.json
+  aggregateHookPriors();                     // research/hook_priors.json
+  aggregateHighlightPriors();                // research/highlight_priors.json
+  const corpus = rebuildCorpusDb();          // research/corpus.db
+  const deltas = calibrateWeights();         // research/weight_deltas.json
   const report = writeNightlyReport({ started, candidates: candidates.length, queue: queue.length, analyzed, failed, perSource, priors, sources, queries });
-  return { ok: true, candidates: candidates.length, analyzed, failed, report, weightDeltas: deltas.file, priorsSamples: priors.ok ? priors.priors.samples : 0 };
+  return { ok: true, candidates: candidates.length, analyzed, failed, report, weightDeltas: deltas.file, corpusVideos: corpus.ok ? corpus.videos : 0, priorsSamples: priors.ok ? priors.priors.samples : 0 };
 }
 
 function writeNightlyReport(x) {
@@ -333,12 +437,15 @@ function writeNightlyReport(x) {
   return file;
 }
 
-module.exports = { downloadVideo, analyzeForResearch, research, storeFeatures, aggregateEditingPriors, calibrateWeights, researchNightly, searchArchiveOrg, searchPeerTube, searchWikimedia };
+module.exports = { downloadVideo, analyzeForResearch, research, storeFeatures, aggregateEditingPriors, aggregateHookPriors, aggregateHighlightPriors, rebuildCorpusDb, calibrateWeights, researchNightly, searchArchiveOrg, searchPeerTube, searchWikimedia };
 
 // ── CLI ─────────────────────────────────────────────────────────────────────
 if (require.main === module) {
   (async () => {
     if (process.argv.includes("--aggregate")) { console.log(JSON.stringify(aggregateEditingPriors(), null, 2)); return; }
+    if (process.argv.includes("--hook-priors")) { console.log(JSON.stringify(aggregateHookPriors(), null, 2)); return; }
+    if (process.argv.includes("--highlight-priors")) { console.log(JSON.stringify(aggregateHighlightPriors(), null, 2)); return; }
+    if (process.argv.includes("--corpus")) { console.log(JSON.stringify(rebuildCorpusDb(), null, 2)); return; }
     if (process.argv.includes("--calibrate")) { console.log(JSON.stringify(calibrateWeights(), null, 2)); return; }
     if (process.argv.includes("--nightly")) {
       const lim = Number((process.argv.find((a) => a.startsWith("--limit=")) || "").split("=")[1]) || 200;

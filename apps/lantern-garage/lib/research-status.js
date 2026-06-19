@@ -67,6 +67,8 @@ function getResearchStatus(repoRoot) {
       source: priorInformed ? "viral_patterns.json + editing_priors.json" : "viral_patterns.json (baseline)",
     },
     weightDeltas: deltas ? deltas.weights : null,
+    hookPriors: readJsonSafe(path.join(repoRoot, "research", "hook_priors.json")),
+    highlightPriors: readJsonSafe(path.join(repoRoot, "research", "highlight_priors.json")),
     lastNightly,
     generatedAt: new Date().toISOString(),
   };
