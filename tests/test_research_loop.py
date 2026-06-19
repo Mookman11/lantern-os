@@ -55,6 +55,42 @@ def empty_searcher(query, max_results=5):
     return []
 
 
+# ───────────────────────────── searcher hardening ─────────────────────────────
+
+def test_searcher_retries_on_empty(monkeypatch):
+    # DuckDuckGo soft-throttle returns an empty page; the searcher should retry and
+    # rotate the User-Agent until it gets results.
+    import src.convergence.research as rm
+    calls = {"n": 0, "uas": []}
+
+    def fake_fetch(query, max_results, ua):
+        calls["n"] += 1
+        calls["uas"].append(ua)
+        if calls["n"] < 3:
+            return []
+        return [{"rank": 1, "title": "t", "url": "https://x.com/a", "snippet": "s"}]
+
+    monkeypatch.setattr(rm, "_ddg_fetch", fake_fetch)
+    out = rm.duckduckgo_search("q", max_results=5, retries=3, _sleep=lambda s: None)
+    assert calls["n"] == 3
+    assert out and out[0]["url"] == "https://x.com/a"
+    assert len(set(calls["uas"])) >= 2  # rotated the User-Agent
+
+
+def test_searcher_gives_up_after_retries(monkeypatch):
+    import src.convergence.research as rm
+    calls = {"n": 0}
+
+    def always_empty(query, max_results, ua):
+        calls["n"] += 1
+        return []
+
+    monkeypatch.setattr(rm, "_ddg_fetch", always_empty)
+    out = rm.duckduckgo_search("q", retries=3, _sleep=lambda s: None)
+    assert out == []
+    assert calls["n"] == 3
+
+
 # ───────────────────────────── text utilities ─────────────────────────────
 
 def test_domain_strips_www():
