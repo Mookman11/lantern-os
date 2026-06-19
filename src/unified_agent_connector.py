@@ -55,6 +55,18 @@ try:
 except Exception:
     _CODER_GATE_AVAILABLE = False
     _build_coder_gate = None  # type: ignore
+
+# Serving modes (PR #723 / issue #729). FAST mode (default) applies anti-repetition
+# decode params to prevent token loops; DEEP mode is opt-in via OURO_NATIVE=1.
+try:
+    from serving_modes import get_serving_mode, get_decode_params
+    _SERVING_MODES_AVAILABLE = True
+except Exception:
+    _SERVING_MODES_AVAILABLE = False
+    def get_serving_mode():  # type: ignore
+        return None
+    def get_decode_params(mode):  # type: ignore
+        return {}
     # Fallback contract so the connector still imports if the gate module is absent.
     _KEYSTONE_CODER_PROMPT = (
         "You are Keystone, the coding agent of Lantern OS. Assert nothing without "
@@ -476,9 +488,28 @@ class UnifiedAgentConnector:
         return method(cfg, system, message, temperature, max_tokens)
 
     # --- Provider streamers (shared SSE parser) ---
+    def _decode_params(self) -> dict:
+        """Anti-repetition decode params for the active serving mode (FAST by default).
+
+        FAST mode returns top_p=0.95 / frequency_penalty=0.5 (+ Ollama repeat_*) to
+        suppress token loops; DEEP mode (OURO_NATIVE=1) returns gentler values. Returns
+        {} when serving_modes is unavailable so callers stay backward-compatible.
+        """
+        if not _SERVING_MODES_AVAILABLE:
+            return {}
+        mode = get_serving_mode()
+        return get_decode_params(mode) if mode else {}
+
     def _stream_ollama(self, cfg, system, message, temperature, max_tokens):
         url = f"{(cfg.base_url or 'http://127.0.0.1:11434').rstrip('/')}/api/chat"
-        payload = json.dumps({"model": cfg.model, "messages": [{"role": "system", "content": system}, {"role": "user", "content": message}], "stream": True, "options": {"temperature": temperature or cfg.temperature, "num_predict": max_tokens or cfg.max_tokens}}).encode()
+        options = {"temperature": temperature or cfg.temperature, "num_predict": max_tokens or cfg.max_tokens}
+        dp = self._decode_params()
+        if dp:
+            # Ollama uses repeat_penalty / repeat_last_n rather than frequency_penalty.
+            options["top_p"] = dp.get("top_p", 0.95)
+            options["repeat_penalty"] = dp.get("repetition_penalty", 1.1)
+            options["repeat_last_n"] = dp.get("repeat_last_n", 64)
+        payload = json.dumps({"model": cfg.model, "messages": [{"role": "system", "content": system}, {"role": "user", "content": message}], "stream": True, "options": options}).encode()
         return self._parse_sse(url, payload, cfg.timeout, lambda d: d.get("message", {}).get("content", "") or d.get("response", ""), {"Content-Type": "application/json"})
 
     def _stream_anthropic(self, cfg, system, message, temperature, max_tokens):
@@ -490,7 +521,12 @@ class UnifiedAgentConnector:
     def _stream_openai(self, cfg, system, message, temperature, max_tokens):
         if not cfg.api_key:
             raise RuntimeError("No OPENAI_API_KEY")
-        payload = json.dumps({"model": cfg.model, "stream": True, "messages": [{"role": "system", "content": system}, {"role": "user", "content": message}], "max_tokens": max_tokens or cfg.max_tokens, "temperature": temperature or cfg.temperature}).encode()
+        body = {"model": cfg.model, "stream": True, "messages": [{"role": "system", "content": system}, {"role": "user", "content": message}], "max_tokens": max_tokens or cfg.max_tokens, "temperature": temperature or cfg.temperature}
+        dp = self._decode_params()
+        if dp:
+            body["top_p"] = dp.get("top_p", 0.95)
+            body["frequency_penalty"] = dp.get("frequency_penalty", 0.5)
+        payload = json.dumps(body).encode()
         return self._parse_sse("https://api.openai.com/v1/chat/completions", payload, cfg.timeout, lambda d: d.get("choices", [{}])[0].get("delta", {}).get("content", ""), {"Content-Type": "application/json", "Authorization": f"Bearer {cfg.api_key}"})
 
     def _stream_gemini(self, cfg, system, message, temperature, max_tokens):
@@ -503,13 +539,23 @@ class UnifiedAgentConnector:
     def _stream_deepseek(self, cfg, system, message, temperature, max_tokens):
         if not cfg.api_key:
             raise RuntimeError("No DEEPSEEK_API_KEY")
-        payload = json.dumps({"model": cfg.model, "stream": True, "messages": [{"role": "system", "content": system}, {"role": "user", "content": message}], "max_tokens": max_tokens or cfg.max_tokens, "temperature": temperature or cfg.temperature}).encode()
+        body = {"model": cfg.model, "stream": True, "messages": [{"role": "system", "content": system}, {"role": "user", "content": message}], "max_tokens": max_tokens or cfg.max_tokens, "temperature": temperature or cfg.temperature}
+        dp = self._decode_params()
+        if dp:
+            body["top_p"] = dp.get("top_p", 0.95)
+            body["frequency_penalty"] = dp.get("frequency_penalty", 0.5)
+        payload = json.dumps(body).encode()
         return self._parse_sse("https://api.deepseek.com/chat/completions", payload, cfg.timeout, lambda d: d.get("choices", [{}])[0].get("delta", {}).get("content", ""), {"Content-Type": "application/json", "Authorization": f"Bearer {cfg.api_key}"})
 
     def _stream_groq(self, cfg, system, message, temperature, max_tokens):
         if not cfg.api_key:
             raise RuntimeError("No GROQ_API_KEY")
-        payload = json.dumps({"model": cfg.model, "stream": True, "messages": [{"role": "system", "content": system}, {"role": "user", "content": message}], "max_tokens": max_tokens or cfg.max_tokens, "temperature": temperature or cfg.temperature}).encode()
+        body = {"model": cfg.model, "stream": True, "messages": [{"role": "system", "content": system}, {"role": "user", "content": message}], "max_tokens": max_tokens or cfg.max_tokens, "temperature": temperature or cfg.temperature}
+        dp = self._decode_params()
+        if dp:
+            body["top_p"] = dp.get("top_p", 0.95)
+            body["frequency_penalty"] = dp.get("frequency_penalty", 0.5)
+        payload = json.dumps(body).encode()
         return self._parse_sse("https://api.groq.com/openai/v1/chat/completions", payload, cfg.timeout, lambda d: d.get("choices", [{}])[0].get("delta", {}).get("content", ""), {"Content-Type": "application/json", "Authorization": f"Bearer {cfg.api_key}"})
 
     def _stream_azure(self, cfg, system, message, temperature, max_tokens):
