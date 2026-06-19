@@ -251,3 +251,12 @@ A1 makes the headline pacing feature real; A4 + the shipped calibration set make
   (shot 8, retention 10, speech 6, variant 5, recurrence 6, dropoff 5, weight 5,
   calibration 12). **Next: open-ended #ii — wire A3 transcribeToSpeechFeatures into the
   analysis job-worker to populate timeline.metadata.speech (best-effort, non-fatal).**
+- **2026-06-19 — A3 WIRED into the job-worker (open-ended #ii).** New
+  `maybeAttachSpeech(timeline, videoPath, durationSec, opts)` in `speech-features.js`:
+  flag-gated (`LANTERN_CI_SPEECH=1`, default OFF), fully non-fatal, with an injectable
+  `transcribe` fn for testing. `job-worker.js processAnalyzeJob` calls it after analysis
+  and before `toJSON()` so V10 scoring picks up `metadata.speech` — wrapped in try/catch
+  and a no-op when disabled or when Whisper is absent (timeline byte-identical). Tests:
+  `tests/test_speech_attach.js` (4/4) + full sweep green (9 suites). **Next: open-ended
+  #iii — wire A4 retention import + cliffSegment attribution into the calibration import
+  flow so B2 gets real cliff-labeled data.**
