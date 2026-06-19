@@ -250,3 +250,6 @@ tests/gaming-layout-suite/*.mp4
 tests/gaming-layout-suite/*.mkv
 tests/gaming-layout-suite/*.webm
 debug/
+
+# Open-video research: per-machine extracted features (never videos)
+research/open_video/features/*.jsonl
