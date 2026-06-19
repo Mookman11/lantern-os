@@ -1,4 +1,5 @@
 const { spawn } = require("child_process");
+const { isOperatorRequest } = require("../lib/request-auth");
 
 // Operator notes, conversation log, action triggers
 module.exports = async function operatorRoutes(req, res, url, deps) {
@@ -25,6 +26,17 @@ module.exports = async function operatorRoutes(req, res, url, deps) {
   if (url.pathname === "/api/conversations" && req.method === "GET") {
     const limit = Math.max(1, Math.min(200, Number(url.searchParams.get("limit") || 50)));
     const sessionId = String(url.searchParams.get("sessionId") || "").trim().slice(0, 64) || null;
+    // #770: the un-scoped global (cross-session) read is operator-only. Never return the
+    // whole log to anonymous/public callers — require a sessionId or operator auth.
+    if (!sessionId && !isOperatorRequest(req)) {
+      sendJson(res, {
+        path: path.relative(repoRoot, conversationLogPath),
+        sessionId: null,
+        conversations: [],
+        note: "cross-session read requires a sessionId or operator auth",
+      });
+      return true;
+    }
     sendJson(res, {
       path: path.relative(repoRoot, conversationLogPath),
       sessionId,
@@ -38,6 +50,12 @@ module.exports = async function operatorRoutes(req, res, url, deps) {
     try {
       const fs = require("fs");
       const sessionId = String(url.searchParams.get("sessionId") || "").trim().slice(0, 64) || null;
+      // #770: clearing ALL sessions is an operator-only admin reset; per-session clears
+      // (?sessionId=) are self-service and allowed.
+      if (!sessionId && !isOperatorRequest(req)) {
+        sendJson(res, { error: "clear-all requires operator auth; pass ?sessionId to clear one session" }, 403);
+        return true;
+      }
       let lines = [];
       try {
         lines = fs.readFileSync(conversationLogPath, "utf8").split(/\r?\n/).filter(Boolean);
