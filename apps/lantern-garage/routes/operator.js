@@ -24,10 +24,49 @@ module.exports = async function operatorRoutes(req, res, url, deps) {
   }
   if (url.pathname === "/api/conversations" && req.method === "GET") {
     const limit = Math.max(1, Math.min(200, Number(url.searchParams.get("limit") || 50)));
+    const sessionId = String(url.searchParams.get("sessionId") || "").trim().slice(0, 64) || null;
     sendJson(res, {
       path: path.relative(repoRoot, conversationLogPath),
-      conversations: readConversationLog(limit),
+      sessionId,
+      conversations: readConversationLog(limit, sessionId),
     });
+    return true;
+  }
+  if (url.pathname === "/api/conversations" && req.method === "DELETE") {
+    // Clear conversation history. Without ?sessionId, clears everything (admin reset);
+    // with ?sessionId=X, removes only that session's turns. Always archives first.
+    try {
+      const fs = require("fs");
+      const sessionId = String(url.searchParams.get("sessionId") || "").trim().slice(0, 64) || null;
+      let lines = [];
+      try {
+        lines = fs.readFileSync(conversationLogPath, "utf8").split(/\r?\n/).filter(Boolean);
+      } catch { /* missing file == already empty */ }
+
+      if (lines.length) {
+        const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+        const bak = path.join(path.dirname(conversationLogPath), `garage-conversations.cleared-${stamp}.jsonl.bak`);
+        try { fs.copyFileSync(conversationLogPath, bak); } catch { /* best-effort archive */ }
+      }
+
+      let removed = 0;
+      if (sessionId) {
+        const kept = [];
+        for (const line of lines) {
+          let obj = null;
+          try { obj = JSON.parse(line); } catch { kept.push(line); continue; }
+          if (obj && obj.sessionId === sessionId) removed += 1;
+          else kept.push(line);
+        }
+        fs.writeFileSync(conversationLogPath, kept.length ? kept.join("\n") + "\n" : "");
+      } else {
+        removed = lines.length;
+        fs.writeFileSync(conversationLogPath, "");
+      }
+      sendJson(res, { ok: true, removed, scope: sessionId ? "session" : "all" });
+    } catch (error) {
+      sendJson(res, { error: error.message }, 500);
+    }
     return true;
   }
   if (url.pathname === "/api/conversations" && req.method === "POST") {
