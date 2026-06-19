@@ -50,7 +50,7 @@ const outPath = path.resolve(process.argv[3] || "preview.png");
     await page.goto(url, { waitUntil: "load", timeout: 30000 }).catch(() => {});
     await page.waitForTimeout(2000);
     await page.screenshot({ path: outPath });
-    console.log(`[screenshot] saved ${outPath}`);
+    console.error(`[screenshot] saved ${outPath}`);
   } finally {
     await browser.close();
   }
