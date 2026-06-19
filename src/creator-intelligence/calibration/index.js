@@ -14,6 +14,7 @@ const { parseAnalyticsCsv } = require("./youtube-analytics-import");
 const { parseRetentionCsv } = require("./retention-curve-import");
 const retention = require("./retention-analysis");
 const dropoff = require("./dropoff-model");
+const weightCalibration = require("./weight-calibration");
 const store = require("./outcome-store");
 const engine = require("./calibration-engine");
 
@@ -133,6 +134,9 @@ module.exports = {
   // B2 — drop-off-aware cutting (gated; no-op until calibrated).
   buildDropoffProfile: dropoff.buildDropoffProfile,
   dropoffPenalty: dropoff.dropoffPenalty,
+  // B4 — propose calibrated scoring weights (gated; priors unchanged until ready).
+  calibrateWeights: weightCalibration.calibrateWeights,
+  COMPONENT_FEATURES: weightCalibration.COMPONENT_FEATURES,
   count: store.count,
   usableRows: store.usableRows,
   thresholds: {
