@@ -247,6 +247,12 @@ models/*/adapters/
 # per-user CSF profile archives (user data — privacy)
 data/profiles/*.csf
 
+# Gaming layout suite — user-supplied clips + debug frames (never committed)
+tests/gaming-layout-suite/*.mp4
+tests/gaming-layout-suite/*.mkv
+tests/gaming-layout-suite/*.webm
+debug/
+
 # Open-video research: per-machine extracted features (never videos)
 research/open_video/features/*.jsonl
 
