@@ -19,8 +19,31 @@ in latent space (a "third scaling axis": loop depth). Key mechanisms we borrow:
 - **Deeper-is-better, with diminishing returns** — most inputs converge by mid-depth.
 
 ## How it's implemented here
-Our served model (`lantern-sigma0-coder`, Ollama) is a **standard transformer**,
-not a weight-tied LoopLM, so we replicate the behavior **at the API level**:
+
+### 1. Native latent loop on real Ouro weights (the real thing)
+[`src/sigma0/loop_lm.py`](../src/sigma0/loop_lm.py) — `Sigma0LoopLM` is our own
+implementation of the paper's **Q-exit adaptive-depth policy** (λ→survival→CDF→
+first-step-≥q), run on **Ouro's pretrained weight-tied block + exit gate** (we do
+not pretrain a LoopLM — that needs 7.7T tokens). This activates the adaptive
+inference the **stock Ouro checkpoint leaves off**: its config ships
+`early_exit_threshold=1.0` and its `generate()` never threads a per-call threshold,
+so it runs **fixed full depth**. Our module reads the per-step gates, applies Q-exit,
+and **reports the realized per-token loop depth**.
+
+- **Trained on our data:** QLoRA fine-tune of Ouro-1.4B on the Σ₀ Claude-session set
+  ([`scripts/train-qlora-ouro.py`](../scripts/train-qlora-ouro.py); 3 epochs, loss
+  ~2.25→1.74). Adapter loads via `Sigma0LoopLM.load(base, adapter=…)`.
+- **Served without Ollama:** [`scripts/ouro_serve.py`](../scripts/ouro_serve.py)
+  hosts it on the **Ollama HTTP API** (`/api/chat`, `/api/tags`) so the existing
+  chat path works with **no Ollama binary** — set `OURO_ADAPTER` for the Σ₀ tune.
+- **Verified:** realized depth is **~3.15/4** on Ouro-1.4B (adaptive, not fixed-4).
+- **Honest caveat:** generation is currently **no-cache** (slow); integrating
+  Ouro's `UniversalTransformerCache` is the next optimization.
+- Needs **transformers 4.53–4.57** (Ouro's custom code requires `layer_type_validation`
+  but still uses `config.pad_token_id`).
+
+### 2. API-level re-prompt loop (legacy, provider-agnostic)
+For the Ollama/Qwen path, we also approximate the loop by re-prompting:
 
 - **[`lib/loop-reasoner.js`](../apps/lantern-garage/lib/loop-reasoner.js)** —
   `loopedReason()` runs the model up to `MAX_LOOPS` (4, = Ouro R4), feeding each
