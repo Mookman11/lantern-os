@@ -296,6 +296,11 @@ async function handleStreamChat(req, url, res) {
   // The game page declares itself via body.surface; bang commands can also flip it below.
   let surfaceMode = parsed.surface === "three-doors" ? "three-doors" : "dream-chat";
 
+  // Session scoping: stamp every recorded turn with the caller's session so history
+  // reads back per-conversation instead of one global flat log (issue: session mgmt).
+  const sessionId = parsed.sessionId || null;
+  const logConversation = (entry) => appendConversationEntry({ ...entry, sessionId });
+
   // Handle bang commands
   const cmd = parseBangCommand(message);
   if (cmd) {
@@ -1060,7 +1065,7 @@ async function handleStreamChat(req, url, res) {
     sendDone("offline", { agent: doneAgentName, online: false, error: reason || "no_provider_configured", suggestions: FALLBACK_DOORS });
   };
 
-  await appendConversationEntry({
+  await logConversation({
     recordedAt: new Date().toISOString(),
     surface: "dream-chat-stream",
     role: "operator",
@@ -1089,7 +1094,7 @@ async function handleStreamChat(req, url, res) {
       timeoutMs: Number(process.env.CONVERGENCE_ROUTE_TIMEOUT_MS || 20000),
     });
     if (convResult.reply && !convResult.error) {
-      await appendConversationEntry({
+      await logConversation({
         recordedAt: new Date().toISOString(),
         surface: "dream-chat-stream",
         role: "lantern",
@@ -1235,7 +1240,7 @@ async function handleStreamChat(req, url, res) {
       && (kbAnswer.tier === "deterministic" || kbAnswer.score >= KB_ANSWER_MIN)) {
     const ans = `${kbAnswer.text}\n\n— from the Knowledge Center: ${kbAnswer.source}`;
     sendToken(ans);
-    await appendConversationEntry({
+    await logConversation({
       recordedAt: new Date().toISOString(), surface: "dream-chat-stream",
       role: "lantern", text: ans.slice(0, maxConversationTextLength),
     }).catch(() => {});
@@ -1282,7 +1287,7 @@ async function handleStreamChat(req, url, res) {
       const lr = await loopedReason({ prompt: message, systemPrompt, callLLM, maxLoops: 4 });
       if (lr && lr.reply) {
         const { cleanText, suggestions } = doorsOrFallback(lr.reply, true);
-        await appendConversationEntry({ recordedAt: new Date().toISOString(), surface: "dream-chat-stream",
+        await logConversation({ recordedAt: new Date().toISOString(), surface: "dream-chat-stream",
           role: "lantern", text: cleanText.slice(0, maxConversationTextLength) }).catch(() => {});
         sendToken(cleanText);
         try { recordProviderSuccess("ollama"); recordModelOutcome(loopModel, intent, true, 0); } catch (_e) {}
@@ -1341,7 +1346,7 @@ async function handleStreamChat(req, url, res) {
         if (fullReply) {
           const { cleanText, suggestions } = doorsOrFallback(fullReply, isKeystoneDebug || !isRpMode);
           const imageEntryId = triggerImageGeneration({ cleanText, suggestions, surfaceMode, symbolMesh });
-          await appendConversationEntry({
+          await logConversation({
             recordedAt: new Date().toISOString(),
             surface: "dream-chat-stream",
             role: "lantern",
@@ -1386,7 +1391,7 @@ async function handleStreamChat(req, url, res) {
       if (sseErr) throw sseErr;
       if (fullReply) {
         const { cleanText, suggestions } = doorsOrFallback(fullReply, isKeystoneDebug || !isRpMode);
-        await appendConversationEntry({
+        await logConversation({
           recordedAt: new Date().toISOString(),
           surface: "dream-chat-stream",
           role: "lantern",
@@ -1491,7 +1496,7 @@ async function handleStreamChat(req, url, res) {
           geminiSigma0 = { corrected: vr.corrected, claims: vr.records.length };
         } catch { /* non-fatal */ }
       }
-      await appendConversationEntry({
+      await logConversation({
         recordedAt: new Date().toISOString(),
         surface: "dream-chat-stream",
         role: "lantern",
@@ -1598,7 +1603,7 @@ async function handleStreamChat(req, url, res) {
           anthropicSigma0 = { corrected: vr.corrected, claims: vr.records.length };
         } catch { /* non-fatal */ }
       }
-      await appendConversationEntry({
+      await logConversation({
         recordedAt: new Date().toISOString(),
         surface: "dream-chat-stream",
         role: "lantern",
@@ -1677,7 +1682,7 @@ async function handleStreamChat(req, url, res) {
         req2.end();
       });
       const { cleanText: openaiClean, suggestions: openaiDoors } = doorsOrFallback(fullReply, isKeystoneDebug || !isRpMode);
-      await appendConversationEntry({
+      await logConversation({
         recordedAt: new Date().toISOString(),
         surface: "dream-chat-stream",
         role: "lantern",
@@ -1738,7 +1743,7 @@ async function handleStreamChat(req, url, res) {
         req2.write(payload); req2.end();
       });
       const { cleanText: xaiClean, suggestions: xaiDoors } = doorsOrFallback(fullReply, isKeystoneDebug || !isRpMode);
-      await appendConversationEntry({ recordedAt: new Date().toISOString(), surface: "dream-chat-stream", role: "lantern", text: xaiClean.slice(0, maxConversationTextLength) }).catch(() => {});
+      await logConversation({ recordedAt: new Date().toISOString(), surface: "dream-chat-stream", role: "lantern", text: xaiClean.slice(0, maxConversationTextLength) }).catch(() => {});
       recordProviderSuccess("xai");
       const grokModelName = xaiModel; // receipt MUST reflect the model actually sent
       await recordConvergenceSignature("grok", grokModelName, xaiClean, true);
@@ -1778,7 +1783,7 @@ async function handleStreamChat(req, url, res) {
         if (sseErr) throw sseErr;
         if (fullReply) {
           const { cleanText, suggestions } = doorsOrFallback(fullReply, isKeystoneDebug || !isRpMode);
-          await appendConversationEntry({
+          await logConversation({
             recordedAt: new Date().toISOString(),
             surface: "dream-chat-stream",
             role: "lantern",
@@ -1852,7 +1857,7 @@ async function handleStreamChat(req, url, res) {
       });
       if (ollamaOk) {
         const { cleanText: ollamaClean, suggestions: ollamaDoors } = doorsOrFallback(fullReply, isKeystoneDebug || !isRpMode);
-        await appendConversationEntry({
+        await logConversation({
           recordedAt: new Date().toISOString(),
           surface: "dream-chat-stream",
           role: "lantern",
