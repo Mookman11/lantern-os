@@ -113,6 +113,7 @@ const routes = [
   require("./routes/self-edit"),
   require("./routes/creator"),
   require("./routes/creator-entries"),
+  require("./routes/creator-calibration"),
   require("./routes/surfaces"),
   require("./routes/features"),
   require("./routes/personal-cube"),
