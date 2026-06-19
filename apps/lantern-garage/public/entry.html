@@ -1096,6 +1096,7 @@ function loadVariants(entry) {
           </div>
           <div class="variant-metrics">
             <div><span>Viral Score</span><b>${viral}</b></div>
+            ${typeof v.introStrength === 'number' ? `<div><span>Hook*</span><b>${Math.round(v.introStrength * 100)}</b></div>` : ''}
             <div><span>Completion*</span><b>${completion}</b></div>
             <div><span>Share*</span><b>${share}</b></div>
             <div><span>Duration</span><b>${v.durationSec ? Math.round(v.durationSec) + 's' : '—'}</b></div>

@@ -285,6 +285,13 @@ A1 makes the headline pacing feature real; A4 + the shipped calibration set make
   on→insufficient_data with priors) + full sweep green (11 suites).
   **Status: the editing/analysis models, their live-pipeline wiring, and the full
   calibration loop (Observe→Reason→Verify→Converge) are all implemented and gated. The
-  branch is at a natural reviewable stopping point (15 commits). Remaining work is UI
-  surfacing (introStrength/novel/speech badges; retention-CSV upload) + test hardening —
-  lower-value polish; the loop will continue with small validation iterations.**
+  branch is at a natural reviewable stopping point (12 commits beyond base 01d2221c).
+  Remaining work is UI surfacing (introStrength/novel/speech badges; retention-CSV
+  upload) + test hardening — lower-value polish; the loop will continue with small
+  validation iterations.**
+- **2026-06-19 — UI: surface B1 introStrength on variant cards (open-ended polish).**
+  `entry.html` Ranked-Variants cards now show a `Hook*` metric = `introStrength`×100,
+  rendered ONLY when the variant carries `introStrength` (old entries unaffected) and
+  grouped under the existing "* structural estimate, not calibrated" note — honest, not
+  a calibrated retention %. Additive one-line template guard; full module sweep green
+  (11 suites). Fixed the stale "(15 commits)" note to the real count (12).
