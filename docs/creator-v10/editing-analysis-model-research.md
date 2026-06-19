@@ -226,3 +226,17 @@ A1 makes the headline pacing feature real; A4 + the shipped calibration set make
   yet populate `cliffSegment` on outcome rows (needs the retention curve + the entry's
   rendered segment list at import) — that glue feeds real data into this gate.
   **Next: B4 (calibrated re-weighting of research/viral_patterns.json).**
+- **2026-06-19 — B4 DONE (calibrated re-weighting). PLAN A1–B4 COMPLETE.** New
+  `src/creator-intelligence/calibration/weight-calibration.js`: `calibrateWeights()`
+  maps each of the 8 score components to its driving feature signals
+  (`COMPONENT_FEATURES`), reads their |r| against the target retention outcome
+  (`avgPercentViewed`) from `ci.calibration.correlations`, and blends the priors
+  toward the evidence — redistributing ONLY the evidenced components' prior mass, with
+  sample-size SHRINKAGE (λ = n/(n+200), capped 0.5). Gated: uncalibrated correlations
+  or no mapped-feature evidence → priors returned UNCHANGED with insufficient_data.
+  Output is a PROPOSAL; persisting to viral_patterns.json / flipping calibrated:true is
+  a separate gated step (not auto-run). Tests: `tests/test_weight_calibration.js` (5/5) +
+  full regression sweep green (shot 8, retention 10, speech 6, variant 5, recurrence 6,
+  dropoff 5, calibration 12).
+  **Next (open-ended deepening): wire A2 noveltyScores into highlight-engine
+  mergeDetections (a `novel` tag/blend, with tests).**
