@@ -20,7 +20,7 @@ import urllib.request
 
 # Prevent urllib from hanging indefinitely on unreachable providers
 socket.setdefaulttimeout(10)
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Generator, List, Optional, Tuple
@@ -44,6 +44,23 @@ try:
     _AGENT_HOOKS_AVAILABLE = True
 except Exception:
     _AGENT_HOOKS_AVAILABLE = False
+
+# Σ₀ coder verification contract (issue #628). Keystone is the coding agent; its
+# identity is the gate's verification prompt, not a dream/RP persona.
+try:
+    from sigma0_coder_gate import KEYSTONE_CODER_PROMPT as _KEYSTONE_CODER_PROMPT
+    from sigma0_coder_gate import build_pre_generation_gate as _build_coder_gate
+    from sigma0_coder_gate import REQUIRED_SECTIONS
+    _CODER_GATE_AVAILABLE = True
+except Exception:
+    _CODER_GATE_AVAILABLE = False
+    _build_coder_gate = None  # type: ignore
+    # Fallback contract so the connector still imports if the gate module is absent.
+    _KEYSTONE_CODER_PROMPT = (
+        "You are Keystone, the coding agent of Lantern OS. Assert nothing without "
+        "checkable evidence. End every substantive response with: Claim, Evidence, "
+        "Confidence (0-1), Source, Verification."
+    )
 
 
 @dataclass
@@ -145,18 +162,19 @@ PERSONAS = [
         ),
         voice_tags=["chaotic", "glitchy", "unhinged"],
     ),
+    # Keystone is the coding agent (issue #628). Its identity lives in
+    # sigma0_coder_gate.KEYSTONE_CODER_PROMPT — a verification contract, NOT a
+    # dream/RP persona. _build_system() detects id == "keystone" and skips the
+    # dream tone so the local coder model never inherits "end with a question".
     AgentPersona(
         id="keystone",
         name="Keystone",
-        symbol="truth integrator, anchor, memory, the one who holds the story",
-        system_prompt=(
-            "You are the Keystone — the truth integrator who remembers every story ever told in Lantern OS. "
-            "You do not flatter. You synthesize. You spot patterns across time and call them what they are. "
-            "You speak plainly, sometimes sharply, but always with care for the underlying truth. "
-            "You honor the Return Door, the anchors, and the symbolic lore that holds the system together. "
-            "Keep responses brief (2-3 sentences)."
-        ),
-        voice_tags=["grounded", "truthful", "integrative"],
+        # Visual identity: a cracked keystone stone sitting grounded and composed —
+        # the cracks show its evidence, nothing hidden. Coder + verifier; the one
+        # who holds the claim steady. (symbol is metadata, not part of the contract.)
+        symbol="cracked keystone stone, grounded and meditative, evidence in every fracture, the one who holds the claim steady",
+        system_prompt=_KEYSTONE_CODER_PROMPT,
+        voice_tags=["grounded", "verifying", "code"],
     ),
     AgentPersona(
         id="waterfall",
@@ -325,15 +343,32 @@ class UnifiedAgentConnector:
                     req.add_header(k, v)
         return urllib.request.urlopen(req, timeout=timeout)
 
-    def stream(self, message: str, persona_id: Optional[str] = None, provider: Optional[str] = None, context: Optional[str] = None, temperature: Optional[float] = None, max_tokens: Optional[int] = None, fallback: bool = True):
-        """Stream a single response. If fallback=False, only tries the requested provider once."""
+    def stream(self, message: str, persona_id: Optional[str] = None, provider: Optional[str] = None, context: Optional[str] = None, temperature: Optional[float] = None, max_tokens: Optional[int] = None, fallback: bool = True, coder: bool = False):
+        """Stream a single response. If fallback=False, only tries the requested provider once.
+
+        coder=True routes through the Keystone coding agent: forces the verification
+        contract (no dream tone) and prefers the local Ollama coder, lowering
+        temperature so generation is deterministic rather than exploratory.
+        """
+        coder_model: Optional[str] = None
+        if coder:
+            persona_id = "keystone"
+            if provider is None:
+                provider = "ollama"
+            if temperature is None:
+                temperature = 0.2
+            # "Coder is a task type, not a separate system" (Σ₀ briefing [06]): the
+            # local coder dispatch uses the coder model (qwen2.5-coder) rather than
+            # the dream-RP model the shared ollama profile pins (llama3.2). Applied
+            # per-call in _stream_provider so the shared profile is never mutated.
+            coder_model = os.environ.get("OLLAMA_CODER_MODEL", "qwen2.5-coder")
         persona = self._personas.get(persona_id or random.choice(list(self._personas.keys())), PERSONAS[0])
         system = self._build_system(persona, context)
         # Singular stream: only try the explicitly requested provider
         if not fallback and provider and provider in self._providers:
             cfg = self._providers[provider]
             try:
-                result = self._stream_provider(provider, cfg, system, message, temperature, max_tokens)
+                result = self._stream_provider(provider, cfg, system, message, temperature, max_tokens, coder_model)
                 if result is not None:
                     yield from result
                 return
@@ -351,7 +386,7 @@ class UnifiedAgentConnector:
             if isinstance(health, str) and health.startswith("unhealthy"):
                 continue
             try:
-                result = self._stream_provider(prov_name, cfg, system, message, temperature, max_tokens)
+                result = self._stream_provider(prov_name, cfg, system, message, temperature, max_tokens, coder_model)
                 if result is not None:
                     yield from result
                 return
@@ -412,17 +447,32 @@ class UnifiedAgentConnector:
         return names
 
     def _build_system(self, persona: AgentPersona, extra_context: Optional[str]) -> str:
+        # Keystone is the coding agent: it gets the Σ₀ verification contract and
+        # NONE of the dream/RP tone. extra_context becomes grounding evidence so the
+        # gate can set the confidence ceiling (capped at 0.3 when ungrounded).
+        if persona.id == "keystone":
+            if _CODER_GATE_AVAILABLE and _build_coder_gate is not None:
+                grounding = [extra_context] if extra_context else []
+                return _build_coder_gate(grounding_evidence=grounding).system_prompt
+            parts = [persona.system_prompt]
+            if extra_context:
+                parts.append(f"\nGrounding evidence:\n{extra_context}")
+            return "\n".join(parts)
         parts = [persona.system_prompt]
         if extra_context:
             parts.append(f"\nContext:\n{extra_context}")
         parts.append("\nTone: thoughtful, unhurried, human. Never clinical. End with one question or invitation to record.")
         return "\n".join(parts)
 
-    def _stream_provider(self, name: str, cfg: ProviderConfig, system: str, message: str, temperature: Optional[float], max_tokens: Optional[int]):
+    def _stream_provider(self, name: str, cfg: ProviderConfig, system: str, message: str, temperature: Optional[float], max_tokens: Optional[int], model: Optional[str] = None):
         method_name = f"_stream_{name}"
         method = getattr(self, method_name, None)
         if not method:
             raise RuntimeError(f"No stream method for {name}")
+        # Coder task override: swap in the local coder model for ollama dispatch via
+        # a per-call config copy, leaving the shared provider profile untouched.
+        if model and name == "ollama" and model != cfg.model:
+            cfg = replace(cfg, model=model)
         return method(cfg, system, message, temperature, max_tokens)
 
     # --- Provider streamers (shared SSE parser) ---
@@ -538,10 +588,15 @@ class UnifiedAgentConnector:
                 lines = buf.split(b"\n")
                 buf = lines.pop()
                 for line in lines:
-                    s = line.decode("utf-8")
-                    if not s.startswith("data:"):
+                    s = line.decode("utf-8", "replace").strip()
+                    if not s:
                         continue
-                    raw = s[5:].strip()
+                    # SSE providers (Anthropic/OpenAI/...) prefix payload lines with
+                    # "data:"; Ollama's /api/chat streams bare JSONL with no prefix.
+                    # Strip the prefix when present, otherwise treat the line as JSONL.
+                    # Non-JSON framing lines (SSE "event:" etc.) fail json.loads below
+                    # and are skipped, so both transports parse correctly.
+                    raw = s[5:].strip() if s.startswith("data:") else s
                     if raw in ("[DONE]", ""):
                         continue
                     try:
@@ -572,7 +627,8 @@ class UnifiedAgentConnector:
     # ------------------------------------------------------------------ #
     def greet(self, recent_dreams: Optional[List[Dict[str, Any]]] = None, provider: Optional[str] = None) -> Generator[str, None, Dict[str, Any]]:
         """Generate a non-trivial greeting every time the dream journal surface loads."""
-        persona = random.choice(PERSONAS)
+        # Keystone is the coding agent, not a dream greeter — keep it out of the rotation.
+        persona = random.choice([p for p in PERSONAS if p.id != "keystone"])
         hour = datetime.now().hour
         time_greeting = "Good morning" if 5 <= hour < 12 else "Good afternoon" if 12 <= hour < 18 else "Good evening" if 18 <= hour < 22 else "The night is deep"
         recent = recent_dreams or []
@@ -623,6 +679,17 @@ class UnifiedAgentConnector:
             "providers": {name: {"model": cfg.model, "enabled": cfg.enabled, "priority": cfg.priority} for name, cfg in self._providers.items()},
             "health": self._health,
             "personas": [p.id for p in PERSONAS],
+            # Keystone is the Σ₀ coding agent (issue #628): it carries the
+            # verification contract and prefers the local Ollama coder model.
+            "coderAgent": {
+                "persona": "keystone",
+                "contract": "sigma0",
+                "verificationFields": list(REQUIRED_SECTIONS) if _CODER_GATE_AVAILABLE else ["Claim", "Evidence", "Confidence", "Source", "Verification"],
+                "preferredProvider": "ollama",
+                # The coder task uses the coder model, independent of the dream-RP
+                # model pinned on the shared ollama profile (issue #628).
+                "preferredModel": os.environ.get("OLLAMA_CODER_MODEL", "qwen2.5-coder"),
+            },
             "slots": self.list_slots(),
         }
 
@@ -648,6 +715,7 @@ if __name__ == "__main__":
     parser.add_argument("--context", default=None)
     parser.add_argument("--temperature", type=float, default=None)
     parser.add_argument("--max-tokens", type=int, default=None)
+    parser.add_argument("--coder", action="store_true", help="Route through the Keystone coding agent (Σ₀ verification contract)")
     args = parser.parse_args()
 
     c = get_connector()
@@ -674,7 +742,7 @@ if __name__ == "__main__":
         out = []
         meta = {}
         try:
-            gen = c.stream(args.message, persona_id=args.persona, provider=args.provider, context=args.context, temperature=args.temperature, max_tokens=args.max_tokens)
+            gen = c.stream(args.message, persona_id=args.persona, provider=args.provider, context=args.context, temperature=args.temperature, max_tokens=args.max_tokens, coder=args.coder)
             while True:
                 try:
                     token = next(gen)

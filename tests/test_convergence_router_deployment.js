@@ -106,6 +106,30 @@ async function run() {
     assert.strictEqual(result.handler, "keystone_dispatcher");
   });
 
+  console.log("\nCode Generation Routing (Σ₀ Keystone Coder, #628)");
+
+  await testAsync("uncached codegen routes to verification-gated Keystone coder", async () => {
+    const router = new ConvergenceRouter();
+    const result = await router.routeCodeGeneration("py", "unique-scope-" + Date.now(), ["parser"]);
+    assert.strictEqual(result.source, "keystone_coder", "uncached codegen should route to the coder");
+    assert.strictEqual(result.agent, "keystone");
+    assert.strictEqual(result.contract, "sigma0");
+    assert.strictEqual(result.provider, "ollama");
+    assert.deepStrictEqual(
+      result.verificationFields,
+      ["Claim", "Evidence", "Confidence", "Source", "Verification"],
+      "coder route must carry the five-field evidence contract"
+    );
+    assert.strictEqual(result.ungroundedConfidenceCap, 0.3);
+  });
+
+  await testAsync("cached codegen template still wins over coder dispatch", async () => {
+    const router = new ConvergenceRouter();
+    router.patterns.codePatterns["py:cached-scope"] = { template: "x=1", tokens_saved: 5, examples: [] };
+    const result = await router.routeCodeGeneration("py", "cached-scope");
+    assert.strictEqual(result.source, "template_cache", "cache hit should bypass the coder");
+  });
+
   console.log("\nToken Efficiency (90% Local Target)");
 
   await testAsync("90% of deterministic tasks route locally", async () => {
