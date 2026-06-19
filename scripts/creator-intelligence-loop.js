@@ -116,7 +116,7 @@ function pearson(xs, ys) {
   for (const [a, b] of pairs) { num2 += (a - mx) * (b - my); dx += (a - mx) ** 2; dy += (b - my) ** 2; }
   return dx && dy ? Number((num2 / Math.sqrt(dx * dy)).toFixed(3)) : null;
 }
-function isoDurationToSec(d) { const m = /PT(?:(\d+)M)?(?:(\d+)S)?/.exec(d || ""); return m ? (Number(m[1] || 0) * 60 + Number(m[2] || 0)) : null; }
+function isoDurationToSec(d) { const m = String(d || "").match(/PT(?:(\d+)M)?(?:(\d+)S)?/); return m ? (Number(m[1] || 0) * 60 + Number(m[2] || 0)) : null; }
 function confFor(n) { return n >= 200 ? "calibrated" : n >= 25 ? "directional" : "insufficient_data"; }
 
 function calibrate() {
@@ -185,7 +185,7 @@ async function runCycle(opts = {}) {
 // ── Perpetual loop: resumable, rate-limited. ─────────────────────────────────
 async function runForever({ maxCycles = Infinity, cycleDelayMs = 60 * 60 * 1000, query } = {}) {
   for (let i = 0; i < maxCycles; i++) {
-    try { const r = await runCycle({ query }); console.log(`[ci-loop] cycle ${r.cycle}: +${r.discovered} metadata (${r.discoveryConfidence})`); }
+    try { const r = await runCycle({ query }); process.stdout.write(`[ci-loop] cycle ${r.cycle}: +${r.discovered} metadata (${r.discoveryConfidence})\n`); }
     catch (e) { console.error("[ci-loop] cycle error (continuing):", e.message); }
     if (i < maxCycles - 1) await sleep(cycleDelayMs); // rate-limit; checkpoint survives a crash
   }
@@ -215,13 +215,13 @@ module.exports = { runCycle, runForever, calibrate, discoverMetadata, storeMetad
 // ── CLI ─────────────────────────────────────────────────────────────────────
 if (require.main === module) {
   (async () => {
-    if (process.argv.includes("--status")) { console.log(JSON.stringify(getLoopStatus(), null, 2)); return; }
-    if (process.argv.includes("--calibrate")) { console.log(JSON.stringify(calibrate(), null, 2)); return; }
+    if (process.argv.includes("--status")) { process.stdout.write(JSON.stringify(getLoopStatus(), null, 2) + "\n"); return; }
+    if (process.argv.includes("--calibrate")) { process.stdout.write(JSON.stringify(calibrate(), null, 2) + "\n"); return; }
     if (process.argv.includes("--forever")) {
       const lim = Number((process.argv.find((a) => a.startsWith("--max-cycles=")) || "").split("=")[1]) || Infinity;
       await runForever({ maxCycles: lim });
       return;
     }
-    console.log(JSON.stringify(await runCycle(), null, 2));
+    process.stdout.write(JSON.stringify(await runCycle(), null, 2) + "\n");
   })().catch((e) => { console.error("ERR", e.message); process.exit(1); });
 }
