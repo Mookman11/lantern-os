@@ -508,8 +508,9 @@ class ResearchLoop:
     # -- Stage 5: Verify via the External Reality Rule (cross-source) ----------
     def _cluster_and_verify(
         self, claims: List[Dict[str, Any]], mem_by_id: Dict[str, Any],
-        src_index: Dict[str, int],
+        src_index: Dict[str, int], min_sources: Optional[int] = None,
     ) -> List[ResearchClaim]:
+        ms = self.min_sources if min_sources is None else min_sources
         clusters: List[Dict[str, Any]] = []  # {tokens, text, memory_ids}
         for claim in claims:
             tokens = _tokenize(claim["text"])
@@ -534,7 +535,7 @@ class ResearchLoop:
             mem_ids = [mid for mid in cl["memory_ids"] if mid in mem_by_id]
             domains = sorted({mem_by_id[mid].content.get("domain", "unknown") for mid in mem_ids})
             distinct = len(domains)
-            supported = distinct >= self.min_sources
+            supported = distinct >= ms
             # External Reality Rule: confidence scales with independent corroboration.
             confidence = min(0.95, 0.20 + 0.25 * distinct)
 
@@ -591,11 +592,27 @@ class ResearchLoop:
         sub_queries: Optional[List[str]] = None,
         max_results: int = 5,
         persist_report: bool = True,
+        dilation: Optional[float] = None,
     ) -> ResearchReport:
-        """Run the full research convergence loop for one question."""
+        """Run the full research convergence loop for one question.
+
+        If `dilation` is given (the within→without bridge), the external-grounding
+        budget is set by it: higher dilation widens web breadth (max_results) and
+        raises the corroboration floor (min_sources). See convergence_io.dilation.
+        """
         question = (question or "").strip()
         if not question:
             raise ValueError("question must be a non-empty string")
+
+        eff_min_sources = self.min_sources
+        if dilation is not None:
+            try:
+                from convergence_io.dilation import grounding_policy
+                pol = grounding_policy(float(dilation), base_max_results=max_results,
+                                       base_min_sources=self.min_sources)
+                max_results, eff_min_sources = pol.max_results, pol.min_sources
+            except Exception:
+                pass
 
         queries = sub_queries or self.plan_sub_queries(question)
 
@@ -620,7 +637,7 @@ class ResearchLoop:
         raw_claims = self.reasoner(question, memories) if memories else []
 
         # Verify → cross-source corroboration (External Reality Rule).
-        claims = self._cluster_and_verify(raw_claims, mem_by_id, src_index)
+        claims = self._cluster_and_verify(raw_claims, mem_by_id, src_index, eff_min_sources)
 
         # Converge → patterns + metrics.
         patterns = self._extract_patterns(claims, question)
@@ -637,7 +654,7 @@ class ResearchLoop:
             created_at=datetime.now(timezone.utc).isoformat(),
             claims=claims,
             sources=sources,
-            min_sources=self.min_sources,
+            min_sources=eff_min_sources,
             metrics=metrics,
         )
 

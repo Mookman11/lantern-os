@@ -343,3 +343,27 @@ def test_cli_no_command_prints_help(tmp_path, capsys):
     from src.convergence.research import main
     assert main(["--data-dir", str(tmp_path)]) == 0
     assert "Research Convergence Loop" in capsys.readouterr().out
+
+
+# ── dilation → external-grounding depth (the within→without bridge, #764) ───────
+
+def test_research_dilation_scales_grounding(tmp_path):
+    """Higher dilation widens web breadth (max_results) and raises the corroboration
+    floor (min_sources) via convergence_io.grounding_policy."""
+    seen = {}
+
+    def recording_searcher(query, max_results=5):
+        seen["max_results"] = max_results       # same per run; last call wins
+        return [dict(r) for r in _FAKE_RESULTS][:max_results]
+
+    loop = ResearchLoop(searcher=recording_searcher, data_dir=tmp_path, min_sources=2)
+    rep_lo = loop.run("how does photosynthesis work?", dilation=0.4)
+    lo_mr, lo_ms = seen["max_results"], rep_lo.min_sources
+    rep_hi = loop.run("how does photosynthesis work?", dilation=4.0)
+    hi_mr, hi_ms = seen["max_results"], rep_hi.min_sources
+
+    assert hi_mr > lo_mr                          # high dilation → wider web breadth
+    assert hi_ms >= lo_ms                         # ...and a higher corroboration floor
+    assert hi_ms >= 3                             # D≥3 → base(2)+1
+    rep_none = loop.run("how does photosynthesis work?")
+    assert rep_none.min_sources == 2             # no dilation → unchanged defaults
