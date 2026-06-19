@@ -12,6 +12,7 @@
 "use strict";
 
 const { scoreVideoV10 } = require("./score-v10");
+const { dropoffPenalty } = require("../calibration/dropoff-model");
 
 const STRATEGIES = {
   A: { id: "variantA", strategy: "maximum_retention", label: "Maximum Retention" },
@@ -172,6 +173,13 @@ function generateVariantsV10(analysis = {}, opts = {}) {
     // retention %; it is the real score of whatever segment opens this variant.
     const introStrength = segments.length ? round3(segments[0].score || 0) : 0;
 
+    // B2: mean drop-off penalty over this variant's segments. 0 (no-op) unless a
+    // CALIBRATED dropoffProfile is supplied (>=100 cliff-labeled outcomes) — so
+    // editing decisions are unchanged until the operator's own data supports them.
+    const dropPenalty = segments.length
+      ? round3(segments.reduce((s, seg) => s + dropoffPenalty(seg, opts.dropoffProfile), 0) / segments.length)
+      : 0;
+
     return {
       id: def.id,
       strategy: def.strategy,
@@ -179,6 +187,7 @@ function generateVariantsV10(analysis = {}, opts = {}) {
       segments,                       // source cut-list (for rendering)
       durationSec: derived.duration,
       introStrength,                  // 0-1 structural hook-strength proxy
+      dropoffPenalty: dropPenalty,    // 0 unless a calibrated profile is supplied
       score: scored.viral,
       gaming: scored.gaming || null,
       retention: scored.retention,
@@ -189,10 +198,14 @@ function generateVariantsV10(analysis = {}, opts = {}) {
   });
 
   // Rank by structural viral score (desc); ties broken by editor grade composite.
-  variants.sort((a, b) =>
-    (b.score.viralScore - a.score.viralScore) ||
-    (b.editorGrade.composite - a.editorGrade.composite)
-  );
+  // B2: when a CALIBRATED drop-off profile is supplied, discount each variant's
+  // rank key by its drop-off penalty (favoring edits that hold a flat curve).
+  // Without a calibrated profile this is identical to the prior pure-score rank.
+  const calibratedDropoff = !!(opts.dropoffProfile && opts.dropoffProfile.status === "ok");
+  const rankKey = (v) => calibratedDropoff
+    ? v.score.viralScore * (1 - 0.3 * v.dropoffPenalty)
+    : v.score.viralScore;
+  variants.sort((a, b) => (rankKey(b) - rankKey(a)) || (b.editorGrade.composite - a.editorGrade.composite));
   variants.forEach((v, i) => { v.rank = i + 1; });
 
   return {

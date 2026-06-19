@@ -13,6 +13,7 @@ const path = require("path");
 const { parseAnalyticsCsv } = require("./youtube-analytics-import");
 const { parseRetentionCsv } = require("./retention-curve-import");
 const retention = require("./retention-analysis");
+const dropoff = require("./dropoff-model");
 const store = require("./outcome-store");
 const engine = require("./calibration-engine");
 
@@ -129,6 +130,9 @@ module.exports = {
   retentionCurveMetrics: retention.curveMetrics,
   retentionOutcomeMetrics: retention.retentionOutcomeMetrics,
   attributeCliffToSegments: retention.attributeCliffToSegments,
+  // B2 — drop-off-aware cutting (gated; no-op until calibrated).
+  buildDropoffProfile: dropoff.buildDropoffProfile,
+  dropoffPenalty: dropoff.dropoffPenalty,
   count: store.count,
   usableRows: store.usableRows,
   thresholds: {
