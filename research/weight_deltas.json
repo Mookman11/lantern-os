@@ -1,0 +1,49 @@
+{
+  "_comment": "Σ₀ self-calibration: baseline viral_patterns.json weights vs open-video prior-informed weights. Regenerate: `node scripts/open-video-research.js --calibrate`.",
+  "samples": 0,
+  "minSamples": 25,
+  "priorInformed": false,
+  "generatedAt": "2026-06-19T00:08:01.470Z",
+  "weights": {
+    "hook": {
+      "before": 0.15,
+      "after": 0.15,
+      "delta": 0
+    },
+    "retention": {
+      "before": 0.2,
+      "after": 0.2,
+      "delta": 0
+    },
+    "emotion": {
+      "before": 0.15,
+      "after": 0.15,
+      "delta": 0
+    },
+    "surprise": {
+      "before": 0.2,
+      "after": 0.2,
+      "delta": 0
+    },
+    "pacing": {
+      "before": 0.1,
+      "after": 0.1,
+      "delta": 0
+    },
+    "rewatch": {
+      "before": 0.1,
+      "after": 0.1,
+      "delta": 0
+    },
+    "visualClarity": {
+      "before": 0.05,
+      "after": 0.05,
+      "delta": 0
+    },
+    "captionPotential": {
+      "before": 0.05,
+      "after": 0.05,
+      "delta": 0
+    }
+  }
+}

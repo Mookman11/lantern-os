@@ -148,17 +148,136 @@ function aggregateEditingPriors() {
   return { ok: true, priors };
 }
 
-module.exports = { downloadVideo, analyzeForResearch, research, storeFeatures, aggregateEditingPriors };
+// ── Σ₀ self-calibration: baseline vs prior-informed weights ─────────────────
+function calibrateWeights() {
+  const basePriors = require("../src/creator-intelligence/research/viral_patterns.json");
+  const { weightDeltas } = require("../src/creator-intelligence/scoring/editing-priors-adapter");
+  const out = weightDeltas(basePriors);
+  const file = path.join(RESEARCH_DIR, "..", "weight_deltas.json"); // research/weight_deltas.json
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(out, null, 2) + "\n");
+  return { ok: true, file, ...out };
+}
+
+// ── Source search (open-license only) ───────────────────────────────────────
+// Each returns [{ url, title, license, creator, source }]. Network-only reads;
+// no downloads happen here. yt-dlp is still required to actually fetch a result.
+async function getJson(url, ms = 12000) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  try {
+    const r = await fetch(url, { signal: ctrl.signal, headers: { "user-agent": "lantern-os-open-video-research/1.0" } });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    return await r.json();
+  } finally { clearTimeout(t); }
+}
+
+async function searchArchiveOrg(query, limit = 25) {
+  const q = encodeURIComponent(`${query} AND mediatype:(movies)`);
+  const url = `https://archive.org/advancedsearch.php?q=${q}&fl[]=identifier&fl[]=title&fl[]=creator&fl[]=licenseurl&rows=${limit}&output=json`;
+  const j = await getJson(url).catch(() => null);
+  const docs = (j && j.response && j.response.docs) || [];
+  return docs
+    .filter((d) => d.identifier && (d.licenseurl || /public.?domain/i.test(d.title || ""))) // keep clearly-licensed
+    .map((d) => ({ url: `https://archive.org/details/${d.identifier}`, title: d.title || d.identifier, license: d.licenseurl || "public-domain?", creator: d.creator || null, source: "archive.org" }));
+}
+
+async function searchPeerTube(query, limit = 25) {
+  // SepiaSearch is the federated PeerTube index. licenceOneOf 1..7 are CC/PD.
+  const url = `https://sepiasearch.org/api/v1/search/videos?search=${encodeURIComponent(query)}&count=${limit}&licenceOneOf=1,2,3,4,5,6,7`;
+  const j = await getJson(url).catch(() => null);
+  const data = (j && j.data) || [];
+  return data.map((v) => ({ url: v.url, title: v.name, license: (v.licence && v.licence.label) || "CC", creator: (v.account && v.account.displayName) || null, source: "peertube" }));
+}
+
+async function searchWikimedia(query, limit = 25) {
+  const url = `https://commons.wikimedia.org/w/api.php?action=query&format=json&generator=search&gsrsearch=${encodeURIComponent("filetype:video " + query)}&gsrnamespace=6&gsrlimit=${limit}&prop=imageinfo&iiprop=url|extmetadata&origin=*`;
+  const j = await getJson(url).catch(() => null);
+  const pages = (j && j.query && j.query.pages) || {};
+  return Object.values(pages)
+    .map((p) => { const ii = (p.imageinfo || [])[0] || {}; return { url: ii.url, title: p.title, license: (ii.extmetadata && ii.extmetadata.LicenseShortName && ii.extmetadata.LicenseShortName.value) || "CC/PD", creator: null, source: "wikimedia" }; })
+    .filter((x) => x.url);
+}
+
+const SOURCES = { archive: searchArchiveOrg, peertube: searchPeerTube, wikimedia: searchWikimedia };
+const DEFAULT_QUERIES = ["gaming gameplay", "minecraft gameplay", "fps gameplay", "speedrun"];
+
+// ── Nightly research-at-scale (search → download → analyze → DELETE → learn) ─
+async function researchNightly({ limit = 200, sources = Object.keys(SOURCES), queries = DEFAULT_QUERIES } = {}) {
+  const started = new Date();
+  const candidates = [];
+  const per = Math.max(1, Math.ceil(limit / (sources.length * queries.length)));
+  for (const src of sources) {
+    for (const q of queries) {
+      try { (await SOURCES[src](q, per)).forEach((c) => candidates.push(c)); } catch (_) { /* a dead source shouldn't sink the run */ }
+      if (candidates.length >= limit) break;
+    }
+    if (candidates.length >= limit) break;
+  }
+  const queue = candidates.slice(0, limit);
+
+  let analyzed = 0, failed = 0; const perSource = {};
+  for (const c of queue) {
+    const r = await research(c.url, { source: c.url, title: c.title, creator: c.creator, license: c.license });
+    perSource[c.source] = perSource[c.source] || { found: 0, analyzed: 0 };
+    perSource[c.source].found++;
+    if (r.ok) { analyzed++; perSource[c.source].analyzed++; } else { failed++; }
+  }
+
+  const priors = aggregateEditingPriors();  // updates editing_priors.json
+  const deltas = calibrateWeights();         // updates research/weight_deltas.json
+  const report = writeNightlyReport({ started, candidates: candidates.length, queue: queue.length, analyzed, failed, perSource, priors, sources, queries });
+  return { ok: true, candidates: candidates.length, analyzed, failed, report, weightDeltas: deltas.file, priorsSamples: priors.ok ? priors.priors.samples : 0 };
+}
+
+function writeNightlyReport(x) {
+  const p = x.priors && x.priors.ok ? x.priors.priors : {};
+  const file = path.join(RESEARCH_DIR, "..", "nightly_report.md");
+  const lines = [
+    `# Open-Video Nightly Research — ${x.started.toISOString().slice(0, 10)}`,
+    "",
+    `- started: ${x.started.toISOString()}`,
+    `- sources: ${x.sources.join(", ")}`,
+    `- queries: ${x.queries.join("; ")}`,
+    `- candidates found: ${x.candidates}`,
+    `- attempted (capped): ${x.queue}`,
+    `- **videos_analyzed: ${x.analyzed}**   (failed/skipped: ${x.failed})`,
+    "",
+    "## Per source",
+    "| source | found | analyzed |",
+    "|---|---|---|",
+    ...Object.entries(x.perSource).map(([s, v]) => `| ${s} | ${v.found} | ${v.analyzed} |`),
+    "",
+    "## Aggregated priors (corpus to date)",
+    `- samples: ${p.samples ?? 0}`,
+    `- avg_hook: ${p.opening_hook_strength ?? "—"}`,
+    `- avg_motion: ${p.motion_target ?? "—"}`,
+    `- avg_cut_rate: ${p.avg_cut_rate ?? "—"}`,
+    `- facecam_distribution: ${JSON.stringify(p.facecam_distribution || {})}`,
+    "",
+    x.analyzed === 0
+      ? "> No videos were analyzed this run — most likely `yt-dlp` is not installed (required to fetch), or the sources returned no open-license matches. No fabricated metrics are reported."
+      : "> Priors updated from the analyzed corpus; weights recalibrate once samples > 25 (see research/weight_deltas.json).",
+    "",
+  ];
+  fs.writeFileSync(file, lines.join("\n"));
+  return file;
+}
+
+module.exports = { downloadVideo, analyzeForResearch, research, storeFeatures, aggregateEditingPriors, calibrateWeights, researchNightly, searchArchiveOrg, searchPeerTube, searchWikimedia };
 
 // ── CLI ─────────────────────────────────────────────────────────────────────
 if (require.main === module) {
   (async () => {
-    if (process.argv.includes("--aggregate")) {
-      console.log(JSON.stringify(aggregateEditingPriors(), null, 2));
+    if (process.argv.includes("--aggregate")) { console.log(JSON.stringify(aggregateEditingPriors(), null, 2)); return; }
+    if (process.argv.includes("--calibrate")) { console.log(JSON.stringify(calibrateWeights(), null, 2)); return; }
+    if (process.argv.includes("--nightly")) {
+      const lim = Number((process.argv.find((a) => a.startsWith("--limit=")) || "").split("=")[1]) || 200;
+      console.log(JSON.stringify(await researchNightly({ limit: lim }), null, 2));
       return;
     }
     const src = process.argv[2];
-    if (!src) { console.error("usage: node open-video-research.js <url|file [--local]> | --aggregate"); process.exit(1); }
+    if (!src) { console.error("usage: open-video-research.js <url|file [--local]> | --aggregate | --calibrate | --nightly [--limit=N]"); process.exit(1); }
     const r = await research(src, { source: src, localFile: process.argv.includes("--local") });
     console.log(JSON.stringify(r, null, 2));
     if (!r.ok) process.exit(1);
