@@ -31,6 +31,7 @@ const REPO = path.join(__dirname, "..");
 const DIR = path.join(REPO, "research", "ci_loop");
 const CHECKPOINT = path.join(DIR, "checkpoint.json");
 const VIRAL_RESEARCH = path.join(DIR, "viralResearch.jsonl");
+const FIRST_PARTY = path.join(DIR, "first_party_outcomes.jsonl");
 const CALIBRATION = path.join(DIR, "calibration.json");
 const SEEN = path.join(DIR, "seen.json"); // dedup index
 
@@ -105,6 +106,24 @@ function calibrate() {
   const n = rows.length;
   const views = rows.map((r) => r.views);
   const metaConf = confFor(n);
+
+  // FIRST-PARTY: the user's OWN published videos — real editing features (from our
+  // analysis of their own clip) vs real outcomes (their own analytics). This is
+  // fully lawful AND is the signal that actually improves the editor over time.
+  const fp = readJsonl(FIRST_PARTY); // [{videoId, features:{cutsPerMin,hookLength,motionIntensity}, outcomes:{views,retentionPct,completionPct}}]
+  const fpN = fp.length;
+  const fpConf = confFor(fpN);
+  const feat = (k) => fp.map((r) => r.features && r.features[k]);
+  const out = (k) => fp.map((r) => r.outcomes && r.outcomes[k]);
+  const first_party = fpN >= 3
+    ? {
+      samples: fpN,
+      cutsPerMin_vs_retention: { confidence: fpConf, correlation: pearson(feat("cutsPerMin"), out("retentionPct")), basis: "first_party (own content + own analytics)" },
+      hookLength_vs_completion: { confidence: fpConf, correlation: pearson(feat("hookLength"), out("completionPct")), basis: "first_party" },
+      motionIntensity_vs_views: { confidence: fpConf, correlation: pearson(feat("motionIntensity"), out("views")), basis: "first_party" },
+    }
+    : { samples: fpN, _status: { confidence: "insufficient_data", reason: `only ${fpN} of 25 first-party videos have reported outcomes — feed more of YOUR OWN published-video stats to calibrate the editor` } };
+
   const cal = {
     updatedAt: new Date().toISOString(),
     samples: n,
@@ -114,10 +133,20 @@ function calibrate() {
       likes_vs_views: { confidence: metaConf, correlation: n >= 3 ? pearson(rows.map((r) => r.likes), views) : null, basis: "public metadata" },
       editing_features_vs_virality: { confidence: "insufficient_data", correlation: null, reason: "editing features of copyrighted viral videos cannot be lawfully extracted; the loop collects only their public metadata" },
     },
+    first_party,
   };
   fs.mkdirSync(DIR, { recursive: true });
   fs.writeFileSync(CALIBRATION, JSON.stringify(cal, null, 2));
   return cal;
+}
+
+// Feed back one of the user's OWN published videos: its editing features (from
+// our analysis of the clip we made) + its real outcomes (their own analytics).
+function ingestFirstPartyOutcome(rec) {
+  if (!rec || !rec.videoId || !rec.features || !rec.outcomes) return { ok: false, reason: "need { videoId, features:{...}, outcomes:{...} }" };
+  fs.mkdirSync(DIR, { recursive: true });
+  fs.appendFileSync(FIRST_PARTY, JSON.stringify({ ...rec, source: "first_party", ingestedAt: new Date().toISOString() }) + "\n");
+  return { ok: true, videoId: rec.videoId };
 }
 
 // ── One cycle: Observe (discover) → Measure (store) → Calibrate → checkpoint ──
@@ -147,12 +176,15 @@ async function runForever({ maxCycles = Infinity, cycleDelayMs = 60 * 60 * 1000,
 function getLoopStatus() {
   const cp = loadCheckpoint();
   const cal = readJson(CALIBRATION, null);
-  const overall = cal ? Object.values(cal.signals).reduce((acc, s) => acc === "calibrated" ? acc : (s.confidence === "calibrated" ? "calibrated" : s.confidence === "directional" ? "directional" : acc), "insufficient_data") : "insufficient_data";
-  const top = cal ? Object.entries(cal.signals).filter(([, s]) => Number.isFinite(s.correlation)).sort((a, b) => Math.abs(b[1].correlation) - Math.abs(a[1].correlation)).slice(0, 3).map(([k, s]) => ({ feature: k, correlation: s.correlation, confidence: s.confidence })) : [];
+  // Pool metadata signals + first-party editing→outcome signals for ranking.
+  const allSignals = cal ? { ...cal.signals, ...(cal.first_party || {}) } : {};
+  const rank = (v) => v === "calibrated" ? 2 : v === "directional" ? 1 : 0;
+  const overall = Object.values(allSignals).reduce((acc, s) => (s && rank(s.confidence) > rank(acc)) ? s.confidence : acc, "insufficient_data");
+  const top = Object.entries(allSignals).filter(([, s]) => s && Number.isFinite(s.correlation)).sort((a, b) => Math.abs(b[1].correlation) - Math.abs(a[1].correlation)).slice(0, 3).map(([k, s]) => ({ feature: k, correlation: s.correlation, confidence: s.confidence, basis: s.basis }));
   return {
     cycle: cp.cycle,
     metadataCollected: cp.metadataCollected,
-    openLicenseAnalyzed: cp.openLicenseAnalyzed,
+    firstPartyVideos: cal && cal.first_party ? cal.first_party.samples : 0,
     lastCycleAt: cp.lastCycleAt,
     overallConfidence: overall,
     topCorrelatedFeatures: top,
@@ -160,7 +192,7 @@ function getLoopStatus() {
   };
 }
 
-module.exports = { runCycle, runForever, calibrate, discoverMetadata, storeMetadata, getLoopStatus, loadCheckpoint };
+module.exports = { runCycle, runForever, calibrate, discoverMetadata, storeMetadata, ingestFirstPartyOutcome, getLoopStatus, loadCheckpoint };
 
 // ── CLI ─────────────────────────────────────────────────────────────────────
 if (require.main === module) {
