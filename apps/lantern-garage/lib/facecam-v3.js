@@ -157,6 +157,17 @@ function cornerOf(b) {
   if (cxv > 0.35 && cxv < 0.65 && cyv > 0.35 && cyv < 0.65) return "center";
   return (cyv < 0.5 ? "top_" : "bottom_") + (cxv < 0.5 ? "left" : "right");
 }
+// Edge-aware label — corners, the four EDGES (a side/top/bottom-hugging cam that
+// is not in a corner, e.g. a vertical facecam down the right side), or center.
+function positionLabel(b) {
+  const eps = 0.06;
+  const L = b.x <= eps, R = b.x + b.width >= 1 - eps, T = b.y <= eps, B = b.y + b.height >= 1 - eps;
+  if (L && T) return "top_left"; if (R && T) return "top_right";
+  if (L && B) return "bottom_left"; if (R && B) return "bottom_right";
+  if (L) return "left_edge"; if (R) return "right_edge";
+  if (T) return "top_edge"; if (B) return "bottom_edge";
+  return "center";
+}
 
 function saveDebugOverlay(videoPath, best, opts = {}) {
   return new Promise((resolve, reject) => {
@@ -177,29 +188,30 @@ async function detectFacecamV3(videoPath, opts = {}) {
   if (frames.length < 4) return { facecam: null, confidence: 0, meets85: false, reason: "insufficient frames" };
   const grid = buildGrid(frames);
 
-  // Thorough sliding-window search: widths/heights in cells (incl. tall vertical
-  // boxes), positions stepped across the whole frame.
-  const widths = [5, 7, 9];                 // ~0.16 / 0.22 / 0.28 of width
-  const heights = [3, 4, 6, 8, 10];         // ~0.17 .. 0.55 of height (catches vertical facecams)
   let best = null, searched = 0;
-  for (const cw of widths) {
-    for (const ch of heights) {
-      for (let cy0 = 0; cy0 + ch <= GH; cy0 += 2) {
-        for (let cx0 = 0; cx0 + cw <= GW; cx0 += 2) {
-          searched++;
-          const s = scoreRegion(grid, cx0, cy0, cw, ch);
-          if (!best || s.confidence > best.confidence) best = s;
-        }
-      }
-    }
-  }
+  const consider = (cx0, cy0, cw, ch) => {
+    if (cx0 < 0 || cy0 < 0 || cx0 + cw > GW || cy0 + ch > GH) return;
+    searched++;
+    const s = scoreRegion(grid, cx0, cy0, cw, ch);
+    if (!best || s.confidence > best.confidence) best = s;
+  };
+
+  // (1) Full-frame coarse sweep — widths/heights incl. tall boxes.
+  const widths = [5, 7, 9];                       // ~0.16 / 0.22 / 0.28 of width
+  const heights = [3, 4, 6, 8, 10, 13, 16];       // ~0.17 .. 0.89 of height (full-height side cams)
+  for (const cw of widths) for (const ch of heights) for (let cy0 = 0; cy0 + ch <= GH; cy0 += 2) for (let cx0 = 0; cx0 + cw <= GW; cx0 += 2) consider(cx0, cy0, cw, ch);
+
+  // (2) Fine BORDER pass — facecams hug edges, so slide along every edge at step 1.
+  //     Left/right edges get vertical boxes (incl. tall side cams); top/bottom get bars.
+  for (const w of [4, 5, 6]) for (const ch of [4, 6, 8, 10, 13, 16]) for (let cy0 = 0; cy0 + ch <= GH; cy0 += 1) { consider(0, cy0, w, ch); consider(GW - w, cy0, w, ch); }
+  for (const cw of [6, 8, 10, 12]) for (const ch of [3, 4, 5]) for (let cx0 = 0; cx0 + cw <= GW; cx0 += 1) { consider(cx0, 0, cw, ch); consider(cx0, GH - ch, cw, ch); }
 
   const has = best && best.confidence >= 0.25;
-  if (best) best.corner = cornerOf(best.bounds);
+  if (best) { best.corner = cornerOf(best.bounds); best.position = positionLabel(best.bounds); }
   let debugPath = null;
   if (opts.debug !== false && best) { try { debugPath = await saveDebugOverlay(videoPath, best, opts); } catch (_) { debugPath = null; } }
   return {
-    facecam: has ? { corner: best.corner, bounds: best.bounds, confidence: best.confidence, components: best.components } : null,
+    facecam: has ? { corner: best.corner, position: best.position, bounds: best.bounds, confidence: best.confidence, components: best.components } : null,
     confidence: best ? best.confidence : 0,
     meets85: !!(best && best.confidence >= 0.85),
     searched, framesAnalyzed: frames.length, debugPath,

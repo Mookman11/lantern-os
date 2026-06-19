@@ -101,7 +101,7 @@ async function analyzeForCropV3(videoPath, opts = {}) {
     const regions = Array.isArray(plan.regions) ? [...plan.regions] : [];
     const existing = regions.find((r) => r.type === "facecam");
     if (v3.facecam && (!existing || v3.facecam.confidence >= (existing.confidence || 0))) {
-      const upgraded = { type: "facecam", corner: v3.facecam.corner, bounds: v3.facecam.bounds, confidence: v3.facecam.confidence, source: "facecam-v3", components: v3.facecam.components };
+      const upgraded = { type: "facecam", corner: v3.facecam.corner, position: v3.facecam.position, bounds: v3.facecam.bounds, confidence: v3.facecam.confidence, source: "facecam-v3", components: v3.facecam.components };
       if (existing) Object.assign(existing, upgraded); else regions.push(upgraded);
     }
     return { ...plan, regions, facecamV3: { confidence: v3.confidence, corner: v3.facecam ? v3.facecam.corner : null, meets85: v3.meets85 } };
