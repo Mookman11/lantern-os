@@ -101,18 +101,32 @@ function isValidRect(rect) {
 // normalized source rects (the facecam from SafeZoneDetectorV2; the gameplay
 // window defaults to the full frame). Reused by both the single-clip and the
 // segment-concat renderers. `tail` is an optional trailing filter (e.g. fps).
+// Default gameplay window that avoids the facecam strip, derived from where the
+// facecam sits (so the cam isn't shown twice in the stacked output).
+function gameplayAvoiding(f) {
+  const min = 0.45; // keep enough gameplay
+  if (f.x <= 0.15) { const w = Math.max(min, 1 - (f.x + f.width)); return { x: 1 - w, y: 0, width: w, height: 1 }; }            // cam on the left
+  if (f.x + f.width >= 0.85) { const w = Math.max(min, f.x); return { x: 0, y: 0, width: w, height: 1 }; }                       // cam on the right
+  if (f.y <= 0.12 && f.width >= 0.6) { const h = Math.max(min, 1 - (f.y + f.height)); return { x: 0, y: 1 - h, width: 1, height: h }; } // top bar
+  if (f.y + f.height >= 0.88 && f.width >= 0.6) { const h = Math.max(min, f.y); return { x: 0, y: 0, width: 1, height: h }; }    // bottom bar
+  return { x: 0, y: 0, width: 1, height: 1 };
+}
+
 function facecamTopChain(inLabel, outLabel, w, h, facecam, gameplayRect, topFrac, tail) {
   const frac = Math.min(0.35, Math.max(0.12, Number(topFrac) || 0.22));
   const topH = Math.round((h * frac) / 2) * 2; // even height for yuv420p
   const botH = h - topH;
   const f = facecam;
-  const g = isValidRect(gameplayRect) ? gameplayRect : { x: 0, y: 0, width: 1, height: 1 };
+  const g = isValidRect(gameplayRect) ? gameplayRect : gameplayAvoiding(f);
   const id = (outLabel.match(/[a-z0-9]+/i) || ["x"])[0]; // unique pad suffix
   const t = tail ? `,${tail}` : "";
   return (
     `${inLabel}split=2[fcs_${id}][gps_${id}];` +
+    // Facecam: scale to FIT the band and PAD-centre it (no cropping) so the whole
+    // cam is perfectly centred horizontally and vertically — wherever it sat.
     `[fcs_${id}]crop=in_w*${f.width}:in_h*${f.height}:in_w*${f.x}:in_h*${f.y},` +
-      `scale=${w}:${topH}:force_original_aspect_ratio=increase,crop=${w}:${topH}[fct_${id}];` +
+      `scale=${w}:${topH}:force_original_aspect_ratio=decrease,` +
+      `pad=${w}:${topH}:(ow-iw)/2:(oh-ih)/2:color=black[fct_${id}];` +
     `[gps_${id}]crop=in_w*${g.width}:in_h*${g.height}:in_w*${g.x}:in_h*${g.y},` +
       `scale=${w}:${botH}:force_original_aspect_ratio=increase,crop=${w}:${botH}[gpt_${id}];` +
     `[fct_${id}][gpt_${id}]vstack=inputs=2${t}${outLabel}`
