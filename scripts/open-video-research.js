@@ -241,7 +241,17 @@ async function searchWikimedia(query, limit = 25) {
     .filter((x) => x.url);
 }
 
-const SOURCES = { archive: searchArchiveOrg, peertube: searchPeerTube, wikimedia: searchWikimedia };
+// Curated, pre-verified open-license seed (CC-BY / public-domain). Reliable
+// regardless of live-search rate limits. Query-independent → returns the whole
+// list; the nightly de-dupes by URL.
+function searchAllowlist(_query, _limit) {
+  try {
+    const j = JSON.parse(fs.readFileSync(path.join(REPO, "research", "sources", "open-allowlist.json"), "utf8"));
+    return (j.videos || []).map((v) => ({ ...v, source: v.source || "allowlist" }));
+  } catch (_) { return []; }
+}
+
+const SOURCES = { allowlist: searchAllowlist, wikimedia: searchWikimedia, archive: searchArchiveOrg, peertube: searchPeerTube };
 const DEFAULT_QUERIES = ["gaming gameplay", "minecraft gameplay", "fps gameplay", "speedrun"];
 
 // ── Nightly research-at-scale (search → download → analyze → DELETE → learn) ─

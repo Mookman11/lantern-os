@@ -1,0 +1,10 @@
+{
+  "_comment": "Curated, verified open-license video for the Σ₀ research flywheel. Every entry is CC-BY / public-domain and fetched via yt-dlp (bounded to 480p / first 120s) then DELETED — only extracted features are kept. This is a RELIABLE seed so collection isn't hostage to live-search rate limits (Wikimedia throttles bulk fetches). The nightly also searches Wikimedia/Archive/PeerTube live on top of this list. Identifiers verified against archive.org/metadata.",
+  "videos": [
+    { "url": "https://archive.org/details/BigBuckBunny_124", "title": "Big Buck Bunny", "license": "CC-BY 3.0", "creator": "Blender Foundation", "source": "allowlist/blender" },
+    { "url": "https://archive.org/details/Sintel", "title": "Sintel", "license": "CC-BY 3.0", "creator": "Blender Foundation", "source": "allowlist/blender" },
+    { "url": "https://archive.org/details/ElephantsDream", "title": "Elephants Dream", "license": "CC-BY 2.5", "creator": "Blender Foundation", "source": "allowlist/blender" },
+    { "url": "https://archive.org/details/caminandes-3-llamigos", "title": "Caminandes 3: Llamigos", "license": "CC-BY 4.0", "creator": "Blender Foundation", "source": "allowlist/blender" },
+    { "url": "https://archive.org/details/agent-327-operation-barbershop", "title": "Agent 327: Operation Barbershop", "license": "CC-BY 4.0", "creator": "Blender Foundation", "source": "allowlist/blender" }
+  ]
+}
