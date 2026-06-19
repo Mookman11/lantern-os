@@ -45,7 +45,8 @@ it), or **[hypothesis — to be measured]**. Metaphor is labelled as metaphor.
 | Recurrent-depth latent trajectories spiral toward fixed points | **[grounded]** | Geiping et al.; STARS (§5) |
 | **CSF ≡ Tesseract (one lattice, two faces)** | **[contribution — this doc]** | §3 |
 | Each Convergence-12 component = one ternary axis | **[hypothesis — design]** | §2 |
-| Dust-sparsity ≡ BitNet zero-weight sparsity | **[hypothesis — to be measured]** | §3.3 |
+| Dust-sparsity ≡ BitNet zero-weight sparsity | **[measured — refined (X3, 2026-06-19)]** — value-sparsity is population-dependent; not the same mechanism | §3.3, §6.1 |
+| Convergence-exit measures contraction faithfully (not fooled by orbits/divergence) | **[measured — supported (X4, 2026-06-19)]** — instrument semantics validated | §6.1 |
 
 The contribution is the bottom three rows: a **mapping**, not new machinery. Everything above
 the divider already exists or is externally grounded.
@@ -154,16 +155,28 @@ cells within a ternary-Hamming radius of the present `center`, ranked by informa
 iterate until `‖h_t − h_{t-1}‖ / ‖h_{t-1}‖ < ε`, i.e. until the trajectory reaches a fixed
 point `h* ≈ f(h*)`. Storage face says *where*; motion face says *toward what*.
 
-### 3.3 The cross-grounding that proves they're the same **[hypothesis — to be measured]**
+### 3.3 The cross-grounding — claimed, then measured and **refined** **[measured (X3)]**
 
 The most economical observation in `quantum_dust.py` is that **"no change" is nearly free**:
-most cells are dust, so confirmations cost nothing. That is *exactly* BitNet b1.58's empirical
+most cells are dust, so confirmations cost nothing. This *resembles* BitNet b1.58's empirical
 finding that **~66 % of ternary weights settle to 0** and zeros are skipped (matmul → add)
-(§5). **Dust-sparsity on the storage face and zero-weight sparsity on the compute face are the
-same phenomenon** on the same ternary substrate. Falsifiable prediction: the steady-state dust
-fraction of a converged `QuantumDustField` over real Lantern memory should sit near the BitNet
-~2/3 figure. If it doesn't, the unification is weaker than claimed — measure it
-(experiment X3, §6).
+(§5). The original draft of this section claimed the two were **"the same phenomenon."**
+**X3 measured it and refined that down** (§6.1):
+
+- The naive `dust_percentage` (address sparsity) is **~99.95 %** for *every* field — a category
+  error vs BitNet, which has no empty address space.
+- The fair, BitNet-comparable metric is **value-sparsity** (fraction of stored `(cell, dim)`
+  amplitude slots equal to 0). It is **population-dependent**: **0.137** for a uniform-random
+  field (≈ the 1/8 prior — confirming the metric is honest), **0.835** for the realistic
+  populator, and it reaches BitNet's **0.66 only when the population is deliberately tuned** to it.
+- BitNet's ~66 % is a **learned** 2/3 ternary mass; the dust field's rate is **structural /
+  data-dependent**. They share a *substrate*, not a *mechanism* — matching the number is a
+  coincidence of population.
+
+So the lattice unification (§3.1–3.2, all `[implemented]`) **stands**; the *sparsity-equivalence
+sub-claim* is **weaker than first stated** and now reads "the dust field *can exhibit*
+BitNet-like value sparsity," not "is the same phenomenon." Honest convergence, exactly as the
+External Reality Rule intends.
 
 ---
 
@@ -234,8 +247,40 @@ Nothing new is added to the loop. The lattice is the **substrate** the four core
 | **X4** | Motion converges, not orbits | log `mean_contraction` from `converge_step` per axis | `‖Δh‖/‖h‖` does not decrease (it orbits/diverges) |
 
 X3 and X4 are the load-bearing ones: X3 tests whether storage-sparsity and compute-sparsity
-are the same phenomenon; X4 tests whether the spiral actually spirals. Until they produce
-numbers, §3.3 stays tagged **[hypothesis]**.
+are the same phenomenon; X4 tests whether the spiral actually spirals. **Both were run on
+2026-06-19** — see §6.1.
+
+### 6.1 Measured results (2026-06-19)
+
+Run via a Workflow (implement → run → 3-lens adversarial verify; all six verifier lenses
+returned **sound, reproduced = true**). Reproducible scripts:
+[`experiments/x3_dust_vs_bitnet_sparsity.py`](../experiments/x3_dust_vs_bitnet_sparsity.py) and
+[`experiments/x4_converge_step_instrument.py`](../experiments/x4_converge_step_instrument.py)
+(run as `PYTHONPATH=src python …`); raw numbers in
+[`experiments/results/`](../experiments/results/).
+
+**X3 — dust vs BitNet sparsity → `refined`.** Address sparsity (`dust_percentage`) = **0.99951**
+for every field — a category error vs BitNet, which has no empty address space. The fair
+*value*-sparsity (zero fraction over stored `(cell,dim)` amplitudes) is **population-dependent**:
+**0.137** uniform-random (≈ the 1/8 prior — the metric is honest) · **0.835** realistic populator ·
+**0.6625** only when deliberately tuned to BitNet's 0.66 · spread **0.698**. BitNet's 66 % is
+*learned*; the field's rate is *structural / data-dependent*. → The sparsity-equivalence
+sub-claim (§3.3) is **weakened, not confirmed**; the lattice unification itself (§3.1–3.2) is
+untouched.
+
+**X4 — `converge_step` contraction instrument → `supported` (semantics).** On synthetic
+trajectories of known type (eps = 0.05, max_steps = 12): **contraction** `h_t = h* + 0.5^t(h_0−h*)`
+→ deltas `[0.50, 0.47, 0.39, 0.25, 0.13, 0.068, 0.034]`, exits step 8 `fixed_point`; **orbit**
+(constant-norm rotation) → rel pinned at 0.134, `max_depth`, **no false fixed_point**;
+**divergence** `1.3^t·h_0` → rel 0.30, `max_depth`. The instrument faithfully reports contraction
+and is **not fooled** by orbits or divergence. Honest caveats: this validates the *measurement
+semantics* against a faithful reference implementation, **not** a real Ouro trajectory — the
+verification ran on branch `auto/issue-732` where `loop_lm.converge_step` is absent (it ships
+here on `research/convergence-tesseract-spiral`, [`loop_lm.py`](../src/sigma0/loop_lm.py) §3);
+the optional real Ouro-1.4B CPU run failed cleanly on a `huggingface-hub` version conflict
+(torch is CPU-only).
+
+**Still open:** X1 (CSF round-trip integrity) and X2 (wavefront minimality) — not yet run.
 
 ---
 
