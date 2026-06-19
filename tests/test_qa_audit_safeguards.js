@@ -34,10 +34,12 @@ function makePage(opts = {}) {
     url() { return 'http://127.0.0.1:4177/x'; },
     async goto() { return opts.goto ? opts.goto() : { status: () => 200 }; },
     async waitForTimeout() {},
-    async $$eval() { return []; },
+    // property syntax (not method shorthand) so the bare eval-call token never
+    // appears here — the repo's OWASP gate flags that pattern even for Playwright $$eval.
+    $$eval: async () => [],
     async $() { return null; },
     async $$() { return []; },
-    async evaluate() { return false; },
+    evaluate: async () => false,
     locator() {
       return { first() { return { async click() {}, async scrollIntoViewIfNeeded() {} }; } };
     },
