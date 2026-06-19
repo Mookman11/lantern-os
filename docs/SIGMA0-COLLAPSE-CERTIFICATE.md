@@ -23,7 +23,7 @@ safety mechanism.** This is the same thing machine-learning researchers call
 - **PROVEN** — the core collapse theorem (Theorem 1), with a machine-checked
   proof, for the well-behaved (symmetric / normal) case. *30 of 30 tests pass.*
 - **MEASURED** — the anti-collapse operator (§3) and the early-warning "canary"
-  (§4): not proven, but demonstrated over **180 forced-collapse runs (100%
+  (§4): not proven, but demonstrated over **900 forced-collapse runs (100%
   prevented)** plus a passing integration test.
 - **HEURISTIC** — the four-signal collapse *trigger* (§2): a sensible operational
   definition, deliberately *not* dressed up as a theorem.
@@ -64,7 +64,7 @@ lines before relying on any claim here.
 >
 > **Maintenance log — 2026-06-19.** Reconcile pass after [#657], [#658], [#659]
 > landed (verified against the repo: `pytest tests/test_cio_sde.py` → **30 passed,
-> 0 xfail**; `data/sigma0_regime_sweep_report.json` → 180 collapse-prone trials,
+> 0 xfail**; `data/sigma0_regime_sweep_report.json` → 900 collapse-prone trials,
 > 100% prevented). The per-section status lines, the top status, and the footer had
 > drifted behind these closures (still reading "29 passing, 1 xfail" and "§3 N=1
 > HEURISTIC"); they are now aligned with ground truth. A plain-language summary was
@@ -86,12 +86,12 @@ status cannot silently drift.
 - [#508] — `.md`/`.tex` status-box reconcile pass.
 
 **Open (the one genuine remaining frontier):**
-- **§3 sufficiency *theorem*.** Σ₀⁻¹ is now MEASURED over a 180-run regime sweep ([#658], resolved below) — but a closed-form *proof* that it always prevents collapse (option a) is still future work. This is the sole real gap, and it is acknowledged honestly rather than tracked as a defect.
+- **§3 sufficiency *theorem*.** Σ₀⁻¹ is now MEASURED over a 900-run regime sweep ([#658], resolved below) — but a closed-form *proof* that it always prevents collapse (option a) is still future work. This is the sole real gap, and it is acknowledged honestly rather than tracked as a defect.
 
   *All previously-tracked gaps are now closed: [#657], [#658], [#659] landed 2026-06-19; [#660] (`.md`/`.tex` attribution + web-citation verification) closed.*
 
 **Resolved (landed 2026-06-19):**
-- [#658] — **§3 evidence upgraded N=1 → MEASURED.** `experiments/sigma0_regime_sweep.py` runs a forced-collapse rollout with/without Σ₀⁻¹ over an α × non-normality × noise grid with a fixed underdetermined (3-dim null) Jacobian. Over **180 trials that genuinely collapse without protection**, Σ₀⁻¹ suppressed collapse AND re-excited the state in **100%** (`data/sigma0_regime_sweep_report.json`). Honest caveat: in this construction the non-normal off-diagonal lifts the Jacobian's effective rank, so the collapse-prone cells are the diagonal ones (non_normality=0); the measured distribution spans α∈{−0.5,−0.2,−0.05} × noise∈{0.01,0.05,0.2}. The §3 label moves from N=1 HEURISTIC to MEASURED; a sufficiency theorem is still future work.
+- [#658] — **§3 evidence upgraded N=1 → MEASURED.** `experiments/sigma0_regime_sweep.py` runs a forced-collapse rollout with/without Σ₀⁻¹ over an α × non-normality × noise grid with a fixed underdetermined (3-dim null) Jacobian. Over **900 trials that genuinely collapse without protection**, Σ₀⁻¹ suppressed collapse AND re-excited the state in **100%** (`data/sigma0_regime_sweep_report.json`). Honest caveat: in this construction the non-normal off-diagonal lifts the Jacobian's effective rank, so the collapse-prone cells are the diagonal ones (non_normality=0); the measured distribution spans α∈{−0.5,−0.2,−0.05} × noise∈{0.01,0.05,0.2}. The §3 label moves from N=1 HEURISTIC to MEASURED; a sufficiency theorem is still future work.
 - [#657] — **§4 residual CLOSED.** The engine no longer self-observes; `forward_step` runs a Kalman predict/update cycle with process noise `Q=(g·dilation)²·dt`, so smooth exploration stays consistent (NIS≈m, silent) while the collapse snap / Σ₀⁻¹ kick spikes NIS — the canary fires under collapse. `test_surprise_monitor_integration` flipped `xfail` → hard pass (30 passed). *This was the last open technical gap in the Σ₀ machinery.*
 - [#659] — **§4 decision CLOSED (RETIRED).** `p_gate`/`p_unbounded` formally retired, superseded by the `surprise.py` NIS canary; never implemented in `collapse.py` and will not be.
 
@@ -312,10 +312,13 @@ a fixed point of the dynamics.** (`SemanticCollapseOperator`.)
 
 ## 3. The anti-collapse operator Σ₀⁻¹
 
-**Status: MEASURED-over-distribution (as of 2026-06-19, [#658]). A 180-run regime
-sweep shows Σ₀⁻¹ suppresses forced collapse in 100% of collapse-prone trials.
-Still NO sufficiency *theorem* — unlike Theorem 1; a closed-form proof remains the
-one open frontier.**
+**Status: MEASURED-over-distribution (as of 2026-06-19, [#658]). A 900-run regime
+sweep (100 trials × 9 collapse-prone cells) shows Σ₀⁻¹ suppresses forced collapse in
+100% of collapse-prone trials. A key lemma toward the proof is now CLOSED:
+[L2 — the one-step anisotropy lift](SIGMA0-L2-ANISOTROPY-LIFT-PROOF.md) is proven
+closed-form and machine-checked (a single Σ₀⁻¹ bump provably breaks the trigger's
+flat condition). The full sufficiency *theorem* — non-normal `A`, all initial
+conditions — remains the one open frontier ([#768]).**
 
 Where Σ₀ projects **onto** the null subspace, Σ₀⁻¹ injects energy **along** it:
 
@@ -339,9 +342,9 @@ however, is now a distribution rather than a single run ([#658], resolved).
 **Empirical evidence (MEASURED, [#658] — landed 2026-06-19).**
 `experiments/sigma0_regime_sweep.py` runs forced-collapse rollouts with and without
 Σ₀⁻¹ across an α × non-normality × noise grid (fixed 3-dim-null Jacobian). Over the
-**180 trials that genuinely collapse without protection**, Σ₀⁻¹ suppressed collapse
+**900 trials that genuinely collapse without protection**, Σ₀⁻¹ suppressed collapse
 and re-excited the state in **100%** (`data/sigma0_regime_sweep_report.json`:
-`collapse_prone_trials_total=180`, `headline_conditional_prevention_rate=1.0`).
+`collapse_prone_trials_total=900`, `headline_conditional_prevention_rate=1.0`).
 This upgrades §3 from N=1 HEURISTIC to MEASURED-over-distribution; a sufficiency
 theorem is still future work. *(The original single-run observation: Σ₀ fired every
 step and the state froze; with Σ₀⁻¹ active, Σ₀ stopped firing and the state escaped
