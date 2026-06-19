@@ -5,6 +5,7 @@
 const fs = require("fs");
 const path = require("path");
 const { spawn } = require("child_process");
+const { framesToWindows, noveltyScores } = require("./recurrence-novelty");
 
 // ============================================================================
 // DATA STRUCTURES
@@ -474,6 +475,22 @@ function mergeDetections(
   const audioHit = (s, e) => audioFrames.some((a) => a.timestamp >= s && a.timestamp <= e && a.loudness >= audioThresh);
   const sceneHit = (s, e) => sceneFrames.some((sc) => sc.timestamp >= s && sc.timestamp <= e);
 
+  // A2: additive recurrence-novelty. Flag highlights that coincide with a window
+  // that statistically STANDS OUT from the clip's typical window (self-supervised,
+  // label-free). Fully guarded — with too few windows noveltyScores() returns []
+  // and `novelHit` is always false, so behavior is identical to before.
+  const NOVELTY_WINDOW_SEC = 2;
+  const NOVELTY_THRESH = 0.5;
+  const noveltyDurationSec = motionFrames.length ? motionFrames[motionFrames.length - 1].timestamp : 0;
+  const noveltyWindows = framesToWindows(
+    { motion: motionFrames, audio: audioFrames, scene: sceneFrames },
+    noveltyDurationSec, NOVELTY_WINDOW_SEC
+  );
+  const novelSpans = noveltyScores(noveltyWindows)
+    .filter((w) => w.novelty >= NOVELTY_THRESH)
+    .map((w) => ({ start: w.t, end: w.t + NOVELTY_WINDOW_SEC }));
+  const novelHit = (s, e) => novelSpans.some((n) => s < n.end && e > n.start);
+
   const highlights = [];
   for (const run of runs) {
     let start = run.start;
@@ -495,6 +512,7 @@ function mergeDetections(
       let score = Math.min(1, run.peak / maxMotion); // normalized 0..1
       if (audioHit(ps, pe)) { tags.push("audio"); reason += " + audio"; score = Math.min(1, score + 0.15); }
       if (sceneHit(ps, pe)) { tags.push("scene"); reason += " + scene"; score = Math.min(1, score + 0.10); }
+      if (novelHit(ps, pe)) { tags.push("novel"); reason += " + novel"; score = Math.min(1, score + 0.08); }
 
       highlights.push({ start: ps, end: pe, score, reason, tags });
     }

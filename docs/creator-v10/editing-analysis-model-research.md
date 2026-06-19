@@ -240,3 +240,14 @@ A1 makes the headline pacing feature real; A4 + the shipped calibration set make
   dropoff 5, calibration 12).
   **Next (open-ended deepening): wire A2 noveltyScores into highlight-engine
   mergeDetections (a `novel` tag/blend, with tests).**
+- **2026-06-19 — A2 WIRED into mergeDetections (open-ended #i).** `highlight-engine.js`
+  now bins its motion/audio/scene frame series into windows (`framesToWindows`),
+  scores them (`noveltyScores`), and adds an additive `novel` tag (+0.08 score) to any
+  highlight overlapping a window with novelty ≥ 0.5. Fully GUARDED: with <4 windows
+  noveltyScores returns [] so `novelHit` is always false and behavior is byte-identical
+  to before (verified). A `novel` highlight now also counts as multi-signal, which the
+  surprise/pacing scorers already reward. Tests: `tests/test_merge_novel.js` (3/3,
+  incl. the too-few-windows guard + unchanged empty-input contract) + full sweep green
+  (shot 8, retention 10, speech 6, variant 5, recurrence 6, dropoff 5, weight 5,
+  calibration 12). **Next: open-ended #ii — wire A3 transcribeToSpeechFeatures into the
+  analysis job-worker to populate timeline.metadata.speech (best-effort, non-fatal).**
