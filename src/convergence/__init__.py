@@ -19,6 +19,7 @@ Reference: CONVERGANCE-SIGMA0-BRIEFING.md
 
 from .objects import Memory, Task, Tool, ToolResult, ConvergenceRecord, TaskStatus
 from .kernel import Kernel
+from .research import ResearchLoop, ResearchProgram, ResearchReport, ResearchClaim
 
 __all__ = [
     "Memory",
@@ -28,4 +29,8 @@ __all__ = [
     "ConvergenceRecord",
     "TaskStatus",
     "Kernel",
+    "ResearchLoop",
+    "ResearchProgram",
+    "ResearchReport",
+    "ResearchClaim",
 ]
