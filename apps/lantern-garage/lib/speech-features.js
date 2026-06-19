@@ -125,6 +125,34 @@ function transcribeToSpeechFeatures(videoPath, durationSec, opts = {}) {
   });
 }
 
+/**
+ * Best-effort, flag-gated, NON-FATAL attachment of speech features onto an
+ * analysis timeline's metadata. Designed for the analysis job-worker: when
+ * disabled (default) or when transcription fails/yields nothing, it is a no-op
+ * and the timeline is untouched — analysis never blocks on Whisper.
+ *
+ * @param {Object} timeline   HighlightTimeline (has .metadata)
+ * @param {string} videoPath
+ * @param {number} durationSec
+ * @param {Object} opts  { enabled?, transcribe? (injectable for tests), ...whisperOpts }
+ * @returns {Promise<Object|null>} the attached speech features, or null
+ */
+async function maybeAttachSpeech(timeline, videoPath, durationSec, opts = {}) {
+  const enabled = opts.enabled !== undefined ? opts.enabled : process.env.LANTERN_CI_SPEECH === "1";
+  if (!enabled) return null;
+  const transcribe = opts.transcribe || transcribeToSpeechFeatures;
+  try {
+    const speech = await transcribe(videoPath, durationSec, opts);
+    if (speech && speech.measured) {
+      timeline.metadata = timeline.metadata || {};
+      timeline.metadata.speech = speech;
+      return speech;
+    }
+  } catch { /* non-fatal: analysis must never fail because of speech */ }
+  return null;
+}
+
 module.exports = {
   parseWhisperJson, deriveSpeechFeatures, classifyHook, transcribeToSpeechFeatures,
+  maybeAttachSpeech,
 };
