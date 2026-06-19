@@ -1,5 +1,6 @@
 const path = require("path");
 const { appendJsonlQueued, readJsonl, rotateJsonlIfNeeded } = require("./file-queue");
+const { redactPII } = require("./redact");
 
 const repoRoot = path.resolve(__dirname, "..", "..", "..");
 const conversationLogPath = path.join(repoRoot, "data", "conversations", "garage-conversations.jsonl");
@@ -32,7 +33,8 @@ function normalizeConversationEntry(input) {
     recordedAt: new Date().toISOString(),
     surface,
     role,
-    text: text.slice(0, maxConversationTextLength),
+    // #770: redact high-confidence PII / secrets at rest so a log leak exposes far less.
+    text: redactPII(text.slice(0, maxConversationTextLength)),
     sessionId,
   };
 }
