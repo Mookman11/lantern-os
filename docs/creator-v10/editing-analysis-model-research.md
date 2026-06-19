@@ -295,3 +295,12 @@ A1 makes the headline pacing feature real; A4 + the shipped calibration set make
   grouped under the existing "* structural estimate, not calibrated" note — honest, not
   a calibrated retention %. Additive one-line template guard; full module sweep green
   (11 suites). Fixed the stale "(15 commits)" note to the real count (12).
+- **2026-06-19 — UI: surface A1 measured cut rate + A3 speech on the V10 score panel
+  (open-ended polish).** `entry.html renderScoreV10` now adds a "Measured:" line built
+  from `viral.signals`, shown ONLY when actually measured this clip: A1
+  `cutsPerMinMeasured` → "X cuts/min", A3 `speechMeasured` → "hook: <style>", "X
+  words/s", "CTA (<position>)". Rendered in full-text colour to distinguish from the
+  greyed structural-estimate disclaimer; absent (old entries / flags off) → nothing,
+  never inferred. Additive/guarded; full module sweep green (12 suites, 72 checks).
+  Remaining: a `novel`-tag indicator on a per-highlight list, and the retention-CSV
+  upload affordance — both low value.
