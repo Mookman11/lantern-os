@@ -212,3 +212,17 @@ A1 makes the headline pacing feature real; A4 + the shipped calibration set make
   *Wiring note:* not yet fused into `mergeDetections` (would add a `novel` tag /
   blend into the gameplay-first composite) — that integration is the remaining glue.
   **Next: B2 (drop-off-aware cutting — needs the A4 retention curves + calibration).**
+- **2026-06-19 — B2 DONE (drop-off-aware cutting).** New
+  `src/creator-intelligence/calibration/dropoff-model.js`: `buildDropoffProfile()`
+  learns, from cliff-labeled outcomes (A4 attributes each cliff to the segment it
+  lands in), a per-tag penalty = normalized cumulative cliff magnitude.
+  `dropoffPenalty(segment, profile)` returns the segment's riskiest-tag penalty.
+  STRICTLY gated: <100 cliff-labeled outcomes → insufficient_data and penalty 0
+  (no-op). `variant-engine-v10.js` now exposes per-variant `dropoffPenalty` and, ONLY
+  when a calibrated profile is supplied, discounts the rank key by it
+  (`viralScore*(1-0.3*penalty)`) — identical to the prior pure-score rank otherwise.
+  Tests: `tests/test_dropoff_model.js` (5/5, incl. no-op-without-profile and
+  re-rank-with-profile) + all prior regressions green. *Wiring note:* ingest doesn't
+  yet populate `cliffSegment` on outcome rows (needs the retention curve + the entry's
+  rendered segment list at import) — that glue feeds real data into this gate.
+  **Next: B4 (calibrated re-weighting of research/viral_patterns.json).**
