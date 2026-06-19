@@ -588,10 +588,15 @@ class UnifiedAgentConnector:
                 lines = buf.split(b"\n")
                 buf = lines.pop()
                 for line in lines:
-                    s = line.decode("utf-8")
-                    if not s.startswith("data:"):
+                    s = line.decode("utf-8", "replace").strip()
+                    if not s:
                         continue
-                    raw = s[5:].strip()
+                    # SSE providers (Anthropic/OpenAI/...) prefix payload lines with
+                    # "data:"; Ollama's /api/chat streams bare JSONL with no prefix.
+                    # Strip the prefix when present, otherwise treat the line as JSONL.
+                    # Non-JSON framing lines (SSE "event:" etc.) fail json.loads below
+                    # and are skipped, so both transports parse correctly.
+                    raw = s[5:].strip() if s.startswith("data:") else s
                     if raw in ("[DONE]", ""):
                         continue
                     try:

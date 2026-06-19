@@ -1,0 +1,101 @@
+{
+  "generatedAt": "2026-06-19T05:13:10.755064+00:00",
+  "model": "qwen2.5-coder",
+  "local": {
+    "label": "local",
+    "provider": "ollama",
+    "n": 10,
+    "passed": 10,
+    "pass_rate": 1.0,
+    "avg_confidence": 0.895,
+    "rows": [
+      {
+        "task": 1,
+        "passed": true,
+        "missing": [],
+        "confidence": 0.9,
+        "chars": 414,
+        "seconds": 1.87
+      },
+      {
+        "task": 2,
+        "passed": true,
+        "missing": [],
+        "confidence": 0.9,
+        "chars": 1576,
+        "seconds": 6.57
+      },
+      {
+        "task": 3,
+        "passed": true,
+        "missing": [],
+        "confidence": 0.9,
+        "chars": 559,
+        "seconds": 3.78
+      },
+      {
+        "task": 4,
+        "passed": true,
+        "missing": [],
+        "confidence": 0.9,
+        "chars": 617,
+        "seconds": 2.73
+      },
+      {
+        "task": 5,
+        "passed": true,
+        "missing": [],
+        "confidence": 0.9,
+        "chars": 987,
+        "seconds": 4.34
+      },
+      {
+        "task": 6,
+        "passed": true,
+        "missing": [],
+        "confidence": 0.9,
+        "chars": 390,
+        "seconds": 4.34
+      },
+      {
+        "task": 7,
+        "passed": true,
+        "missing": [],
+        "confidence": 0.85,
+        "chars": 1578,
+        "seconds": 6.35
+      },
+      {
+        "task": 8,
+        "passed": true,
+        "missing": [],
+        "confidence": 0.9,
+        "chars": 489,
+        "seconds": 2.09
+      },
+      {
+        "task": 9,
+        "passed": true,
+        "missing": [],
+        "confidence": 0.9,
+        "chars": 574,
+        "seconds": 1.67
+      },
+      {
+        "task": 10,
+        "passed": true,
+        "missing": [],
+        "confidence": 0.9,
+        "chars": 591,
+        "seconds": 2.19
+      }
+    ]
+  },
+  "benchmark": null,
+  "criteria": {
+    "pass_rate_target": 0.9,
+    "local_pass_rate": 1.0,
+    "meets_90pct": true,
+    "all_passing_have_confidence": true
+  }
+}
