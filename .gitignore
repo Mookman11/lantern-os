@@ -56,6 +56,10 @@ data/pcsf/*.json
 apps/data/conversations/garage-conversations.jsonl
 data/metrics/three-doors-events.jsonl
 
+# Research Convergence Loop runtime output (memories, records, reports, queue)
+data/research/*.jsonl
+data/research/reports/
+
 # ─── Document ingest (generated, large, local-only) ──────────────────────────
 data/csf-ingest/deltas.jsonl
 data/csf-ingest/dedup-log.jsonl
