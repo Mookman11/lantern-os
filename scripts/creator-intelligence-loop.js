@@ -215,13 +215,15 @@ module.exports = { runCycle, runForever, calibrate, discoverMetadata, storeMetad
 // ── CLI ─────────────────────────────────────────────────────────────────────
 if (require.main === module) {
   (async () => {
+    const qArg = process.argv.find((a) => a.startsWith("--query="));
+    const query = qArg ? qArg.split("=").slice(1).join("=") : undefined;
     if (process.argv.includes("--status")) { process.stdout.write(JSON.stringify(getLoopStatus(), null, 2) + "\n"); return; }
     if (process.argv.includes("--calibrate")) { process.stdout.write(JSON.stringify(calibrate(), null, 2) + "\n"); return; }
     if (process.argv.includes("--forever")) {
       const lim = Number((process.argv.find((a) => a.startsWith("--max-cycles=")) || "").split("=")[1]) || Infinity;
-      await runForever({ maxCycles: lim });
+      await runForever({ maxCycles: lim, query });
       return;
     }
-    process.stdout.write(JSON.stringify(await runCycle(), null, 2) + "\n");
+    process.stdout.write(JSON.stringify(await runCycle({ query }), null, 2) + "\n");
   })().catch((e) => { console.error("ERR", e.message); process.exit(1); });
 }
