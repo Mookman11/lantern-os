@@ -20,7 +20,7 @@ import urllib.request
 
 # Prevent urllib from hanging indefinitely on unreachable providers
 socket.setdefaulttimeout(10)
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Generator, List, Optional, Tuple
@@ -350,19 +350,25 @@ class UnifiedAgentConnector:
         contract (no dream tone) and prefers the local Ollama coder, lowering
         temperature so generation is deterministic rather than exploratory.
         """
+        coder_model: Optional[str] = None
         if coder:
             persona_id = "keystone"
             if provider is None:
                 provider = "ollama"
             if temperature is None:
                 temperature = 0.2
+            # "Coder is a task type, not a separate system" (Σ₀ briefing [06]): the
+            # local coder dispatch uses the coder model (qwen2.5-coder) rather than
+            # the dream-RP model the shared ollama profile pins (llama3.2). Applied
+            # per-call in _stream_provider so the shared profile is never mutated.
+            coder_model = os.environ.get("OLLAMA_CODER_MODEL", "qwen2.5-coder")
         persona = self._personas.get(persona_id or random.choice(list(self._personas.keys())), PERSONAS[0])
         system = self._build_system(persona, context)
         # Singular stream: only try the explicitly requested provider
         if not fallback and provider and provider in self._providers:
             cfg = self._providers[provider]
             try:
-                result = self._stream_provider(provider, cfg, system, message, temperature, max_tokens)
+                result = self._stream_provider(provider, cfg, system, message, temperature, max_tokens, coder_model)
                 if result is not None:
                     yield from result
                 return
@@ -380,7 +386,7 @@ class UnifiedAgentConnector:
             if isinstance(health, str) and health.startswith("unhealthy"):
                 continue
             try:
-                result = self._stream_provider(prov_name, cfg, system, message, temperature, max_tokens)
+                result = self._stream_provider(prov_name, cfg, system, message, temperature, max_tokens, coder_model)
                 if result is not None:
                     yield from result
                 return
@@ -458,11 +464,15 @@ class UnifiedAgentConnector:
         parts.append("\nTone: thoughtful, unhurried, human. Never clinical. End with one question or invitation to record.")
         return "\n".join(parts)
 
-    def _stream_provider(self, name: str, cfg: ProviderConfig, system: str, message: str, temperature: Optional[float], max_tokens: Optional[int]):
+    def _stream_provider(self, name: str, cfg: ProviderConfig, system: str, message: str, temperature: Optional[float], max_tokens: Optional[int], model: Optional[str] = None):
         method_name = f"_stream_{name}"
         method = getattr(self, method_name, None)
         if not method:
             raise RuntimeError(f"No stream method for {name}")
+        # Coder task override: swap in the local coder model for ollama dispatch via
+        # a per-call config copy, leaving the shared provider profile untouched.
+        if model and name == "ollama" and model != cfg.model:
+            cfg = replace(cfg, model=model)
         return method(cfg, system, message, temperature, max_tokens)
 
     # --- Provider streamers (shared SSE parser) ---
@@ -671,7 +681,9 @@ class UnifiedAgentConnector:
                 "contract": "sigma0",
                 "verificationFields": list(REQUIRED_SECTIONS) if _CODER_GATE_AVAILABLE else ["Claim", "Evidence", "Confidence", "Source", "Verification"],
                 "preferredProvider": "ollama",
-                "preferredModel": self._providers.get("ollama").model if self._providers.get("ollama") else "qwen2.5-coder",
+                # The coder task uses the coder model, independent of the dream-RP
+                # model pinned on the shared ollama profile (issue #628).
+                "preferredModel": os.environ.get("OLLAMA_CODER_MODEL", "qwen2.5-coder"),
             },
             "slots": self.list_slots(),
         }

@@ -11,6 +11,7 @@ from src.sigma0_coder_gate import (
     UNGROUNDED_CONFIDENCE_CAP,
     build_pre_generation_gate,
     check_coder_output,
+    verify_coder_output,
 )
 
 
@@ -71,6 +72,40 @@ def test_gate_prompt_has_no_dream_tone():
     for banned in ("dream", "lantern flame", "come home safe", "invitation to record"):
         assert banned not in lowered
     assert "Claim:" in gate.system_prompt and "Verification:" in gate.system_prompt
+
+
+# --- autonomous verification entry point (Phase 3) ----------------------------
+
+def test_verify_coder_output_is_json_serializable_dict():
+    import json
+    verdict = verify_coder_output(GOOD_OUTPUT, grounded=True)
+    # Must be a plain dict a consumer can serialize without importing dataclasses.
+    assert isinstance(verdict, dict)
+    json.dumps(verdict)
+    assert verdict["passed"] is True
+    assert verdict["missing"] == []
+
+
+def test_verify_caps_confidence_when_ungrounded():
+    verdict = verify_coder_output(UNGROUNDED_BUT_STRUCTURED, grounded=False)
+    assert verdict["passed"] is True  # structurally complete
+    assert verdict["confidence"] <= UNGROUNDED_CONFIDENCE_CAP  # but capped despite claimed 0.9
+
+
+def test_verify_rejects_dream_tone_output():
+    verdict = verify_coder_output(DREAM_TONE_OUTPUT, grounded=False)
+    assert verdict["passed"] is False
+    assert set(REQUIRED_SECTIONS).issuperset(verdict["missing"])
+    assert verdict["convergenceRecord"] is None  # never promoted
+
+
+def test_verify_projects_convergence_record_on_pass():
+    verdict = verify_coder_output(GOOD_OUTPUT, grounded=True, hypothesis="timeout fix")
+    rec = verdict["convergenceRecord"]
+    assert rec is not None
+    assert rec["hypothesis"] == "timeout fix"
+    assert rec["confidence"] == verdict["confidence"]
+    assert rec["verified"] is False  # structural pass != runtime verification
 
 
 # --- post-generation structural check -----------------------------------------

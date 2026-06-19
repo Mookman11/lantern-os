@@ -154,14 +154,23 @@ class ConvergenceRouter {
       };
     }
 
-    // No cached template — would normally call Claude here
-    // For now, return a sentinel indicating LLM call needed
+    // No cached template — route to the Keystone Σ₀ coding agent (issue #628).
+    // Code generation is a verification-gated TASK, not a free LLM call: the coder
+    // runs the local model under the Σ₀ contract and must return the five evidence
+    // fields before its output can be promoted into a ConvergenceRecord. Enforcement
+    // lives in src/sigma0_coder_gate.py (check_coder_output / verify_coder_output).
     return {
-      source: "needs_llm",
+      source: "keystone_coder",
+      agent: "keystone",
+      contract: "sigma0",
+      provider: "ollama",
+      model: process.env.OLLAMA_CODER_MODEL || "qwen2.5-coder",
+      verificationFields: ["Claim", "Evidence", "Confidence", "Source", "Verification"],
+      ungroundedConfidenceCap: 0.3,
       fileType,
       scope,
       keywords,
-      reason: "Pattern not yet cached; first occurrence"
+      reason: "Pattern not cached; dispatch to verification-gated Σ₀ coder"
     };
   }
 

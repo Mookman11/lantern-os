@@ -226,3 +226,46 @@ def check_coder_output(text: str, grounded: bool = False) -> GateCheck:
         confidence=confidence,
         reason=reason,
     )
+
+
+def verify_coder_output(
+    text: str,
+    grounded: bool = False,
+    hypothesis: Optional[str] = None,
+    reasoner: str = "keystone:ollama",
+) -> Dict:
+    """Autonomous verification entry point for Keystone coder output (issue #628).
+
+    Runs the structural gate and returns a plain JSON-serializable verdict so any
+    consumer — the convergence dispatch loop, the MCP server, a CI step — can decide
+    whether coder output is promotable without importing dataclasses. There is no
+    separate "test engine": verification IS this gate. When a hypothesis is supplied
+    and the check passes, the verdict carries the ConvergenceRecord-shaped fields.
+    """
+    check = check_coder_output(text, grounded=grounded)
+    return {
+        "passed": check.passed,
+        "missing": check.missing,
+        "confidence": check.confidence,
+        "grounded": grounded,
+        "reason": check.reason,
+        "convergenceRecord": check.to_convergence_fields(hypothesis, reasoner) if hypothesis else None,
+    }
+
+
+if __name__ == "__main__":  # pragma: no cover - thin CLI around verify_coder_output
+    import argparse
+    import json
+    import sys
+
+    parser = argparse.ArgumentParser(description="Σ₀ Keystone coder verification gate")
+    parser.add_argument("--file", help="Read coder output from this file (default: stdin)")
+    parser.add_argument("--grounded", action="store_true", help="Mark the call as grounded (lifts the 0.3 confidence cap)")
+    parser.add_argument("--hypothesis", default=None, help="Hypothesis to project a passing check into ConvergenceRecord fields")
+    args = parser.parse_args()
+
+    text = open(args.file, encoding="utf-8").read() if args.file else sys.stdin.read()
+    verdict = verify_coder_output(text, grounded=args.grounded, hypothesis=args.hypothesis)
+    print(json.dumps(verdict, indent=2))
+    # Exit non-zero when output is not promotable, so autonomous callers can gate on it.
+    sys.exit(0 if verdict["passed"] else 1)
