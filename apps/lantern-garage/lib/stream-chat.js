@@ -544,15 +544,12 @@ async function handleStreamChat(req, url, res) {
       // the Verify→Converge stage is grounded and auditable in records.jsonl.
       const question = (cmd.args || "").trim() || message.replace(/^!\S+\s*/, "").trim();
       if (question) {
-        res.writeHead(200, {
-          "Content-Type": "text/event-stream; charset=utf-8",
-          "Cache-Control": "no-cache",
-          "Connection": "keep-alive",
-          "Access-Control-Allow-Origin": "*",
-          "X-Accel-Buffering": "no",
-        });
-        const sendToken = (token) => res.write(`event: token\ndata: ${JSON.stringify({ token })}\n\n`);
-        const sendDone = (source, meta) => res.write(`event: done\ndata: ${JSON.stringify({ done: true, source, ...meta })}\n\n`);
+        sse.writeStreamHeaders(res);
+        sse.sendRoute(res, { label: "Convergence · Σ₀ council", agentName: "Keystone", surface: surfaceMode });
+        // Use the shared SSE helpers so the frontend (which reads {type:"token",text:…})
+        // actually renders these. The old raw {token} format was silently dropped.
+        const sendToken = (token) => sse.sendToken(res, token);
+        const sendDone = (source, meta) => sse.sendDone(res, source, meta); // ends the response
         sendToken("Σ₀ converging across providers…\n\n");
         const convSystem = "You are a Σ₀ convergence engine. Weigh the perspectives, then give the single most accurate, well-grounded answer — comprehensive, with sources as Markdown links [title](url) when you can. End with exactly one final line: CONFIDENCE: <a number 0-1 for how well-supported the answer is>.";
         try {
@@ -583,7 +580,6 @@ async function handleStreamChat(req, url, res) {
             routeLabel: "Convergence · Σ₀ council",
             convergence: { confidence: conf, synthesizer: `${result.provider}/${result.model}`, providers: members.map((m) => ({ role: m.role, provider: m.provider })), recordId },
           });
-          res.end();
           return;
         } catch (err) {
           // Council unavailable (e.g. no provider keys) — fall back to a single provider
@@ -597,7 +593,6 @@ async function handleStreamChat(req, url, res) {
             sendToken(`Convergence unavailable: ${err.message}\n`);
             sendDone("failed", { error: err.message });
           }
-          res.end();
           return;
         }
       }
