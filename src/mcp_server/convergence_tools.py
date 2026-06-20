@@ -16,6 +16,13 @@ Follow-up patch (issue automation — the first *write* tools here):
   - github_work_issue        : investigate | patch (bot branch + push) | pr (open, never merge)
   - github_fix_failed_checks : inspect failed checks → stacked fix PR (default) or bot-branch push
 
+LEARN + self-improvement (engineering_playbook.py, closes the loop):
+  - every real fix (patch/PR) is distilled into data/convergence/engineering-playbook.jsonl
+  - github_work_issue read-back: investigate attaches prior_patterns for the UNDERSTAND stage
+  - playbook_lookup     : retrieve similar past fixes for a query
+  - playbook_analyze    : cluster recurring failures → maintenance proposals (optionally file them)
+  - playbook_backfill   : import existing work-receipts into the playbook (idempotent)
+
 Durable receipts → data/convergence/{pr,issue}-work-records.jsonl.
 
 Safety gates (env, ENFORCED by the write tools below — hard-refuse on violation):
@@ -31,6 +38,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Tuple
 
 import github_tools  # reuse _run_gh, _api, github_list_* (same dir on sys.path)
+import engineering_playbook as ep  # LEARN + self-improvement (same dir on sys.path)
 
 # ── Safety gates (scaffold; the read tools below never write) ─────────────────
 ALLOWED_REPOS = [r.strip() for r in os.getenv("GITHUB_ALLOWED_REPOS", "alex-place/lantern-os").split(",") if r.strip()]
@@ -64,10 +72,18 @@ def _default_repo() -> Tuple[str, str]:
 
 
 def _record(kind: str, obj: Dict[str, Any]) -> None:
-    """Write a durable work receipt (kind = 'pr' or 'issue')."""
+    """Write a durable work receipt (kind = 'pr' or 'issue'). Every receipt that
+    represents a real fix (patch/PR) is also distilled into the engineering
+    playbook (LEARN), so future investigations can read it back."""
     try:
         path = _CTX["repo_root"] / "data" / "convergence" / f"{kind}-work-records.jsonl"
         _CTX["append_jsonl"](path, obj)
+    except Exception:
+        pass
+    try:
+        entry = ep.distill(obj)
+        if entry.get("outcome") in ("pr_opened", "patched"):
+            ep.record(_CTX["repo_root"], _CTX["append_jsonl"], entry)
     except Exception:
         pass
 
@@ -342,6 +358,9 @@ def github_work_issue(owner: str = "", repo: str = "", issue_number: int = 0,
         "labels": info.get("labels", []), "body_excerpt": (info.get("body") or "")[:400],
         "fix_plan": plan, "branch": None, "pull_number": None, "confidence": 0.3,
     }
+    # READ-BACK: surface similar past fixes so UNDERSTAND reasons from experience.
+    result["prior_patterns"] = _playbook_lookup_safe(
+        [info.get("title", ""), " ".join(info.get("labels", []) or []), plan], k=3)
 
     if mode == "investigate":
         result["note"] = "investigate only — no writes"
@@ -669,9 +688,88 @@ def lantern_command(command: str = "") -> Dict[str, Any]:
     if name == "!queue-run":
         return {"ok": True, "command": name, "routed_to": "worker_tick",
                 "result": worker_tick(int(arg) if arg.isdigit() else 1)}
+    if name == "!playbook":
+        rest = " ".join(parts[1:]).strip()
+        if rest:
+            return {"ok": True, "command": name, "routed_to": "playbook_lookup",
+                    "result": playbook_lookup(rest)}
+        return {"ok": True, "command": name, "routed_to": "playbook_analyze",
+                "result": playbook_analyze()}
+    if name == "!self-improve":
+        return {"ok": True, "command": name, "routed_to": "playbook_analyze",
+                "result": playbook_analyze()}
     return {"ok": False, "command": name, "error": f"unknown command: {name}",
             "known": ["!convergance", "!convergence", "!triage-prs", "!autonomous-work N",
-                      "!pr-status N", "!fix-pr N", "!queue-run [N]"]}
+                      "!pr-status N", "!fix-pr N", "!queue-run [N]", "!playbook [query]",
+                      "!self-improve"]}
+
+
+# ── Tools: engineering playbook (LEARN + self-improvement) ────────────────────
+def _playbook_lookup_safe(query_parts: List[Any], k: int = 3) -> List[Dict[str, Any]]:
+    """Read-back helper that never raises (so investigate can't be broken by it)."""
+    try:
+        return ep.lookup(_CTX.get("repo_root", "."), query_parts, k=k)
+    except Exception:
+        return []
+
+
+def playbook_lookup(query: str = "", k: int = 3) -> Dict[str, Any]:
+    """Retrieve prior fixes most similar to `query` from the engineering playbook.
+    Read-only — the worker's UNDERSTAND stage uses this to reason from experience."""
+    parts = [query] if isinstance(query, str) else list(query or [])
+    try:
+        k = max(1, int(k))
+    except (TypeError, ValueError):
+        k = 3
+    matches = _playbook_lookup_safe(parts, k=k)
+    return {"ok": True, "query": query, "count": len(matches), "matches": matches}
+
+
+def playbook_analyze(min_occurrences: int = 2, file_issues: bool = False) -> Dict[str, Any]:
+    """SELF-IMPROVEMENT: cluster the playbook into recurring patterns and return
+    maintenance proposals. file_issues=True opens issues for HIGH-confidence,
+    verified clusters only (needs_human_review ones are always skipped), reusing
+    the same repo allow-list + write gate as the other write tools."""
+    try:
+        report = ep.analyze(_CTX.get("repo_root", "."), min_occurrences=min_occurrences)
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+    if not file_issues:
+        return report
+
+    owner, repo = _default_repo()
+    if not repo_allowed(owner, repo):
+        return {**report, "filed": [], "filing": _refuse("repo not allow-listed")}
+    if not _write_enabled():
+        return {**report, "filed": [], "filing": _refuse("writes disabled (GITHUB_WRITE_ENABLED=0)")}
+
+    filed: List[Dict[str, Any]] = []
+    skipped: List[str] = []
+    for p in report.get("proposals", []):
+        if p.get("needs_human_review"):
+            skipped.append(p["signature"])
+            continue
+        si = p["suggested_issue"]
+        res = github_tools.github_create_issue(owner, repo, si["title"], si["body"], labels=si["labels"])
+        if isinstance(res, dict) and res.get("error"):
+            skipped.append(p["signature"])
+            continue
+        filed.append({"signature": p["signature"], "number": res.get("number"), "url": res.get("html_url")})
+    _record("issue", {"timestamp": _now(), "surface": "playbook_analyze", "issue": None, "pr": None,
+                      "branch": None, "actions_taken": [f"file_issue:#{f['number']}" for f in filed],
+                      "fix_plan": "self-improvement maintenance issues", "evidence": [],
+                      "confidence": 0.3, "verified": False,
+                      "result": f"filed {len(filed)} maintenance issue(s); skipped {len(skipped)} needs-review"})
+    return {**report, "filed": filed, "skipped_needs_review": skipped}
+
+
+def playbook_backfill() -> Dict[str, Any]:
+    """Import existing github_work_issue / github_fix_failed_checks receipts into
+    the playbook (idempotent). Useful to seed read-back from past work."""
+    try:
+        return ep.backfill(_CTX["repo_root"], _CTX["append_jsonl"])
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
 
 
 # ── Registration ─────────────────────────────────────────────────────────────
@@ -683,6 +781,9 @@ CONVERGENCE_TOOLS = {
     "github_fix_failed_checks": github_fix_failed_checks,
     "worker_tick": worker_tick,
     "lantern_command": lantern_command,
+    "playbook_lookup": playbook_lookup,
+    "playbook_analyze": playbook_analyze,
+    "playbook_backfill": playbook_backfill,
 }
 
 
