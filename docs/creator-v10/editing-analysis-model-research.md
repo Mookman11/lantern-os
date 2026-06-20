@@ -312,3 +312,16 @@ A1 makes the headline pacing feature real; A4 + the shipped calibration set make
   curve unaffected); whole body already size-capped. Additive 3-line passthrough; full
   sweep green (12 suites). A retention-upload *UI* on calibration.html is the only
   remaining (low-value) item; the model/data/loop work is otherwise complete.
+
+---
+
+## Upstream-rebase note (PR to alex-place/lantern-os master)
+
+This branch was rebased from the fork's master onto **upstream** `alex-place/master`, which
+had diverged ~43 commits (incl. the **gameplay-first v10** `mergeDetections` that returns
+`{highlights, density}`, a restructured site-nav, etc.). All modules + clean additive edits
+applied; the only commit **deferred** was the A2→`mergeDetections` *wiring* — upstream's
+`mergeDetections` is a different algorithm, so fusing the `novel` tag there is a fresh code
+change best done as a follow-up. The tested `recurrence-novelty` module still ships
+(`test_recurrence_novelty` green); it is simply not yet imported by `highlight-engine`.
+Result on upstream: **14 commits, 11 test suites green.**
