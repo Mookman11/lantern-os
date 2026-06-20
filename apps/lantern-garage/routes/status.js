@@ -161,4 +161,65 @@ module.exports = async function statusRoutes(req, res, url, deps) {
       return true;
     }
   }
+
+  // GET /api/serving/status — Verify active serving mode + decode params (#729)
+  if (url.pathname === "/api/serving/status") {
+    const { execSync: _exec } = require("child_process");
+    const ouroNative = process.env.OURO_NATIVE || "";
+    const fastActive = !/^(1|true|yes)$/i.test(ouroNative);
+    // Call serving_modes.py to get authoritative params (same Python used by inference)
+    let modeDetail = null;
+    try {
+      const pyRoot = path.join(deps.repoRoot, "src");
+      const raw = _exec(
+        `python -c "import sys; sys.path.insert(0,'${pyRoot}'); from serving_modes import get_serving_mode, get_decode_params, describe_mode; import json; m=get_serving_mode(); print(json.dumps({'mode':m.name,'description':m.description,'max_latency_ms':m.max_latency_ms,'decode_params':get_decode_params(m)}))"`,
+        { encoding: "utf-8", timeout: 5000 }
+      ).trim();
+      modeDetail = JSON.parse(raw);
+    } catch { /* Python unavailable — fall back to env-based inference */ }
+    sendJson(res, {
+      ok: true,
+      fast_mode_active: fastActive,
+      ouro_native_env: ouroNative || null,
+      mode: modeDetail?.mode || (fastActive ? "fast" : "deep"),
+      description: modeDetail?.description || null,
+      max_latency_ms: modeDetail?.max_latency_ms || (fastActive ? 2000 : 120000),
+      decode_params: modeDetail?.decode_params || null,
+      generatedAt: new Date().toISOString(),
+    });
+    return true;
+  }
+
+  // GET /api/benchmarks/leaderboard — Summarize serving benchmark runs (#730)
+  if (url.pathname === "/api/benchmarks/leaderboard") {
+    const lbPath = path.join(deps.repoRoot, "data", "benchmarks", "leaderboard.jsonl");
+    if (!fs.existsSync(lbPath)) {
+      sendJson(res, { ok: true, runs: 0, providers: {}, generatedAt: new Date().toISOString() });
+      return true;
+    }
+    const lines = fs.readFileSync(lbPath, "utf8").trim().split("\n").filter(Boolean);
+    const records = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+    // Aggregate by provider+mode
+    const byProvider = {};
+    for (const r of records) {
+      const key = `${r.provider}:${r.mode || "fast"}`;
+      if (!byProvider[key]) byProvider[key] = { latencies: [], repetitions: [], runs: 0 };
+      const slot = byProvider[key];
+      slot.runs++;
+      if (r.avg_latency_ms != null) slot.latencies.push(r.avg_latency_ms);
+      if (r.avg_repetition_ratio != null) slot.repetitions.push(r.avg_repetition_ratio);
+    }
+    const summary = {};
+    for (const [key, slot] of Object.entries(byProvider)) {
+      const avg = (arr) => arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length * 100) / 100 : null;
+      summary[key] = {
+        runs: slot.runs,
+        avg_latency_ms: avg(slot.latencies),
+        avg_repetition_ratio: avg(slot.repetitions),
+        fast_target_met: slot.latencies.length ? slot.latencies[slot.latencies.length - 1] <= 2000 : null,
+      };
+    }
+    sendJson(res, { ok: true, runs: records.length, providers: summary, recent: records.slice(-5), generatedAt: new Date().toISOString() });
+    return true;
+  }
 };

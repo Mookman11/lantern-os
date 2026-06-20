@@ -150,9 +150,12 @@ def main():
 
     dt = time.time() - t0
     summary = {
-        "ts": a.ts, "benchmark": "humaneval", "label": a.label, "engine": "ouro-fast-cached",
+        # reconciled schema — "benchmark" key shared across all eval scripts (#776)
+        "benchmark": "humaneval",
+        "ts": a.ts, "label": a.label, "engine": "ouro-fast-cached",
         "base_model": a.base_model, "adapter": bool(a.adapter),
         "n": n, "subset": (not a.full), "pass@1": round(n_ok / n, 3) if n else 0.0,
+        "accuracy": round(n_ok / n, 3) if n else 0.0,  # alias for cross-benchmark summary
         "passed": n_ok, "wall_s": round(dt, 1), "sec_per_problem": round(dt / n, 1) if n else 0.0,
     }
     os.makedirs(os.path.join(ROOT, "data", "eval", "humaneval"), exist_ok=True)
