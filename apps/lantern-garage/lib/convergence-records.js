@@ -29,6 +29,9 @@ function _id() {
  * @param {string} [o.reasoner]      which agent/tool reasoned
  * @param {boolean} [o.verified]     tested yet? (false at emit time)
  * @param {string|null} [o.verification_notes]
+ * @param {string[]} [o.applied_evidence] verification-evidence hashes already folded
+ *        into confidence (#764 G9). Empty at emit time; the Python Verify stage fills
+ *        it so replaying the same test/NIS reading can't ratchet confidence to 1.0.
  */
 async function emitConvergenceRecord({
   hypothesis,
@@ -38,6 +41,7 @@ async function emitConvergenceRecord({
   reasoner = "unknown",
   verified = false,
   verification_notes = null,
+  applied_evidence = [],
 } = {}) {
   try {
     const record = {
@@ -50,6 +54,7 @@ async function emitConvergenceRecord({
       timestamp: new Date().toISOString(),
       verified: Boolean(verified),
       verification_notes: verification_notes == null ? null : String(verification_notes),
+      applied_evidence: Array.isArray(applied_evidence) ? applied_evidence.map(String) : [],
     };
     await appendJsonlQueued(RECORDS_PATH, record);
     return record;
