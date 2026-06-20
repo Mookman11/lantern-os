@@ -59,6 +59,12 @@ class SwapPolicy:
     cost_tolerance: float = 1.5         # swap if observed_cost > max_cost * this
     require_same_capabilities: bool = True
     allow_degraded_fallback: bool = True  # allow lower-quality if no perfect match
+    # #764 (G11): max fleet share any single provider may hold *when an equally-eligible
+    # alternative exists*. Greedy "best health, lowest cost" selection otherwise converges
+    # every node onto one provider — a monoculture whose correlated failure collapses the
+    # whole fleet at once. The cap diverts to the next-best different-provider candidate;
+    # if none exists it never blocks the swap (always-eligible-node invariant). 1.0 = off.
+    provider_diversity_cap: float = 0.6
 
 
 @dataclass
@@ -121,8 +127,17 @@ class HotSwapRegistry:
         node_id: str,
         state_health: Dict[str, float],
         current_tick: int,
+        provider_dist: Optional[Dict[str, int]] = None,
+        replacing_provider: Optional[str] = None,
     ) -> Optional[ResourceNode]:
-        """Pick best candidate for node_id, respecting oscillation guard."""
+        """Pick best candidate for node_id, respecting oscillation guard.
+
+        #764 (G11): when ``provider_dist`` (the fleet's current provider→count map) is
+        supplied, the diversity cap is enforced — the best candidate whose provider would
+        *not* exceed ``policy.provider_diversity_cap`` of the fleet after the swap is
+        preferred. If every eligible candidate would breach the cap, the single best one
+        is still returned (a forced swap is never blocked).
+        """
         candidates = self._candidates.get(node_id, [])
         eligible = []
         for c in candidates:
@@ -135,7 +150,31 @@ class HotSwapRegistry:
             return None
         # Best = highest health, then lowest cost
         eligible.sort(key=lambda t: (t[0], t[1]), reverse=True)
+
+        # #764 (G11): walk best→worst and take the first that keeps every provider at or
+        # under the diversity cap. Only diverts when a different-provider option exists, so
+        # this never blocks a swap that has no alternative.
+        if provider_dist is not None and self.policy.provider_diversity_cap < 1.0:
+            total = max(1, sum(provider_dist.values()))
+            for _, _, c in eligible:
+                projected = dict(provider_dist)
+                if replacing_provider:
+                    projected[replacing_provider] = max(0, projected.get(replacing_provider, 0) - 1)
+                projected[c.provider_id] = projected.get(c.provider_id, 0) + 1
+                if projected[c.provider_id] / total <= self.policy.provider_diversity_cap:
+                    return c
+            # Every candidate breaches the cap → don't block; return the best one.
+
         return eligible[0][2]
+
+    @staticmethod
+    def _provider_distribution(graph: CEGraph) -> Dict[str, int]:
+        """Current provider → resource-node count across the live graph (#764 G11)."""
+        dist: Dict[str, int] = {}
+        for n in graph.nodes_by_kind(NodeKind.RESOURCE):
+            if isinstance(n, ResourceNode):
+                dist[n.provider_id] = dist.get(n.provider_id, 0) + 1
+        return dist
 
     def _check_triggers(
         self,
@@ -185,7 +224,14 @@ class HotSwapRegistry:
             if node.node_id not in self._candidates:
                 continue
 
-            candidate = self._select_candidate(node.node_id, resource_health, current_tick)
+            # #764 (G11): pass the live provider distribution so the diversity cap can
+            # steer the swap away from a monoculture. Recomputed per swap because earlier
+            # swaps in this same tick shift the distribution.
+            candidate = self._select_candidate(
+                node.node_id, resource_health, current_tick,
+                provider_dist=self._provider_distribution(graph),
+                replacing_provider=node.provider_id,
+            )
             if candidate is None:
                 continue
 

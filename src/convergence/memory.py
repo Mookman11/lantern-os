@@ -42,6 +42,11 @@ def _integrity_hash(record: Dict[str, Any]) -> str:
         "evidence_ids": record.get("evidence_ids", []),
         "verification_status": record.get("verification_status", "unverified"),
     }
+    # #764 (G7): the monotonic ordering index is hash-protected so a tamperer cannot
+    # rewrite `seq` to forge replay order without breaking the chain. Included only
+    # when present so legacy records hashed before `seq` existed still verify.
+    if "seq" in record:
+        payload["seq"] = record["seq"]
     blob = json.dumps(payload, sort_keys=True, default=str)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
@@ -58,6 +63,7 @@ class MemoryEntry:
     verification_status: str = "unverified"  # #767 (G2): unverified|verified|asserted|grounded
     prev_hash: str = ""   # #767 (G2/G3): hash of the previous ledger record (chain link)
     entry_hash: str = ""  # #767: integrity hash of this record (set on append)
+    seq: int = 0          # #764 (G7): monotonic Lamport index; ordering no longer trusts wall-clock
 
     def __post_init__(self):
         if self.evidence_ids is None:
@@ -75,6 +81,7 @@ class MemoryEntry:
             "verification_status": self.verification_status,
             "prev_hash": self.prev_hash,
             "entry_hash": self.entry_hash,
+            "seq": self.seq,
         }
 
 
@@ -121,6 +128,12 @@ class MemoryStore:
         # (~15ms system tick), so rapid same-source appends would otherwise share
         # a timestamp -> identical ID -> the first entry is silently lost.
         self._id_counter = itertools.count()
+        # #764 (G7): a per-store monotonic Lamport index. Record ordering (load-time
+        # replay, query order_by="seq") reads this, not the wall clock, so clock skew
+        # or a backdated `timestamp` cannot forge the order events are replayed in.
+        # Seeded from the max seq seen on disk in _load_cache so it stays monotonic
+        # across restarts.
+        self._seq = 0
         self._load_cache()
 
     def _load_cache(self) -> None:
@@ -160,8 +173,13 @@ class MemoryStore:
                                 verification_status=data.get("verification_status", "unverified"),
                                 prev_hash=data.get("prev_hash", ""),
                                 entry_hash=data.get("entry_hash", ""),
+                                seq=data.get("seq", 0),
                             )
                             self.cache[mem_id] = entry
+                            # #764 (G7): keep the Lamport clock ahead of every persisted
+                            # seq so the next append is strictly newer.
+                            if entry.seq > self._seq:
+                                self._seq = entry.seq
                             # Advance the chain tip so the next append links correctly.
                             if entry.entry_hash:
                                 self._last_hash[log_name] = entry.entry_hash
@@ -174,8 +192,12 @@ class MemoryStore:
         # reflects the append-only ledger. Without this, a reloaded store would
         # show each entry's original on-disk confidence and diverge from the live
         # store (which applied the update in memory).
+        # #764 (G7): replay in Lamport-`seq` order (true append order, hash-protected),
+        # not by `timestamp`. A backdated malicious confidence-update can no longer jump
+        # ahead of a legitimate later one to win the last-writer race. `timestamp` is only
+        # a tiebreaker for legacy records that predate `seq` (all seq == 0).
         updates = [e for e in self.cache.values() if e.source == "confidence-update"]
-        for upd in sorted(updates, key=lambda e: e.timestamp):
+        for upd in sorted(updates, key=lambda e: (e.seq, e.timestamp)):
             target_id = upd.content.get("updates")
             if target_id and target_id in self.cache:
                 self.cache[target_id].confidence = upd.content.get(
@@ -211,7 +233,13 @@ class MemoryStore:
 
         Returns: MemoryEntry with assigned ID
         """
-        mem_id = f"{source}-{datetime.now().timestamp()}-{next(self._id_counter)}"
+        # #764 (G7): the id is built from the monotonic Lamport `seq`, not
+        # datetime.now() — clock skew can no longer forge ordering through the id, and
+        # `seq` never repeats (even across restarts), so ids stay collision-free. The
+        # `_id_counter` suffix keeps them unique within a process as a belt-and-braces.
+        self._seq += 1
+        seq = self._seq
+        mem_id = f"{source}-{seq}-{next(self._id_counter)}"
         timestamp = datetime.now()
         evidence_ids = evidence_ids or []
         confidence = max(0.0, min(1.0, confidence))
@@ -239,6 +267,7 @@ class MemoryStore:
             evidence_ids=evidence_ids,
             verification_status=verification_status,
             prev_hash=self._last_hash.get(target, ""),
+            seq=seq,
         )
         entry.entry_hash = _integrity_hash(entry.to_dict())
 
@@ -302,6 +331,9 @@ class MemoryStore:
         # Sort if requested
         if order_by == "timestamp":
             results.sort(key=lambda m: m.timestamp)
+        elif order_by == "seq":
+            # #764 (G7): wall-clock-independent ordering — the monotonic append order.
+            results.sort(key=lambda m: m.seq)
         elif order_by == "confidence":
             results.sort(key=lambda m: m.confidence, reverse=True)
 

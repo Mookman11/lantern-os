@@ -351,3 +351,77 @@ class TestMemory767Hardening:
         path.write_text(chr(10).join(lines) + chr(10), encoding="utf-8")
         res = store.verify_ledger("observations")
         assert res["ok"] is False
+
+
+class TestMemory764G7:
+    """#764 (G7) — wall-clock-trust closed: monotonic Lamport `seq` orders records."""
+
+    @pytest.fixture
+    def store(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            reset_memory_store()
+            store = MemoryStore(tmpdir)
+            store.cache.clear()
+            yield store
+
+    def test_append_assigns_strictly_increasing_seq(self, store):
+        seqs = [store.append("s", {"i": i}, verification_status="verified").seq for i in range(5)]
+        assert seqs == sorted(seqs)
+        assert len(set(seqs)) == 5  # strictly monotonic, no repeats
+
+    def test_id_no_longer_embeds_wallclock(self, store):
+        e = store.append("s", {"i": 1}, verification_status="verified")
+        # Old format embedded datetime.now().timestamp() (a float → had a '.').
+        assert "." not in e.id
+        assert f"-{e.seq}-" in e.id
+
+    def test_seq_monotonic_across_reload(self, store):
+        for i in range(3):
+            store.append("s", {"i": i}, verification_status="verified")
+        max_before = max(e.seq for e in store.cache.values())
+        store2 = MemoryStore(str(store.memory_dir))
+        e = store2.append("s", {"i": 99}, verification_status="verified")
+        assert e.seq > max_before  # clock did not reset the index
+
+    def test_query_order_by_seq(self, store):
+        for i in range(4):
+            store.append("ordered", {"i": i}, confidence=0.9, verification_status="verified")
+        results = store.query("ordered", order_by="seq", limit=10)
+        seqs = [m.seq for m in results]
+        assert seqs == sorted(seqs)
+
+    def test_seq_is_hash_protected(self, store):
+        store.append("obs", {"i": 0}, confidence=0.8, verification_status="verified", log_type="observations")
+        path = store.logs["observations"]
+        rec = json.loads(path.read_text(encoding="utf-8").splitlines()[0])
+        rec["seq"] = 999  # tamper with the ordering index only
+        path.write_text(json.dumps(rec) + chr(10), encoding="utf-8")
+        assert store.verify_ledger("observations")["ok"] is False
+
+    def test_replay_follows_seq_not_wallclock(self, store):
+        """A backdated confidence-update cannot win the last-writer race.
+
+        Two updates target one record; the genuinely-later append (higher seq) sets
+        0.5, the earlier one set 0.9. We then forge the on-disk *timestamps* so the
+        0.9 update looks newer by wall clock. Replay must still honor seq → 0.5 wins.
+        Under the old timestamp-ordered replay this asserted 0.9 (the bug).
+        """
+        e = store.append("claim", {"d": 1}, confidence=0.3, verification_status="verified")
+        store.update_confidence(e.id, 0.9, evidence_ids=["proof-1"])  # U1, lower seq
+        store.update_confidence(e.id, 0.5, evidence_ids=["proof-2"])  # U2, higher seq → real last
+
+        path = store.logs["convergence"]
+        lines = path.read_text(encoding="utf-8").splitlines()
+        recs = [json.loads(ln) for ln in lines]
+        ups = sorted((r for r in recs if r["source"] == "confidence-update"), key=lambda r: r["seq"])
+        u1, u2 = ups[0], ups[1]
+        # Forge wall clock: make the earlier (0.9) update look newer than the real last.
+        from datetime import datetime, timedelta
+        u2_ts = datetime.fromisoformat(u2["timestamp"])
+        u1["timestamp"] = (u2_ts + timedelta(hours=1)).isoformat()
+        by_seq = {r["seq"]: r for r in recs}
+        by_seq[u1["seq"]] = u1
+        path.write_text(chr(10).join(json.dumps(by_seq[s]) for s in sorted(by_seq)) + chr(10), encoding="utf-8")
+
+        store2 = MemoryStore(str(store.memory_dir))
+        assert store2.get_by_id(e.id).confidence == 0.5  # seq won, not the forged clock

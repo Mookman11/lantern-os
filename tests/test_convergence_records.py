@@ -21,11 +21,13 @@ JS_EMITTED = {
     "timestamp": "2026-06-15T10:00:01.000Z",
     "verified": False,
     "verification_notes": None,
+    "applied_evidence": [],  # #764 G9 — folded-evidence hashes (empty at emit time)
 }
 
 EMITTER_KEYS = {
     "id", "hypothesis", "evidence_ids", "result",
     "confidence", "reasoner", "timestamp", "verified", "verification_notes",
+    "applied_evidence",  # #764 G9
 }
 
 
@@ -41,6 +43,7 @@ def _load(d):
         timestamp=datetime.fromisoformat(d["timestamp"].replace("Z", "+00:00")),
         verified=d["verified"],
         verification_notes=d["verification_notes"],
+        applied_evidence=list(d.get("applied_evidence", [])),
     )
 
 

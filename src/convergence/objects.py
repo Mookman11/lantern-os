@@ -151,6 +151,11 @@ class ConvergenceRecord:
     timestamp: datetime = field(default_factory=datetime.now)
     verified: bool = False  # Has this been tested?
     verification_notes: Optional[str] = None
+    # G9 (#764): hashes of verification evidence already folded into `confidence`,
+    # keyed (record_id, evidence_hash). Re-applying the same test/NIS reading is then
+    # idempotent, so replaying one passing test can no longer ratchet confidence → 1.0.
+    # See src/convergence/verify.py.
+    applied_evidence: List[str] = field(default_factory=list)
 
     def to_jsonl(self) -> str:
         """Serialize to JSONL format."""
@@ -164,4 +169,5 @@ class ConvergenceRecord:
             "timestamp": self.timestamp.isoformat(),
             "verified": self.verified,
             "verification_notes": self.verification_notes,
+            "applied_evidence": self.applied_evidence,
         })

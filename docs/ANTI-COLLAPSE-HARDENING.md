@@ -73,9 +73,20 @@ Ordered **proven-region wideners → grounding reinforcements → heuristic guar
 18. Reversible / auditable Collapse-Compact (retain coarse baseline + provenance stub). (`v07/convergence_engine.py`, `quantum_dust.py`)
 19. Decode-time coverage invariants (unconfirmed regions surface as **"unknown"**, not defaulted to baseline). (`quantum_dust.py`, `v07/csf_file.py`)
 
-## 5. Red-team — still uncovered (14 gaps)
+## 5. Red-team — gap status (3 of the 5 sharpest closed)
 
-The sharpest: **G1** observation-channel poisoning (NIS trusts unauthenticated `y` → confident-wrong fixed point; add innovation-whiteness test + external-leaf requirement); **G7** wall-clock trust (ids from `datetime.now()` → clock-skew forges ordering; use a monotonic/Lamport chain index); **G9** deterministic-reverification ratchet (replaying the same test ratchets confidence → 1.0; key the bump on `(record_id, evidence_hash)`); **G11** provider monoculture (`hot_swap` converges all nodes on one provider; add a per-provider diversity cap); **G13** `eig_eps` threshold-edge evasion (modes parked just above ε read "structured" while Σ₀⁻¹ injects zero; use banded near-null classification).
+**Closed** (application-layer gaps, each with a regression test that fails on the prior code):
+
+- **G7 — wall-clock trust → closed.** `MemoryStore` now stamps every record with a monotonic Lamport `seq` (seeded from the max on-disk seq, so it stays monotonic across restarts), and ids are built from `seq` instead of `datetime.now()`. Load-time confidence-update replay and `query(order_by="seq")` order by `seq`, not the wall clock, so a backdated/clock-skewed `timestamp` can no longer forge ordering or win a last-writer race. `seq` is folded into the integrity hash, so it is tamper-evident too. (`src/convergence/memory.py`)
+- **G9 — deterministic-reverification ratchet → closed.** Each confidence fold in the Verify stage is keyed on `(record_id, evidence_hash)` and recorded in `ConvergenceRecord.applied_evidence`; re-folding identical evidence is an idempotent no-op, so replaying one passing test/NIS reading can no longer ratchet confidence → 1.0. Independent corroborations still count (distinct `evidence_key`). The field is serialized on both the Python (`to_jsonl`) and Node (`convergence-records.js`) sides, preserving the cross-language contract. (`src/convergence/verify.py`, `src/convergence/objects.py`)
+- **G11 — provider monoculture → closed.** `HotSwapRegistry` enforces a `provider_diversity_cap` (default 0.6): greedy "best health, lowest cost" selection is diverted to the best *different-provider* candidate whenever a single provider would otherwise exceed the cap of the fleet. The cap never blocks a swap that has no alternative (always-eligible-node invariant preserved). (`src/convergence_io/hot_swap.py`)
+
+**Still open** (deferred to a follow-up PR — both live in the proven-region certificate math under `src/cio_sde/` and need the torch test harness + care not to weaken the certificate's honesty guarantees):
+
+- **G1** observation-channel poisoning — NIS trusts unauthenticated `y` → confident-wrong fixed point; add an innovation-whiteness test + external-leaf requirement. (`src/cio_sde/surprise.py`)
+- **G13** `eig_eps` threshold-edge evasion — modes parked just above ε read "structured" while Σ₀⁻¹ injects zero; use banded near-null classification. (`src/cio_sde/collapse.py`)
+
+The remaining red-team gaps (G2–G6, G8, G10, G12, G14) were folded into the #765/#766/#767 fixes or remain lower-priority; see the epic [#764] for the full ledger.
 
 ## 6. What stays heuristic (honesty discipline)
 
