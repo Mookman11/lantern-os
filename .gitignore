@@ -212,3 +212,9 @@ src/cio/target/
 # Creator pipeline test fixtures (generated locally by scripts/test_creator_pipeline.js)
 tests/assets/*.mp4
 data/creator/pipeline-test-summary.json
+
+# Autonomous convergence loop (#592) — rolling runtime byproducts.
+# The work log + benchmark are committed as the demonstration evidence trail;
+# the kernel memory log and per-run act scratch regenerate on every run.
+data/convergence-autonomous-memory.jsonl
+data/autonomous-acts/
