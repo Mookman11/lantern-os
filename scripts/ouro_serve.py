@@ -50,9 +50,10 @@ TOP_P = float(os.environ.get("OURO_TOP_P", "0.9"))
 
 # Speed levers (measured on the leaderboard): merge the LoRA into the base (kills
 # per-forward LoRA matmuls) and pick the attention kernel. Merge+SDPA measured ~2.8×
-# faster (65.8s -> 23.7s avg/prompt) at equal accuracy on RTX 3070 8GB.
-MERGE = os.environ.get("OURO_MERGE", "0") == "1"
-ATTN = os.environ.get("OURO_ATTN", "")  # e.g. "sdpa", "flash_attention_2", "eager"
+# faster (65.8s -> 23.7s avg/prompt) at equal accuracy on RTX 3070 8GB (#775).
+# Defaults: SDPA on unconditionally; merge on by default when an adapter is configured.
+MERGE = os.environ.get("OURO_MERGE", "1") == "1"   # was "0" — safe: gated at :69-75 behind ADAPTER check
+ATTN = os.environ.get("OURO_ATTN", "sdpa")         # was "" — safe: try/except fallback at :62-67
 
 print(f"[ouro] loading {MODEL_ID} (cuda={torch.cuda.is_available()})…", flush=True)
 _tok = AutoTokenizer.from_pretrained(MODEL_ID, trust_remote_code=True)
@@ -101,24 +102,50 @@ def _prompt_from_messages(messages):
         return "\n".join(f"{m.get('role')}: {m.get('content','')}" for m in messages) + "\nassistant:"
 
 
+def _persist_loop_meta(out: dict) -> None:
+    """Append DEEP-mode realized depth + contraction to the eval leaderboard (#777)."""
+    try:
+        import pathlib
+        lb = pathlib.Path(__file__).resolve().parents[1] / "data" / "eval" / "leaderboard.jsonl"
+        lb.parent.mkdir(parents=True, exist_ok=True)
+        row = {
+            "benchmark": "ouro-deep",
+            "ts": str(int(time.time())),
+            "mode": out.get("mode", "qexit"),
+            "mean_depth": out.get("mean_depth"),
+            "exit_reason": out.get("exit_reason"),
+            "tokens": out.get("tokens"),
+            "q": NATIVE_Q,
+            "mean_contraction": out.get("mean_contraction"),
+        }
+        with lb.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(row) + "\n")
+    except Exception:
+        pass  # never crash the serving path over telemetry
+
+
 def _generate(prompt, max_new_tokens=512, stream_cb=None):
     # Native Σ₀ adaptive loop: one-shot (no token streamer); emit whole text.
     if _loop is not None:
         out = _loop.generate(prompt, q=NATIVE_Q, max_new_tokens=min(max_new_tokens, NATIVE_MAX))
         text = out["text"]
+        _persist_loop_meta(out)  # #777: persist depth/contraction to leaderboard
         if stream_cb is not None and text:
             stream_cb(text)
-        return text
+        return text, out  # also return meta for x-ouro-depth header
     ids = _tok(prompt, return_tensors="pt").to(_model.device)
+    # #774/fix-5: stop-strings cut 15-40% of tokens on coding tasks (HumanEval proves
+    # the pattern); tokenizer= is required for stop_strings support in transformers.
+    _STOP = ["\ndef ", "\nclass ", "\nif __name__", "\n\n\n", "\n```"]
     kw = dict(max_new_tokens=max_new_tokens, pad_token_id=_tok.eos_token_id,
               repetition_penalty=REP_PENALTY, no_repeat_ngram_size=NO_REPEAT_NGRAM,
-              do_sample=DO_SAMPLE)
+              do_sample=DO_SAMPLE, stop_strings=_STOP, tokenizer=_tok)
     if DO_SAMPLE:
         kw.update(temperature=TEMPERATURE, top_p=TOP_P)
     if stream_cb is None:
         with torch.no_grad():
             out = _model.generate(**ids, **kw)
-        return _tok.decode(out[0][ids["input_ids"].shape[1]:], skip_special_tokens=True)
+        return _tok.decode(out[0][ids["input_ids"].shape[1]:], skip_special_tokens=True), None
     streamer = TextIteratorStreamer(_tok, skip_prompt=True, skip_special_tokens=True)
     th = threading.Thread(target=lambda: _model.generate(**ids, streamer=streamer, **kw))
     th.start()
@@ -127,7 +154,7 @@ def _generate(prompt, max_new_tokens=512, stream_cb=None):
         full.append(piece)
         stream_cb(piece)
     th.join()
-    return "".join(full)
+    return "".join(full), None
 
 
 class H(BaseHTTPRequestHandler):
@@ -181,8 +208,19 @@ class H(BaseHTTPRequestHandler):
                 except Exception: pass
         else:
             try:
-                text = _generate(prompt, max_tok)
-                self._json(json.loads(pack(text, True).decode()))
+                text, loop_meta = _generate(prompt, max_tok)
+                b = json.dumps(json.loads(pack(text, True).decode())).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(b)))
+                if loop_meta:
+                    # #777: expose realized DEEP-mode depth in response header
+                    depth_str = json.dumps({k: loop_meta.get(k) for k in
+                                            ("mean_depth", "exit_reason", "mean_contraction")
+                                            if loop_meta.get(k) is not None})
+                    self.send_header("x-ouro-depth", depth_str)
+                self.end_headers()
+                self.wfile.write(b)
             except Exception as e:
                 self._json({"error": str(e)}, 500)
 

@@ -44,11 +44,16 @@ module.exports = {
       // LoRA adapter, served via the native Q-exit loop (src/sigma0/loop_lm.py),
       // NOT Ollama. Retrained on the execution-verified coding corpus (#781). The
       // adapter path is the promotion target every harness/loop reads by default;
-      // override with OURO_ADAPTER.
+      // override with OURO_ADAPTER env.
+      // v2 adapter: train with scripts/prepare_coding_train_data.py + train-qlora-ouro.py
+      //   --out D:/lantern-train/ouro-sigma0-adapters/v2
       profileId: "lantern-sigma0-coder-loop",
       baseModel: "ByteDance/Ouro-1.4B",
-      adapterPath: process.env.OURO_ADAPTER || "D:/lantern-train/ouro-sigma0-adapters/final",
-      trainingData: "models/lantern-sigma0-coder/training-data.augmented.jsonl",
+      adapterPath: process.env.OURO_ADAPTER || "D:/lantern-train/ouro-sigma0-adapters/v2",
+      adapterPathFallback: "D:/lantern-train/ouro-sigma0-adapters/final",
+      trainingData: "models/lantern-sigma0-coder/training-data.jsonl",
+      trainingScript: "scripts/train-qlora-ouro.py",
+      prepScript: "scripts/prepare_coding_train_data.py",
       surfaces: ["deep-reasoning", "coding", "task-loop"],
       continualTraining: true,
     },

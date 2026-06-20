@@ -49,7 +49,7 @@ for (const { path: envPath, override } of candidateEnvFiles) {
 
 const { sendJson, sendFile, sendHtml, collectRequestBody } = require("./lib/http-utils");
 const { readJson, readJsonl, appendJsonlQueued } = require("./lib/file-queue");
-const { getStatus, getReadiness, getMiningLabStatus, getActionCapabilities, getOperatorFeedbackMemory, getAccessModel, getCloudMirrorStatus } = require("./lib/status");
+const { getStatus, getReadiness, getMiningLabStatus, getActionCapabilities, getOperatorFeedbackMemory, getAccessModel, getCloudMirrorStatus, setTunnelState } = require("./lib/status");
 const { readConversationLog, normalizeConversationEntry, appendConversationEntry, appendExternalRagItem, readOperatorQueue } = require("./lib/conversation-store");
 const { buildFlatRagHouse, writeFlatRagHouse } = require("./lib/rag-house");
 const { runPowerShell } = require("./lib/powershell");
@@ -378,6 +378,7 @@ if (tradingDisabled) {
 let cloudflaredProcess = null;
 const enableCloudflare = process.env.LANTERN_CLOUDFLARE_TUNNEL !== "false";
 if (enableCloudflare) {
+  setTunnelState({ enabled: true, status: "starting", startedAt: new Date().toISOString() });
   // Use tunnel run without explicit name to let cloudflared use ~/.cloudflared/config.yml
   cloudflaredProcess = spawn("cloudflared", ["tunnel", "run"], {
     stdio: "inherit",
@@ -387,8 +388,10 @@ if (enableCloudflare) {
   cloudflaredProcess.on("error", (err) => {
     console.error(`[Cloudflare Tunnel] Failed to start: ${err.message}`);
     console.log("[Cloudflare Tunnel] Install with: choco install cloudflare-warp");
+    setTunnelState({ status: "error", lastError: err.message, exitedAt: new Date().toISOString() });
   });
   cloudflaredProcess.on("exit", (code) => {
+    setTunnelState({ status: "exited", exitCode: code, exitedAt: new Date().toISOString() });
     if (code && code !== 0) {
       // Non-zero exit: public access is down but the local server keeps running.
       // The most common cause is a stale/unauthorized tunnel credential
@@ -406,8 +409,15 @@ if (enableCloudflare) {
       console.log(`[Cloudflare Tunnel] exited cleanly (code ${code}).`);
     }
   });
+  // Brief delay to let cloudflared handshake; set running state optimistically
+  setTimeout(() => {
+    if (cloudflaredProcess && !cloudflaredProcess.killed) {
+      setTunnelState({ status: "running" });
+    }
+  }, 3000);
   console.log(`[Cloudflare Tunnel] Starting (reading from ~/.cloudflared/config.yml)...`);
 } else {
+  setTunnelState({ enabled: false, status: "disabled" });
   console.log("[Cloudflare Tunnel] Disabled via LANTERN_CLOUDFLARE_TUNNEL=false (it is enabled by default; unset the var to re-enable).");
 }
 

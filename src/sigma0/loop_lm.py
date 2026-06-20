@@ -34,9 +34,33 @@ Usage:
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass
 
 os.environ.setdefault("HF_HOME", "D:/hf-cache")
+
+# #768: lazy import of stability gates — only loaded when called, so the module
+# is importable without scipy (which is not in the minimal inference venv).
+def _stability_gates(A_tensor):
+    """Compute #768 Lyapunov + numerical-range gates on a Jacobian A. Returns a
+    dict summary (never raises — returns None on import/compute failure)."""
+    try:
+        _src = os.path.join(os.path.dirname(__file__), "..", "..")
+        if _src not in sys.path:
+            sys.path.insert(0, _src)
+        from cio_sde.collapse import stability_gates  # noqa: PLC0415
+        g = stability_gates(A_tensor, margin=0.0)
+        return {
+            "gate_numerical_range": g.gate_numerical_range,
+            "gate_lyapunov": g.gate_lyapunov,
+            "proven_contracting": g.proven_contracting,
+            "numerical_range_abscissa": round(g.numerical_range_abscissa, 4),
+            "spectral_abscissa": round(g.spectral_abscissa, 4),
+            "lyapunov_transient_bound": round(g.lyapunov_transient_bound, 4)
+                if not (g.lyapunov_transient_bound != g.lyapunov_transient_bound) else None,
+        }
+    except Exception:
+        return None
 
 
 def _lazy():
@@ -129,13 +153,27 @@ class Sigma0LoopLM:
         if messages is not None:
             ids = self.tok.apply_chat_template(messages, add_generation_prompt=True, return_tensors="pt")
         else:
-            ids = self.tok(prompt, return_tensors="pt").input_ids
+            # #774/fix-3: match the training template byte-exactly so the trained
+            # "### Instruction / ### Response" delimiters activate the adapter.
+            formatted = f"### Instruction:\n{prompt}\n\n### Response:\n"
+            ids = self.tok(formatted, return_tensors="pt").input_ids
         ids = ids.to(self._backbone().device if hasattr(self._backbone(), "device") else "cuda")
         depths = []
         exit_deltas = []   # contraction trajectory per token (converge mode)
+        exit_hiddens = []  # per-token exit-depth hidden vectors (#768 Jacobian)
         eos = self.tok.eos_token_id
         bb = self._backbone()
         lm_head = self.model.lm_head if hasattr(self.model, "lm_head") else bb.lm_head
+        # G10 collapse canary (#793): track per-token softmax entropy EMA.
+        # Greedy argmax → collapse attractor manifests as entropy suddenly DROPPING
+        # (model becomes very confident = near-zero entropy). A two-sided alarm flags
+        # the token index so callers can detect/react. Seeded at first token.
+        _canary_ema = None      # running entropy EMA
+        _canary_alpha = 0.15    # EMA smoothing
+        _canary_thresh = 2.5    # z-score threshold for spook
+        _canary_var = None      # running variance EMA (for z-score)
+        _collapse_events = []   # list of (token_idx, entropy, z_score) at alarm points
+        # Σ₀ DecodeCanary (#766/#800): independent proximity/spook collapse detector.
         dc = None
         if canary:
             try:
@@ -146,7 +184,7 @@ class Sigma0LoopLM:
         q_cur, rep_cur = q, rep_penalty
         canary_max_prox, canary_spooks, canary_signal = 0.0, 0, "none"
         with torch.no_grad():
-            for _ in range(max_new_tokens):
+            for _tok_idx in range(max_new_tokens):
                 # OuroModel.forward returns (outputs, hidden_states_list, gate_list)
                 _out, hidden_states_list, gate_list = bb.model(input_ids=ids, use_cache=False)
                 if mode == "converge":
@@ -161,12 +199,28 @@ class Sigma0LoopLM:
                     step, conf, reason = self.qexit_step(gate_steps, q_cur, self.max_steps)
                 depths.append(step)
                 hidden = hidden_states_list[step - 1][:, -1:, :]   # hidden at exit depth, last token
+                exit_hiddens.append(hidden[0, 0].detach().float().cpu())
                 logits = lm_head(hidden)[0, -1]
                 if rep_cur and rep_cur != 1.0 and depths:
                     # CTRL-style repetition penalty over tokens already generated this turn
                     for tid in set(ids[0, -len(depths):].tolist()):
                         v = logits[tid]
                         logits[tid] = v / rep_cur if v > 0 else v * rep_cur
+                # G10 (#793): feed decoded logits into the entropy canary (before argmax so softmax is unaffected)
+                probs = torch.softmax(logits.float(), dim=-1)
+                entropy = float(-(probs * (probs + 1e-10).log()).sum().item())
+                if _canary_ema is None:
+                    _canary_ema = entropy
+                    _canary_var = 0.0
+                else:
+                    diff = entropy - _canary_ema
+                    _canary_var = (1 - _canary_alpha) * (_canary_var + _canary_alpha * diff ** 2)
+                    _canary_ema = _canary_alpha * entropy + (1 - _canary_alpha) * _canary_ema
+                    std = max(_canary_var ** 0.5, 1e-6)
+                    z = (entropy - _canary_ema) / std
+                    if abs(z) >= _canary_thresh:
+                        _collapse_events.append({"token": _tok_idx, "entropy": round(entropy, 3),
+                                                 "z": round(float(z), 2)})
                 nxt = int(torch.argmax(logits))
                 if dc is not None:
                     # argmax margin (top1−top2 prob): low margin = uncertain/degenerate decode
@@ -186,6 +240,24 @@ class Sigma0LoopLM:
                     break
         text = self.tok.decode(ids[0, -len(depths):], skip_special_tokens=True)
         mean_depth = sum(depths) / len(depths) if depths else 0
+
+        # #768: empirical discrete Jacobian from consecutive exit-depth hidden vectors.
+        # A[t] ≈ (h[t+1] - h[t]) / ||h[t]|| — the per-token "transition" in hidden space.
+        # We compute a mean outer-product as a compact batch approximation.
+        stability_cert = None
+        if len(exit_hiddens) >= 2:
+            try:
+                torch, *_ = _lazy()
+                H = torch.stack(exit_hiddens)          # (T, d)
+                dH = H[1:] - H[:-1]                   # (T-1, d) deltas
+                norms = H[:-1].norm(dim=-1, keepdim=True).clamp(min=1e-9)
+                dH_norm = dH / norms                   # normalized transitions
+                # Jacobian proxy: mean outer product of consecutive hidden pairs → (d, d)
+                A_emp = (dH_norm.unsqueeze(-1) * H[:-1].unsqueeze(-2)).mean(0)
+                stability_cert = _stability_gates(A_emp)
+            except Exception:
+                pass
+
         out = {
             "text": text,
             "tokens": len(depths),
@@ -194,6 +266,13 @@ class Sigma0LoopLM:
             "exit_reason": "adaptive_qexit" if mode == "qexit" else "convergence_exit",
             "mode": mode,
             "q": q,
+            # G10 (canary): collapse events detected by the per-token entropy EMA monitor.
+            # Empty list = no anomalous confidence spikes observed during generation.
+            "collapse_events": _collapse_events,
+            "canary_mean_entropy": round(_canary_ema, 3) if _canary_ema is not None else None,
+            # #768: Lyapunov + numerical-range stability gates on the empirical Jacobian.
+            # None = not enough tokens to estimate; proven_contracting=True = gate passed.
+            "stability_gates": stability_cert,
         }
         if dc is not None:   # Σ₀ decode canary telemetry (#766)
             out["canary_max_proximity"] = round(canary_max_prox, 4)

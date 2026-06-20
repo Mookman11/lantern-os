@@ -148,9 +148,12 @@ def main():
 
     n = len(rows)
     summary = {
+        # reconciled schema — "benchmark" key shared across all eval scripts (#776)
+        "benchmark": "keystone",
         "ts": a.ts, "label": a.label, "model": a.model, "base": a.base,
         "engine": a.engine, "mode": (a.mode if a.engine == "loop" else None),
         "n": n, "accuracy": round(n_ok / n, 3) if n else 0.0,
+        "pass@1": round(n_ok / n, 3) if n else 0.0,  # alias for cross-benchmark summary
         "avg_latency_s": round(total_dt / n, 2) if n else 0.0,
         "tok_per_s": round(approx_tokens / total_dt, 1) if total_dt else 0.0,
         # E1: realized latent depth; E2: did the loop contract?

@@ -14,6 +14,24 @@ function getReadiness() {
     || {};
 }
 
+// #672: mutable tunnel state, stamped by server.js when cloudflaredProcess events fire.
+const _tunnelState = {
+  enabled: false,
+  status: "not_started",   // "not_started" | "starting" | "running" | "exited" | "error" | "disabled"
+  exitCode: null,
+  lastError: null,
+  startedAt: null,
+  exitedAt: null,
+};
+
+function setTunnelState(patch) {
+  Object.assign(_tunnelState, patch);
+}
+
+function getTunnelState() {
+  return { ..._tunnelState };
+}
+
 function getStatus() {
   const arc = readJson("data/arc-reactor/status.json", {});
   const wallet = readJson("data/wallet/local-cash-wallet.json", {});
@@ -52,6 +70,8 @@ function getStatus() {
       status: /Status:\s*`([^`]+)`/.exec(v1)?.[1] || "unknown",
       confidence: /Confidence:\s*`([^`]+)`/.exec(v1)?.[1] || "unknown",
     },
+    // #672: live Cloudflare Tunnel state — updated by server.js lifecycle hooks
+    cloudflare_tunnel: getTunnelState(),
   };
 }
 
@@ -271,4 +291,6 @@ module.exports = {
   getAccessModel,
   getCloudMirrorStatus,
   parseMirrorEnv,
+  setTunnelState,
+  getTunnelState,
 };
