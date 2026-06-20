@@ -39,6 +39,7 @@ from typing import Any, Dict, List, Tuple
 
 import github_tools  # reuse _run_gh, _api, github_list_* (same dir on sys.path)
 import engineering_playbook as ep  # LEARN + self-improvement (same dir on sys.path)
+import confidence as cf  # evidence-based confidence scoring (same dir on sys.path)
 
 # ── Safety gates (scaffold; the read tools below never write) ─────────────────
 ALLOWED_REPOS = [r.strip() for r in os.getenv("GITHUB_ALLOWED_REPOS", "alex-place/lantern-os").split(",") if r.strip()]
@@ -362,10 +363,16 @@ def github_work_issue(owner: str = "", repo: str = "", issue_number: int = 0,
     result["prior_patterns"] = _playbook_lookup_safe(
         [info.get("title", ""), " ".join(info.get("labels", []) or []), plan], k=3)
 
+    # CONFIDENCE: evidence-based, not a constant (replaces the old flat 0.3).
+    conf = cf.compute(cf.from_issue(info, result["prior_patterns"]))
+    result["confidence"] = conf["confidence"]
+    result["confidence_factors"] = conf["factors"]
+
     if mode == "investigate":
         result["note"] = "investigate only — no writes"
         _record("issue", _issue_receipt(issue_number, None, None, actions, plan,
-                                        "investigation only (no writes)"))
+                                        "investigation only (no writes)",
+                                        confidence=conf["confidence"], evidence=conf["factors"]))
         return result
 
     # ── patch / pr require writes ──
@@ -390,6 +397,13 @@ def github_work_issue(owner: str = "", repo: str = "", issue_number: int = 0,
     if not files:
         return _refuse("patch/pr mode requires file_changes ([{path, content}, ...])",
                        owner=owner, repo=repo, mode=mode, fix_plan=plan)
+
+    # Recompute confidence now that real changes exist (still unverified → never
+    # high until CI confirms; see improve_tick verification upgrade).
+    conf = cf.compute(cf.from_issue(info, result["prior_patterns"],
+                                    files=[f["path"] for f in files]))
+    result["confidence"] = conf["confidence"]
+    result["confidence_factors"] = conf["factors"]
 
     # ── Act: create the bot branch off the base, then push the files ──
     br = github_tools.github_create_branch(owner, repo, branch, from_branch=DEFAULT_BASE)
@@ -418,7 +432,8 @@ def github_work_issue(owner: str = "", repo: str = "", issue_number: int = 0,
     if mode == "patch":
         result["note"] = "patched bot branch — no PR opened (mode=patch)"
         _record("issue", _issue_receipt(issue_number, None, branch, actions, plan,
-                                        "pushed to bot branch (no PR)"))
+                                        "pushed to bot branch (no PR)",
+                                        confidence=conf["confidence"], evidence=conf["factors"]))
         return result
 
     # ── mode == pr: open a PR into the base branch (NEVER merge) ──
@@ -436,7 +451,8 @@ def github_work_issue(owner: str = "", repo: str = "", issue_number: int = 0,
     result["pr_url"] = pr.get("html_url")
     result["note"] = "PR opened into base branch — NOT merged"
     _record("issue", _issue_receipt(issue_number, pr.get("number"), branch, actions, plan,
-                                    f"PR #{pr.get('number')} opened (not merged)"))
+                                    f"PR #{pr.get('number')} opened (not merged)",
+                                    confidence=conf["confidence"], evidence=conf["factors"]))
     return result
 
 
@@ -448,11 +464,13 @@ def _issue_fix_plan(info: Dict[str, Any]) -> str:
 
 
 def _issue_receipt(issue: int, pr: Any, branch: Any, actions: List[str],
-                   plan: str, result: str) -> Dict[str, Any]:
+                   plan: str, result: str, confidence: float = 0.3,
+                   evidence: Any = None) -> Dict[str, Any]:
     return {"timestamp": _now(), "surface": "github_work_issue",
             "issue": issue, "pr": pr, "branch": branch,
             "actions_taken": list(actions), "fix_plan": plan,
-            "evidence": [], "confidence": 0.3, "verified": False, "result": result}
+            "evidence": evidence or [], "confidence": float(confidence),
+            "verified": False, "result": result}
 
 
 # ── Tool: github_fix_failed_checks ────────────────────────────────────────────
@@ -506,9 +524,13 @@ def github_fix_failed_checks(owner: str = "", repo: str = "", pull_number: int =
         files = _coerce_files(file_changes)
     except (ValueError, json.JSONDecodeError) as exc:
         return _refuse(f"invalid file_changes: {exc}", owner=owner, repo=repo)
+    conf = cf.compute(cf.from_checks(failing, logs_tail, files=[f["path"] for f in files]))
+    result["confidence"] = conf["confidence"]
+    result["confidence_factors"] = conf["factors"]
     if not files:
         result["note"] = "status + fix_plan only (no file_changes supplied → no writes)"
-        _record("pr", _pr_receipt(pull_number, None, actions, plan, "plan only (no writes)"))
+        _record("pr", _pr_receipt(pull_number, None, actions, plan, "plan only (no writes)",
+                                  confidence=conf["confidence"], evidence=conf["factors"]))
         return result
 
     # ── writes required from here ──
@@ -564,7 +586,8 @@ def github_fix_failed_checks(owner: str = "", repo: str = "", pull_number: int =
     if not open_new_pr:
         result["note"] = f"pushed fix directly to bot-owned branch '{target_branch}' (no new PR; never merged)"
         _record("pr", _pr_receipt(pull_number, target_branch, actions, plan,
-                                  "pushed to bot-owned PR branch (no new PR)"))
+                                  "pushed to bot-owned PR branch (no new PR)",
+                                  confidence=conf["confidence"], evidence=conf["factors"]))
         return result
 
     # ── open a NEW PR for the stacked fix (NEVER merge) ──
@@ -583,7 +606,8 @@ def github_fix_failed_checks(owner: str = "", repo: str = "", pull_number: int =
     result["pr_url"] = pr.get("html_url")
     result["note"] = f"opened stacked fix PR #{pr.get('number')} into '{base}' — NOT merged"
     _record("pr", _pr_receipt(pull_number, target_branch, actions, plan,
-                              f"stacked fix PR #{pr.get('number')} opened (not merged)"))
+                              f"stacked fix PR #{pr.get('number')} opened (not merged)",
+                              confidence=conf["confidence"], evidence=conf["factors"]))
     return result
 
 
@@ -630,11 +654,13 @@ def _checks_fix_plan(failing: List[str], logs_tail: str) -> str:
 
 
 def _pr_receipt(pull_number: int, branch: Any, actions: List[str],
-                plan: str, result: str) -> Dict[str, Any]:
+                plan: str, result: str, confidence: float = 0.3,
+                evidence: Any = None) -> Dict[str, Any]:
     return {"timestamp": _now(), "surface": "github_fix_failed_checks",
             "issue": None, "pr": pull_number, "branch": branch,
             "actions_taken": list(actions), "fix_plan": plan,
-            "evidence": [], "confidence": 0.3, "verified": False, "result": result}
+            "evidence": evidence or [], "confidence": float(confidence),
+            "verified": False, "result": result}
 
 
 # ── Tool: lantern_command (bang-command router) ──────────────────────────────
@@ -698,10 +724,17 @@ def lantern_command(command: str = "") -> Dict[str, Any]:
     if name == "!self-improve":
         return {"ok": True, "command": name, "routed_to": "playbook_analyze",
                 "result": playbook_analyze()}
+    if name in ("!improve", "!tick"):
+        try:
+            import improve_tick as it  # function-local: avoids a module-load cycle
+            return {"ok": True, "command": name, "routed_to": "improve_tick",
+                    "result": it.improve_tick()}
+        except Exception as exc:
+            return {"ok": False, "command": name, "error": f"improve_tick unavailable: {exc}"}
     return {"ok": False, "command": name, "error": f"unknown command: {name}",
             "known": ["!convergance", "!convergence", "!triage-prs", "!autonomous-work N",
                       "!pr-status N", "!fix-pr N", "!queue-run [N]", "!playbook [query]",
-                      "!self-improve"]}
+                      "!self-improve", "!improve", "!tick"]}
 
 
 # ── Tools: engineering playbook (LEARN + self-improvement) ────────────────────

@@ -201,3 +201,22 @@ def test_lantern_command_routes_playbook(tmp_path):
     assert ct.lantern_command("!self-improve")["routed_to"] == "playbook_analyze"
     r = ct.lantern_command("!playbook async race worker")
     assert r["routed_to"] == "playbook_lookup" and "matches" in r["result"]
+
+
+# ── dedup: verification upgrades supersede, don't double-count ─────────────────
+def test_dedup_collapses_same_issue_pr_to_best():
+    low = ep.build_entry(surface="github_work_issue", problem="x", outcome="pr_opened",
+                         issue=5, pr=10, confidence=0.5, verified=False)
+    high = ep.build_entry(surface="github_work_issue", problem="x", outcome="verified",
+                          issue=5, pr=10, confidence=0.9, verified=True)
+    out = ep._dedup([low, high])
+    assert len(out) == 1 and out[0]["verified"] and out[0]["confidence"] == 0.9
+
+
+def test_dedup_keeps_distinct_and_unkeyed_entries():
+    a = ep.build_entry(surface="x", problem="p1", outcome="patched", issue=1, pr=2, confidence=0.3)
+    b = ep.build_entry(surface="x", problem="p2", outcome="patched", issue=3, pr=4, confidence=0.3)
+    n1 = ep.build_entry(surface="x", problem="no keys a", outcome="patched")  # issue/pr None
+    n2 = ep.build_entry(surface="x", problem="no keys b", outcome="patched")
+    out = ep._dedup([a, b, n1, n2])
+    assert len(out) == 4   # distinct keys + unkeyed both pass through
