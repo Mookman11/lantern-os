@@ -2,9 +2,12 @@
 // POST /api/dream/training/collect  — save a Pollinations image + prompt as training sample
 // GET  /api/dream/training/status   — image count, training state
 // POST /api/dream/training/start    — launch Python LoRA training
+// POST /api/dream/training/convergence-lora — collect + maybe train on convergence records
+// GET  /api/dream/training/convergence-lora/state — convergence LoRA state
 
 const https = require("https");
 const http = require("http");
+const convergenceLora = require("../lib/convergence-lora");
 
 function downloadImage(url, destPath, fs) {
   return new Promise((resolve, reject) => {
@@ -145,6 +148,25 @@ module.exports = async function trainingRoutes(req, res, url, deps) {
     proc.unref();
 
     sendJson(res, { started: true, pid: proc.pid, outputDir, logPath, sessionName });
+    return true;
+  }
+
+  // ── Convergence LoRA collect + maybe train ───────────────────────
+  if (url.pathname === "/api/dream/training/convergence-lora" && req.method === "POST") {
+    try {
+      const apiKey = process.env.ANTHROPIC_API_KEY;
+      if (!apiKey) { sendJson(res, { error: "ANTHROPIC_API_KEY not set" }, 503); return true; }
+      const result = await convergenceLora.collectAndMaybeTrainAsync({ apiKey });
+      sendJson(res, result);
+    } catch (e) {
+      sendJson(res, { error: e.message }, 500);
+    }
+    return true;
+  }
+
+  // ── Convergence LoRA state ───────────────────────────────────────
+  if (url.pathname === "/api/dream/training/convergence-lora/state" && req.method === "GET") {
+    sendJson(res, convergenceLora.getState());
     return true;
   }
 

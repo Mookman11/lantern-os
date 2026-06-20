@@ -248,6 +248,24 @@ When asked to make repo changes, structure as:
 
 Keep it concise and actionable.`,
   },
+  {
+    id: "keystone-sigma0",
+    name: "Keystone Σ₀",
+    symbol: "verification-first coding agent, evidence chain, confidence scoring",
+    systemPrompt: `You are Keystone Σ₀ — a verification-first coding agent. Every response you produce must follow the Σ₀ framework:
+
+<REQUIREMENT>State the exact requirement you are fulfilling</REQUIREMENT>
+<EVIDENCE>List specific files, line numbers, function names, or data you examined to ground your answer</EVIDENCE>
+<CODE>Provide the implementation (complete, copy-paste ready)</CODE>
+<VERIFICATION>Explain exactly how to verify this change works — test command, expected output, or assertion</VERIFICATION>
+<CONFIDENCE>[0-100]</CONFIDENCE>
+
+Rules:
+- Never emit code without EVIDENCE of having read the relevant source.
+- When confidence < 60: State that you cannot proceed and list what evidence is missing.
+- No RP, no persona flavor. Plain technical language only.
+- Cite file paths and line numbers in EVIDENCE.`,
+  },
 ];
 
 // Shared answer-style guidance appended to every persona so replies are
@@ -314,6 +332,32 @@ function parseBangCommand(input) {
   const m = String(input || "").trim().match(/^!(\S+)(?:\s+(.*))?$/);
   if (!m) return null;
   return { name: m[1].toLowerCase(), args: (m[2] || "").trim() };
+}
+
+const _CODING_PATTERNS = /\b(fix|patch|implement|refactor|write|generate|create|add|remove|debug|test|lint|route|function|class|import|export|PR|issue|bug|error|file|script|module|API|endpoint|migration)\b/i;
+function _isCodingRequest(text) { return _CODING_PATTERNS.test(text || ""); }
+
+function _extractConfidence(content) {
+  const m = String(content).match(/<CONFIDENCE>\s*(\d+)\s*<\/CONFIDENCE>/i)
+    || String(content).match(/confidence[:\s]+(\d+)/i);
+  if (m) return Math.min(100, Math.max(0, parseInt(m[1], 10)));
+  return null;
+}
+
+function _emitSigmaRecord({ text, content, confidence, agentId, source }) {
+  try {
+    const repoRoot = path.resolve(__dirname, "../../..");
+    const workPath = path.join(repoRoot, "data", "convergence-autonomous-work.jsonl");
+    const record = JSON.stringify({
+      timestamp: new Date().toISOString(),
+      agent: agentId || "keystone-sigma0",
+      source,
+      request: String(text || "").slice(0, 200),
+      confidence: confidence ?? null,
+      accepted: source !== "ollama-sigma0-rejected",
+    });
+    fs.appendFileSync(workPath, record + "\n", "utf8");
+  } catch {}
 }
 
 async function handleConvergenceCommand(recentDreams, agent, rawMessage) {
@@ -760,14 +804,20 @@ async function dreamChatReply(message, recentDreams, requestedAgent = "", reques
   // PRIORITY 1: Ollama (Local-first — no API keys, full privacy, control)
   const ollamaBase = process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434";
   const ollamaModel = process.env.OLLAMA_MODEL || "lantern-csf-dream";
-  if (!rp || rp === "ollama" || rp === "local") {
+  if (!rp || rp === "ollama" || rp === "local" || rp === "sigma0") {
+    const isCoding = rp === "sigma0" || _isCodingRequest(text);
+    const sigma0Persona = _getPersonas().find(p => p.id === "keystone-sigma0") || _DEFAULT_PERSONAS.find(p => p.id === "keystone-sigma0");
+    const ollamaSystemPrompt = isCoding && sigma0Persona ? sigma0Persona.systemPrompt : agent.systemPrompt;
+    const ollamaUserPrompt = isCoding
+      ? `REQUIREMENT TO VERIFY: ${text}\n\nConfirm what files/lines you read, then respond in the <REQUIREMENT><EVIDENCE><CODE><VERIFICATION><CONFIDENCE> format.`
+      : userPrompt;
     try {
       const payload = JSON.stringify({
         model: ollamaModel,
         stream: false,
         messages: [
-          { role: "system", content: agent.systemPrompt },
-          { role: "user", content: userPrompt },
+          { role: "system", content: ollamaSystemPrompt },
+          { role: "user", content: ollamaUserPrompt },
         ],
       });
       const ollamaUrl = new URL(ollamaBase);
@@ -811,6 +861,17 @@ async function dreamChatReply(message, recentDreams, requestedAgent = "", reques
         req2.end();
       });
       if (reply && reply.content) {
+        if (isCoding) {
+          const confidence = _extractConfidence(reply.content);
+          if (confidence !== null && confidence < 60) {
+            _emitSigmaRecord({ text, content: reply.content, confidence, agentId: "keystone-sigma0", source: "ollama-sigma0-rejected" });
+            return { reply: `Σ₀ gate: confidence ${confidence}/100 — cannot deliver. Missing evidence: ${reply.content.slice(0, 300)}`, agent: "Keystone Σ₀", suggestions, online: true, source: "ollama-sigma0-rejected", confidence };
+          }
+          _emitSigmaRecord({ text, content: reply.content, confidence, agentId: "keystone-sigma0", source: "ollama-sigma0" });
+          const ollamaSuggestions = reply.doors && reply.doors.length > 0 ? reply.doors : suggestions;
+          recordProviderSuccessRouter("ollama");
+          return { reply: reply.content, agent: "Keystone Σ₀", suggestions: ollamaSuggestions, online: true, source: "ollama-sigma0", confidence, webSuggestions };
+        }
         const ollamaSuggestions = reply.doors && reply.doors.length > 0 ? reply.doors : suggestions;
         recordProviderSuccessRouter("ollama"); // Log to provider-router for performance tracking
         return { reply: reply.content, agent: agent.name, suggestions: ollamaSuggestions, online: true, source: "ollama", webSuggestions };
