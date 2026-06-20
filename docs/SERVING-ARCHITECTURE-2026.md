@@ -1,8 +1,13 @@
 # Lantern OS Serving Architecture 2026: Fast Default + Deep Research Mode
 
 **Decision Date:** 2026-06-18  
-**Status:** Phase 1 complete · Phase 2 validation tooling complete (#730)  
+**Status:** Phase 1 complete · Phase 2 validation tooling complete (#730) · Phase 3 grounding research complete (#731)  
 **Owner:** Lantern Core Team  
+
+> **Phase 3 (#731):** FAST vs DEEP measured on grounding quality, not just speed.
+> Headline: on the cached serving path "DEEP" is a decode-param change only and does
+> **not** improve grounding — grounding is a *retrieval* property. Full use-case guide
+> and case study: **[SERVING-DEEP-MODE-GUIDE.md](SERVING-DEEP-MODE-GUIDE.md)**.
 
 ## Problem Statement
 
@@ -211,16 +216,19 @@ appends one row.
 - [ ] Accrue ≥7 daily runs (automated; accrues over the first week)
 - [ ] Benchmark cloud providers (pending OPENAI/GROQ secrets)
 
-### Phase 3: Optimization (Weeks of 2026-07-02)
-- [ ] Tune decode params per provider
-- [ ] Explore lighter KV cache configs for DEEP mode
-- [ ] Cache DEEP mode results for common research questions
-- [ ] Consider hybrid mode: FAST with DEEP fallback for hard problems
+### Phase 3: Research — DEEP vs alternatives (#731) ✅ COMPLETE (2026-06-20)
+- [x] Compare DEEP mode to FAST on a research-question set (grounding, not just speed)
+- [x] Measure Σ₀ grounding quality vs. latency — `src/grounding.py` + `--research` runner
+- [x] Document the native Σ₀ Q-exit findings (depth-3, KV-cache, Q-exit closed, quant rejected)
+      from the upstream owner measurements, attributed
+- [x] Publish the use-case guide + case study → [SERVING-DEEP-MODE-GUIDE.md](SERVING-DEEP-MODE-GUIDE.md)
+- [ ] Compare to Claude Opus reasoning — deferred (no API key on the bench host; honest skip)
 
-### Phase 4: Research (Ongoing)
-- [ ] Compare DEEP mode to other high-reasoning approaches (Claude Opus, etc.)
-- [ ] Measure Σ₀ Q-exit effectiveness (grounding quality vs. latency)
-- [ ] Publish results as case study
+### Phase 4: Optimization (future)
+- [ ] Tune decode params per provider
+- [ ] Wire `src/grounding.py` onto RAG-backed answers to measure *product* grounding
+- [ ] Consider hybrid mode: FAST with native-Σ₀ DEEP fallback for hard problems
+- [ ] Cache DEEP-mode results for common research questions
 
 ---
 

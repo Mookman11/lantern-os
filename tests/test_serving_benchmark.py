@@ -45,6 +45,7 @@ class FakeConnector:
 
     behavior = "ok"          # ok | offline | empty | error
     seen_models = []
+    reply_text = None        # when set, the "ok" branch yields this exact text
 
     def __init__(self):
         self._providers = {
@@ -81,7 +82,8 @@ class FakeConnector:
 
         # ok: mostly-unique text → high repetition ratio
         def gen():
-            for word in f"unique reply about {message[:24]} alpha beta gamma delta".split():
+            text = type(self).reply_text or f"unique reply about {message[:24]} alpha beta gamma delta"
+            for word in text.split():
                 yield word + " "
             return {"source": "stream", "provider": provider}
         return gen()
@@ -92,9 +94,12 @@ def _wire_fake_connector(monkeypatch, tmp_path):
     """Swap in the fake connector and isolate leaderboard/report paths."""
     FakeConnector.behavior = "ok"
     FakeConnector.seen_models = []
+    FakeConnector.reply_text = None
     monkeypatch.setattr(uac, "UnifiedAgentConnector", FakeConnector)
     monkeypatch.setattr(sb, "LEADERBOARD_PATH", tmp_path / "leaderboard.jsonl")
     monkeypatch.setattr(sb, "REPORT_PATH", tmp_path / "REPORT.md")
+    monkeypatch.setattr(sb, "RESEARCH_LEADERBOARD_PATH", tmp_path / "research.jsonl")
+    monkeypatch.setattr(sb, "RESEARCH_REPORT_PATH", tmp_path / "RESEARCH-REPORT.md")
     monkeypatch.delenv("OURO_NATIVE", raising=False)
     yield
 
@@ -317,3 +322,71 @@ def test_main_run_gates_on_regression(monkeypatch):
     monkeypatch.setattr(sb, "TASK_MIN_REPETITION_RATIO", 1.01)  # impossible floor
     rc = sb.main(["--run", "ollama:qwen2.5-coder", "--mode", "fast", "--no-append"])
     assert rc == 1
+
+
+# --------------------------------------------------------------------------- #
+# Research runner + grounding (#731 Phase 3)
+# --------------------------------------------------------------------------- #
+def test_research_runner_records_grounding_and_categories():
+    result = sb.run_research_benchmark("ollama", "qwen2.5-coder")
+    assert result["kind"] == "research"
+    assert result["mode"] == "fast"
+    assert result["research_set_size"] == len(sb.RESEARCH_SET)
+    assert result["aggregates"]["success_rate"] == 1.0
+    # Each reply carries a category and a grounding score.
+    for r in result["runs"]:
+        assert r["category"] in {"architecture", "core-design", "grant-writing"}
+        assert 0.0 <= r["grounding_score"] <= 1.0
+    agg = result["aggregates"]
+    assert "avg_grounding_score" in agg
+    assert "avg_path_grounding_accuracy" in agg  # may be None if no paths cited
+
+
+def test_research_runner_scores_real_grounding():
+    """A reply that cites a real file scores accuracy 1.0 through the runner."""
+    FakeConnector.reply_text = (
+        "Decode params live in src/serving_modes.py, switched by OURO_NATIVE, "
+        "under the External Reality Rule.")
+    result = sb.run_research_benchmark("ollama", "qwen2.5-coder")
+    agg = result["aggregates"]
+    assert agg["avg_grounding_score"] > 0
+    assert agg["avg_path_grounding_accuracy"] == 1.0
+    assert agg["total_hallucinated_paths"] == 0
+
+
+def test_research_runner_flags_hallucinated_paths():
+    FakeConnector.reply_text = "Memory lives in src/memory_manager.py and src/brain/cortex.py."
+    result = sb.run_research_benchmark("ollama", "qwen2.5-coder")
+    agg = result["aggregates"]
+    assert agg["total_hallucinated_paths"] >= 2
+    assert agg["avg_path_grounding_accuracy"] == 0.0
+
+
+def test_research_offline_stub_is_not_recorded_as_data():
+    FakeConnector.behavior = "offline"
+    result = sb.run_research_benchmark("ollama", "qwen2.5-coder")
+    assert result["aggregates"] == {}
+    assert all("error" in r for r in result["runs"])
+
+
+def test_research_unconfigured_provider_errors():
+    result = sb.run_research_benchmark("groq", "llama-3.1-70b-versatile")
+    assert result["error"].startswith("provider_not_configured")
+
+
+def test_research_append_load_roundtrip_and_report():
+    result = sb.run_research_benchmark("ollama", "qwen2.5-coder", mode_label="deep")
+    sb.append_research_run(result)
+    rows = sb.load_research_leaderboard()
+    assert len(rows) == 1 and rows[0]["mode"] == "deep"
+    sb.write_research_report()
+    text = sb.RESEARCH_REPORT_PATH.read_text(encoding="utf-8")
+    assert "FAST vs DEEP grounding" in text
+    assert "Grounding score" in text
+
+
+def test_main_research_flag_runs_and_appends():
+    rc = sb.main(["--research", "ollama:qwen2.5-coder", "--mode", "deep"])
+    assert rc == 0
+    rows = sb.load_research_leaderboard()
+    assert rows and rows[-1]["kind"] == "research" and rows[-1]["mode"] == "deep"
