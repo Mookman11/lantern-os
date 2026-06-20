@@ -270,6 +270,35 @@ def _proposal_body(top_tokens: List[str], n: int, members: List[Dict[str, Any]],
     return "\n".join(lines)
 
 
+def _better(a: Dict[str, Any], b: Dict[str, Any]) -> bool:
+    """Is entry a a better record than b for the same work? Higher confidence
+    wins; verified breaks ties; otherwise the later entry wins."""
+    ca, cb = float(a.get("confidence", 0) or 0), float(b.get("confidence", 0) or 0)
+    if ca != cb:
+        return ca > cb
+    if bool(a.get("verified")) != bool(b.get("verified")):
+        return bool(a.get("verified"))
+    return True
+
+
+def _dedup(entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Collapse multiple entries for the same (surface, issue, pr) to the best
+    one, so a verification upgrade supersedes the initial low-confidence record
+    instead of inflating occurrence counts. Entries with neither issue nor pr are
+    not dedupable and pass through unchanged."""
+    best: Dict[Any, Dict[str, Any]] = {}
+    passthrough: List[Dict[str, Any]] = []
+    for e in entries:
+        issue, pr = e.get("issue"), e.get("pr")
+        if issue is None and pr is None:
+            passthrough.append(e)
+            continue
+        key = (e.get("surface"), issue, pr)
+        if key not in best or _better(e, best[key]):
+            best[key] = e
+    return passthrough + list(best.values())
+
+
 def analyze(repo_root: Any, min_occurrences: int = 2) -> Dict[str, Any]:
     """Cluster the playbook by signature and return recurring patterns as
     maintenance proposals. Read-only. Low-confidence / unverified clusters are
@@ -278,7 +307,7 @@ def analyze(repo_root: Any, min_occurrences: int = 2) -> Dict[str, Any]:
         min_occurrences = max(2, int(min_occurrences))
     except (TypeError, ValueError):
         min_occurrences = 2
-    entries = read_entries(repo_root)
+    entries = _dedup(read_entries(repo_root))
     clusters: Dict[str, List[Dict[str, Any]]] = {}
     for e in entries:
         clusters.setdefault(e.get("signature", ""), []).append(e)

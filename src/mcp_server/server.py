@@ -870,6 +870,20 @@ try:
 except Exception as _cv_exc:  # pragma: no cover - optional module
     logger.warning("Convergence tools not loaded: %s", _cv_exc)
 
+# ── Autonomous improve-tick — one bounded loop pass for the external scheduler ──
+# observe → verify prior PRs → converge lane → (act) → learn, then exit.
+try:
+    import improve_tick
+    _it_added = improve_tick.register(TOOLS_REGISTRY, {
+        "task_queue": _task_queue,
+        "run_task": _tool_task_run,
+        "append_jsonl": _append_jsonl,
+        "repo_root": REPO_ROOT,
+    })
+    logger.info("Improve-tick tool registered (%d): %s", len(_it_added), _it_added)
+except Exception as _it_exc:  # pragma: no cover - optional module
+    logger.warning("Improve-tick tool not loaded: %s", _it_exc)
+
 
 def _handle_jsonrpc(req: Dict[str, Any]) -> Dict[str, Any]:
     """Handle a single JSON-RPC request."""
