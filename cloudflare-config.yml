@@ -1,5 +1,32 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Cloudflare Tunnel routes for Lantern OS — locally-managed tunnel "lantern-os".
+#
+# Tunnel name : lantern-os
+# Tunnel UUID : 7045ac00-f326-4884-a59a-288b769015a8
+#
+# Create the tunnel once (writes credentials to ~/.cloudflared/<UUID>.json):
+#     cloudflared tunnel login
+#     cloudflared tunnel create lantern-os
+#
+# cloudflared auto-discovers the credentials file in its default directory
+# (~/.cloudflared/), so no machine-specific credentials path is hardcoded here.
+# If you keep credentials elsewhere, add an absolute path, e.g.:
+#     credentials-file: /home/you/.cloudflared/7045ac00-f326-4884-a59a-288b769015a8.json
+#
+# Run it:  cloudflared tunnel run lantern-os --config cloudflare-config.yml
+#
+# ── Troubleshooting "Unauthorized: Tunnel not found" (issue #672) ─────────────
+# This error means the tunnel/credentials being used no longer exist in
+# Cloudflare (the tunnel was deleted, or a stale UUID is cached in
+# ~/.cloudflared/config.yml). It is NOT a code bug — the local server keeps
+# serving on http://127.0.0.1:4177 regardless. To fix:
+#   1. cloudflared tunnel list   # confirm "lantern-os" and its CURRENT UUID
+#   2. If missing, recreate:  cloudflared tunnel login && cloudflared tunnel create lantern-os
+#   3. Ensure ~/.cloudflared/config.yml (and any credentials-file) reference the
+#      CURRENT UUID, not a deleted one.
+# Historically the deleted UUID 16689f09-f5f6-4ba9-92a4-68460117997e caused this.
+# ─────────────────────────────────────────────────────────────────────────────
 tunnel: lantern-os
-credentials-file: ~/.cloudflare/lantern-os.json
 
 ingress:
   # Dream Journal UI + API
