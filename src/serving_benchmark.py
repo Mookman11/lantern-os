@@ -51,6 +51,12 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 LEADERBOARD_PATH = DATA_DIR / "leaderboard.jsonl"
 REPORT_PATH = DATA_DIR / "REPORT.md"
 
+# Phase 3 (#731): grounded-research runs are tracked separately from the golden
+# set so the FAST/DEEP repetition gate (--validate) is not applied to the longer,
+# grounding-focused research prompts.
+RESEARCH_LEADERBOARD_PATH = DATA_DIR / "research-leaderboard.jsonl"
+RESEARCH_REPORT_PATH = DATA_DIR / "RESEARCH-REPORT.md"
+
 # Make `import unified_agent_connector` / `serving_modes` work on a bare checkout.
 SRC_DIR = REPO_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
@@ -107,6 +113,53 @@ GOLDEN_SET = [
         "name": "long_context",
         "task": "reasoning",
         "prompt": "Summarize the Convergence 12 architecture in under 100 words.",
+    },
+]
+
+# Research set (#731 Phase 3): higher-reasoning prompts about *this* repository,
+# where a well-grounded answer cites real files/components and a hallucinating one
+# invents them. Used to compare FAST vs DEEP on grounding quality, not just speed.
+# Categories mirror the issue: architecture, core-design, grant-writing.
+RESEARCH_SET = [
+    {
+        "name": "arch_memory_persistence",
+        "category": "architecture",
+        "prompt": "In the Lantern OS codebase, how is persistent memory stored? "
+                  "Name the specific files or modules responsible and the on-disk formats.",
+    },
+    {
+        "name": "core_convergence_loop",
+        "category": "core-design",
+        "prompt": "Lantern OS is built around one loop: Observe -> Remember -> Reason "
+                  "-> Act -> Verify -> Converge. Explain what each stage does and name a "
+                  "concrete module or file that implements one of them.",
+    },
+    {
+        "name": "core_serving_modes",
+        "category": "core-design",
+        "prompt": "Lantern OS serves models in a FAST default mode and an opt-in DEEP "
+                  "mode. Which source file defines the decode parameters for each mode, "
+                  "and which environment variable switches between them?",
+    },
+    {
+        "name": "core_honest_metrics",
+        "category": "core-design",
+        "prompt": "The serving benchmark refuses to record fabricated metrics. Describe "
+                  "the mechanism it uses to guarantee a recorded run is a real provider "
+                  "run and not an offline fallback, and name the file that implements it.",
+    },
+    {
+        "name": "arch_provider_routing",
+        "category": "architecture",
+        "prompt": "Which Lantern OS module routes a chat request to one of several LLM "
+                  "providers, and how are the provider API keys configured?",
+    },
+    {
+        "name": "grant_external_reality",
+        "category": "grant-writing",
+        "prompt": "For a research grant, summarize the External Reality Rule that governs "
+                  "Lantern OS and explain in two or three sentences why grounding every "
+                  "claim in evidence is scientifically defensible.",
     },
 ]
 
@@ -214,6 +267,63 @@ def _current_decode_params() -> Dict[str, Any]:
         return {}
 
 
+def _prepare_connector(provider: str, model: str) -> Tuple[Optional[Any], Optional[Dict[str, Any]]]:
+    """Build a connector and pin `model` onto `provider`'s config.
+
+    Returns (connector, None) on success, or (None, error_dict) if the connector
+    cannot be imported or the provider is not configured. Pinning the model is the
+    honesty contract's first leg: we benchmark the model we *say* we benchmark
+    (the CLI arg was previously ignored, so a wrong model silently passed).
+    """
+    try:
+        from unified_agent_connector import UnifiedAgentConnector
+    except ImportError as exc:
+        print(f"[benchmark] Cannot import UnifiedAgentConnector ({exc}); skipping run")
+        return None, {"error": "import_failed", "provider": provider, "model": model}
+
+    connector = UnifiedAgentConnector()
+    providers = getattr(connector, "_providers", {})
+    if provider not in providers:
+        return None, {
+            "error": f"provider_not_configured:{provider}",
+            "provider": provider,
+            "model": model,
+            "available_providers": sorted(providers.keys()),
+        }
+    if getattr(providers[provider], "model", None) != model:
+        providers[provider] = replace(providers[provider], model=model)
+    return connector, None
+
+
+def _stream_once(connector: Any, provider: str, prompt: str,
+                 max_tokens: int, temperature: float) -> Tuple[str, float]:
+    """Stream one prompt under the honesty contract; return (text, latency_ms).
+
+    Streams with fallback=False and rejects the offline persona stub or an empty
+    body by raising — such a run is recorded as an error by the caller, never as
+    provider data.
+    """
+    start_time = time.time()
+    gen = connector.stream(
+        prompt,
+        persona_id=None,
+        provider=provider,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        fallback=False,  # never degrade to the offline stub
+    )
+    text, meta = _consume_stream(gen)
+    latency_ms = (time.time() - start_time) * 1000
+
+    source = str(meta.get("source", "")).lower()
+    meta_provider = str(meta.get("provider", "")).lower()
+    if source == "offline" or meta_provider == "offline":
+        raise RuntimeError(f"offline fallback (not a real {provider} run): {meta.get('error', '')}")
+    if not text.strip():
+        raise RuntimeError("empty response from provider")
+    return text, latency_ms
+
+
 def run_benchmark(
     provider: str,
     model: str,
@@ -229,26 +339,9 @@ def run_benchmark(
     config, so the recorded metrics belong to the model named in the leaderboard —
     or the run is recorded as an error. Offline-stub responses are rejected.
     """
-    try:
-        from unified_agent_connector import UnifiedAgentConnector
-    except ImportError as exc:
-        print(f"[benchmark] Cannot import UnifiedAgentConnector ({exc}); skipping run")
-        return {"error": "import_failed", "provider": provider, "model": model}
-
-    connector = UnifiedAgentConnector()
-
-    # Pin the requested model onto the provider config so we benchmark the model
-    # we *say* we benchmarked (the CLI arg was previously ignored).
-    providers = getattr(connector, "_providers", {})
-    if provider not in providers:
-        return {
-            "error": f"provider_not_configured:{provider}",
-            "provider": provider,
-            "model": model,
-            "available_providers": sorted(providers.keys()),
-        }
-    if getattr(providers[provider], "model", None) != model:
-        providers[provider] = replace(providers[provider], model=model)
+    connector, error = _prepare_connector(provider, model)
+    if error is not None:
+        return error
 
     mode_name = _current_mode_name(mode_label)
     results: Dict[str, Any] = {
@@ -269,26 +362,9 @@ def run_benchmark(
     success_count = 0
 
     for item in GOLDEN_SET:
-        start_time = time.time()
         try:
-            gen = connector.stream(
-                item["prompt"],
-                persona_id=None,
-                provider=provider,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                fallback=False,  # never degrade to the offline stub
-            )
-            text, meta = _consume_stream(gen)
-            latency_ms = (time.time() - start_time) * 1000
-
-            source = str(meta.get("source", "")).lower()
-            meta_provider = str(meta.get("provider", "")).lower()
-            if source == "offline" or meta_provider == "offline":
-                raise RuntimeError(f"offline fallback (not a real {provider} run): {meta.get('error', '')}")
-            if not text.strip():
-                raise RuntimeError("empty response from provider")
-
+            text, latency_ms = _stream_once(connector, provider, item["prompt"],
+                                            max_tokens, temperature)
             token_count = len(text.split())
             repetition_ratio = calculate_repetition_ratio(text)
             cost = estimate_cost(provider, token_count, model)
@@ -331,28 +407,142 @@ def run_benchmark(
     return results
 
 
-def append_to_leaderboard(result: Dict[str, Any]) -> None:
-    """Append benchmark run to leaderboard JSONL."""
-    with open(LEADERBOARD_PATH, "a", encoding="utf-8") as f:
+def run_research_benchmark(
+    provider: str,
+    model: str,
+    *,
+    max_tokens: int = 320,
+    temperature: float = 0.7,
+    mode_label: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Run the RESEARCH_SET against `provider:model` and score grounding per reply.
+
+    Same honesty contract as `run_benchmark` (model pinned, fallback=False, offline
+    stub rejected), but each reply is additionally scored by `src/grounding.py`:
+    how many of its file/component references resolve to real artifacts in this
+    checkout, and how many are invented. This is the FAST-vs-DEEP grounding
+    comparison the #731 Definition of Done asks for.
+    """
+    from grounding import aggregate_grounding, score_grounding
+
+    connector, error = _prepare_connector(provider, model)
+    if error is not None:
+        return error
+
+    mode_name = _current_mode_name(mode_label)
+    results: Dict[str, Any] = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "kind": "research",
+        "provider": provider,
+        "model": model,
+        "mode": mode_name,
+        "decode_params": _current_decode_params(),
+        "research_set_size": len(RESEARCH_SET),
+        "runs": [],
+        "aggregates": {},
+    }
+
+    grounding_scores: List[Dict[str, Any]] = []
+    latencies: List[float] = []
+    repetition_ratios: List[float] = []
+    total_tokens = 0
+    success_count = 0
+
+    for item in RESEARCH_SET:
+        try:
+            text, latency_ms = _stream_once(connector, provider, item["prompt"],
+                                            max_tokens, temperature)
+            g = score_grounding(text, REPO_ROOT)
+            token_count = len(text.split())
+            repetition = calculate_repetition_ratio(text)
+
+            results["runs"].append({
+                "name": item["name"],
+                "category": item["category"],
+                "latency_ms": round(latency_ms, 2),
+                "tokens_generated": token_count,
+                "repetition_ratio": round(repetition, 3),
+                "grounding_score": g["grounding_score"],
+                "path_grounding_accuracy": g["path_grounding_accuracy"],
+                "grounding_density_per_100w": g["grounding_density_per_100w"],
+                "grounded_refs": g["grounded_refs"],
+                "hallucinated_paths_count": g["hallucinated_paths_count"],
+                "grounded_paths": g["grounded_paths"],
+                "hallucinated_paths": g["hallucinated_paths"],
+                "glossary_hits": g["glossary_hits"],
+                "output_preview": text[:160] + ("..." if len(text) > 160 else ""),
+            })
+
+            grounding_scores.append(g)
+            latencies.append(latency_ms)
+            repetition_ratios.append(repetition)
+            total_tokens += token_count
+            success_count += 1
+
+        except Exception as e:
+            results["runs"].append({
+                "name": item["name"],
+                "category": item["category"],
+                "error": str(e),
+            })
+
+    if success_count > 0:
+        total_latency_ms = sum(latencies)
+        agg: Dict[str, Any] = {
+            "success_rate": round(success_count / len(RESEARCH_SET), 3),
+            "avg_latency_ms": round(total_latency_ms / success_count, 2),
+            "avg_tokens_per_prompt": round(total_tokens / success_count, 1),
+            "avg_repetition_ratio": round(sum(repetition_ratios) / len(repetition_ratios), 3),
+            "throughput_tokens_per_sec": round(total_tokens / (total_latency_ms / 1000), 2) if total_latency_ms > 0 else 0,
+        }
+        agg.update(aggregate_grounding(grounding_scores))
+        results["aggregates"] = agg
+
+    return results
+
+
+def _append_jsonl(path: Path, result: Dict[str, Any]) -> None:
+    """Append one result row to a JSONL file."""
+    with open(path, "a", encoding="utf-8") as f:
         f.write(json.dumps(result) + "\n")
-    print(f"[benchmark] Appended result to {LEADERBOARD_PATH}")
+    print(f"[benchmark] Appended result to {path}")
 
 
-def load_leaderboard() -> List[Dict[str, Any]]:
-    """Load all leaderboard rows (skipping malformed lines)."""
-    if not LEADERBOARD_PATH.exists():
+def _load_jsonl(path: Path) -> List[Dict[str, Any]]:
+    """Load all rows from a JSONL file (skipping blank/malformed lines)."""
+    if not path.exists():
         return []
-    runs: List[Dict[str, Any]] = []
-    with open(LEADERBOARD_PATH, encoding="utf-8") as f:
+    rows: List[Dict[str, Any]] = []
+    with open(path, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line:
                 continue
             try:
-                runs.append(json.loads(line))
+                rows.append(json.loads(line))
             except json.JSONDecodeError:
                 pass
-    return runs
+    return rows
+
+
+def append_to_leaderboard(result: Dict[str, Any]) -> None:
+    """Append benchmark run to the golden-set leaderboard JSONL."""
+    _append_jsonl(LEADERBOARD_PATH, result)
+
+
+def append_research_run(result: Dict[str, Any]) -> None:
+    """Append a research-set run to the research leaderboard JSONL."""
+    _append_jsonl(RESEARCH_LEADERBOARD_PATH, result)
+
+
+def load_research_leaderboard() -> List[Dict[str, Any]]:
+    """Load all research-leaderboard rows."""
+    return _load_jsonl(RESEARCH_LEADERBOARD_PATH)
+
+
+def load_leaderboard() -> List[Dict[str, Any]]:
+    """Load all golden-set leaderboard rows (skipping malformed lines)."""
+    return _load_jsonl(LEADERBOARD_PATH)
 
 
 # --- Validation (#730 Definition of Done) ---
@@ -539,6 +729,56 @@ def write_report(path: Path = REPORT_PATH) -> None:
     print(f"[benchmark] Wrote report to {path}")
 
 
+def write_research_report(path: Optional[Path] = None) -> None:
+    """Write the FAST-vs-DEEP grounding comparison report (#731 Phase 3).
+
+    Renders the latest research run per (provider, model, mode) so FAST and DEEP
+    rows sit side by side: latency, grounding score, path-grounding accuracy, and
+    invented-path count. The narrative case study lives in
+    docs/SERVING-DEEP-MODE-GUIDE.md; this table is the machine-generated evidence.
+
+    `path` resolves at call time (not import) so the report path stays patchable.
+    """
+    path = path or RESEARCH_REPORT_PATH
+    runs = load_research_leaderboard()
+    successful = [r for r in runs if r.get("aggregates")]
+    lines = [
+        "# Serving Research Benchmark — FAST vs DEEP grounding (#731)",
+        "",
+        f"_Generated {datetime.now(timezone.utc).isoformat()} · "
+        f"{len(successful)} successful run(s) of {len(runs)} total._",
+        "",
+        "Grounding is measured by `src/grounding.py`: every file path a reply cites "
+        "is checked against the checkout. **grounding_score** = grounded / (grounded "
+        "+ hallucinated + 1); **path accuracy** = real paths / cited paths (— when "
+        "the reply named no file); **invented** = paths that do not exist on disk.",
+        "",
+    ]
+    if not successful:
+        lines += ["> No successful research runs yet. Run: "
+                  "`python src/serving_benchmark.py --research ollama:qwen2.5-coder --mode deep`.", ""]
+    else:
+        lines += [
+            "| Provider | Model | Mode | Avg latency (ms) | Grounding score | Path acc. | Invented paths | Density/100w | Repetition | Last run |",
+            "|---|---|---|---:|---:|---:|---:|---:|---:|---|",
+        ]
+        for r in sorted(_latest_per_config(successful),
+                        key=lambda r: (r.get("model", ""), r.get("mode", ""))):
+            a = r["aggregates"]
+            acc = a.get("avg_path_grounding_accuracy")
+            acc_str = f"{acc:.2f}" if acc is not None else "—"
+            lines.append(
+                f"| {r.get('provider','?')} | {r.get('model','?')} | {r.get('mode','?')} "
+                f"| {a.get('avg_latency_ms',0):.1f} | {a.get('avg_grounding_score',0):.3f} "
+                f"| {acc_str} | {a.get('total_hallucinated_paths',0)} "
+                f"| {a.get('avg_grounding_density_per_100w',0):.2f} "
+                f"| {a.get('avg_repetition_ratio',0):.3f} | {r.get('timestamp','?')[:19]} |"
+            )
+        lines.append("")
+    path.write_text("\n".join(lines), encoding="utf-8")
+    print(f"[benchmark] Wrote research report to {path}")
+
+
 def _parse_provider_specs(spec: str) -> List[Tuple[str, str]]:
     """Parse 'ollama:qwen2.5-coder,openai:gpt-4.1-mini' → [(provider, model), ...]."""
     out: List[Tuple[str, str]] = []
@@ -563,8 +803,9 @@ def main(argv: Optional[List[str]] = None) -> int:
             pass
 
     parser = argparse.ArgumentParser(description="Run, validate, or summarize serving benchmarks")
-    parser.add_argument("--run", help="Run one benchmark: provider:model (e.g. ollama:qwen2.5-coder)")
+    parser.add_argument("--run", help="Run one golden-set benchmark: provider:model (e.g. ollama:qwen2.5-coder)")
     parser.add_argument("--providers", help="Run several: 'ollama:qwen2.5-coder,openai:gpt-4.1-mini'")
+    parser.add_argument("--research", help="Run the research set (grounding scored) for provider:model (#731)")
     parser.add_argument("--mode", choices=["fast", "deep"], default=None,
                         help="Serving mode for the run (sets OURO_NATIVE). Default: current env.")
     parser.add_argument("--max-tokens", type=int, default=200)
@@ -574,6 +815,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                         help="Validate latest leaderboard runs; exit 1 on regression")
     parser.add_argument("--report", nargs="?", const=str(REPORT_PATH), default=None,
                         help="Write a Markdown leaderboard report (default path if no arg)")
+    parser.add_argument("--research-report", nargs="?", const=str(RESEARCH_REPORT_PATH), default=None,
+                        help="Write the FAST-vs-DEEP grounding research report (#731)")
     args = parser.parse_args(argv)
 
     did_something = False
@@ -604,6 +847,15 @@ def main(argv: Optional[List[str]] = None) -> int:
         ok, _ = validate_result(result)
         run_ok = run_ok and ok
 
+    if args.research:
+        for provider, model in _parse_provider_specs(args.research):
+            did_something = True
+            print(f"[benchmark] Running {provider}:{model} (mode={mode_label or 'env'}) on research set...")
+            result = run_research_benchmark(provider, model, max_tokens=args.max_tokens, mode_label=mode_label)
+            print(json.dumps(result.get("aggregates", {"error": result.get("error")}), indent=2))
+            if not args.no_append and (result.get("aggregates") or result.get("runs")):
+                append_research_run(result)
+
     if args.summarize:
         did_something = True
         summarize_leaderboard()
@@ -611,6 +863,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.report is not None:
         did_something = True
         write_report(Path(args.report))
+
+    if args.research_report is not None:
+        did_something = True
+        write_research_report(Path(args.research_report))
 
     if args.validate:
         did_something = True
