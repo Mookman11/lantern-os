@@ -15,7 +15,7 @@ const os = require("os");
 const path = require("path");
 const { execFileSync } = require("child_process");
 
-const { applyPatch } = require("../apps/lantern-garage/lib/self-edit-engine");
+const { applyPatch, resolveRepoPath } = require("../apps/lantern-garage/lib/self-edit-engine");
 
 let passed = 0, failed = 0;
 function test(name, fn) {
@@ -97,6 +97,28 @@ test("new-file diff (/dev/null) is never path-resolved", () => {
     "+print('hi')\n";
   const res = applyPatch(repo, diff);
   assert.deepStrictEqual(res.pathRewrites, [], "created files keep their authored path");
+});
+
+console.log("resolveRepoPath() — plan path repair");
+
+test("bare basename resolves to the unique real repo path", () => {
+  const repo = makeRepo({ "scripts/ouro_serve.py": OURO });
+  assert.strictEqual(resolveRepoPath(repo, "ouro_serve.py"), "scripts/ouro_serve.py");
+});
+
+test("already-correct path is returned unchanged", () => {
+  const repo = makeRepo({ "scripts/ouro_serve.py": OURO });
+  assert.strictEqual(resolveRepoPath(repo, "scripts/ouro_serve.py"), "scripts/ouro_serve.py");
+});
+
+test("genuinely-new path (no match) is returned as-is (a real new file)", () => {
+  const repo = makeRepo({ "scripts/keep.py": "x\n" });
+  assert.strictEqual(resolveRepoPath(repo, "scripts/brand_new.py"), "scripts/brand_new.py");
+});
+
+test("ambiguous basename is left as-is (never guessed)", () => {
+  const repo = makeRepo({ "a/dup.py": "x\n", "b/dup.py": "y\n" });
+  assert.strictEqual(resolveRepoPath(repo, "dup.py"), "dup.py");
 });
 
 console.log(`\n${passed}/${passed + failed} passed`);
