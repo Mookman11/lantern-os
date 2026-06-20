@@ -39,6 +39,32 @@ function requireSafePaths(repoRoot, filePaths) {
   }
 }
 
+// Resolve an LLM-supplied path to its real repo location. Returns it unchanged if it
+// already exists; otherwise, when the repo has exactly one tracked file with that
+// basename (or one whose path uniquely ends with it), returns that real path. Fixes
+// plans that reference a bare basename (`ouro_serve.py`) when the file lives under a
+// directory (`scripts/ouro_serve.py`) — which otherwise makes the patch generator
+// feed `<new file>` and emit a duplicate at the wrong path (#777). Ambiguous (>1
+// match) paths are left as-is so we never silently retarget the wrong file.
+function resolveRepoPath(repoRoot, p) {
+  if (!p || typeof p !== "string") return p;
+  const rel = p.replace(/^[ab]\//, "").replace(/\\/g, "/");
+  if (fs.existsSync(path.join(repoRoot, rel))) return rel;
+  const base = path.posix.basename(rel);
+  if (!base) return rel;
+  let candidates = [];
+  try {
+    const out = execFileSync("git", ["ls-files", `*/${base}`, base], {
+      cwd: repoRoot, encoding: "utf8", timeout: 10000, windowsHide: true,
+    });
+    candidates = out.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+  } catch (_e) { /* no git or no match */ }
+  if (!candidates.length) return rel;
+  const suffix = candidates.filter((c) => c === rel || c.endsWith("/" + rel));
+  const resolved = suffix.length === 1 ? suffix[0] : (candidates.length === 1 ? candidates[0] : null);
+  return resolved && isPathSafe(repoRoot, resolved) ? resolved : rel;
+}
+
 // ── Branch safety ───────────────────────────────────────────────────────
 
 function sanitizeBranchName(raw) {
@@ -726,6 +752,10 @@ async function generatePlan(repoRoot, userRequest, scopeFiles, history) {
   plan.riskLevel = ["low", "medium", "high"].includes(plan.riskLevel) ? plan.riskLevel : "medium";
   plan.branchHint = sanitizeBranchName(plan.branchHint || "auto-change").replace(/^auto\//, "");
 
+  // Resolve bare-basename paths to real repo locations so the patch generator edits
+  // the existing file instead of duplicating it at the wrong path (#777).
+  plan.affectedFiles = plan.affectedFiles.map((fp) => resolveRepoPath(repoRoot, fp));
+  for (const s of plan.steps) { if (s && typeof s.file === "string") s.file = resolveRepoPath(repoRoot, s.file); }
   // Ensure all affected files are safe
   requireSafePaths(repoRoot, plan.affectedFiles);
   // Filter tests to allowlisted only
@@ -809,4 +839,5 @@ module.exports = {
   callLlm,
   isAllowedTest,
   requireSafePaths,
+  resolveRepoPath,
 };
