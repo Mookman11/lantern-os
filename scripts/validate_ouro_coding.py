@@ -48,7 +48,11 @@ def extract_code(text, fn):
     return text                         # give up; exec will report the failure honestly
 
 def run_task(model, t):
-    out = model.generate(t["prompt"], q=0.5, max_new_tokens=256, mode="qexit")
+    # #774/fix-3: pass messages= so apply_chat_template fires; falls back to
+    # the ### Instruction template in generate() when messages is None — but
+    # using messages here applies the model's native chat template instead.
+    msgs = [{"role": "user", "content": t["prompt"]}]
+    out = model.generate(None, q=0.5, max_new_tokens=256, mode="qexit", messages=msgs)
     code = extract_code(out["text"], t["fn"])
     res = {"name": t["name"], "mean_depth": out["mean_depth"], "raw": out["text"][:300]}
     ns = {}

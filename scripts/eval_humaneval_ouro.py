@@ -149,6 +149,18 @@ def main():
         print(f"{ex['task_id']:<14} {'OK ' if ok else 'x  '}  {note}", flush=True)
 
     dt = time.time() - t0
+    # #774/fix-7: note histogram — parse-failure/timeout/assert-fail breakdown
+    note_counts = {}
+    for d in detail:
+        if not d["ok"]:
+            key = d["note"][:40] if d["note"] else "unknown"
+            # bucket by prefix so minor variations collapse (e.g. "assert …")
+            bucket = "no-parse" if key == "no-parse" else \
+                     "timeout" if key == "timeout" else \
+                     "assert" if key.startswith("assert") else \
+                     "exec-error" if key.startswith("Traceback") or key.startswith("runner") else \
+                     "other"
+            note_counts[bucket] = note_counts.get(bucket, 0) + 1
     summary = {
         # reconciled schema — "benchmark" key shared across all eval scripts (#776)
         "benchmark": "humaneval",
@@ -157,6 +169,7 @@ def main():
         "n": n, "subset": (not a.full), "pass@1": round(n_ok / n, 3) if n else 0.0,
         "accuracy": round(n_ok / n, 3) if n else 0.0,  # alias for cross-benchmark summary
         "passed": n_ok, "wall_s": round(dt, 1), "sec_per_problem": round(dt / n, 1) if n else 0.0,
+        "failure_breakdown": note_counts,  # #774/fix-7: no-parse/timeout/assert/exec-error counts
     }
     os.makedirs(os.path.join(ROOT, "data", "eval", "humaneval"), exist_ok=True)
     with open(os.path.join(ROOT, "data", "eval", "humaneval", f"{a.label}-{a.ts}.jsonl"), "w", encoding="utf-8") as f:

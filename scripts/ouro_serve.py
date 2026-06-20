@@ -134,9 +134,12 @@ def _generate(prompt, max_new_tokens=512, stream_cb=None):
             stream_cb(text)
         return text, out  # also return meta for x-ouro-depth header
     ids = _tok(prompt, return_tensors="pt").to(_model.device)
+    # #774/fix-5: stop-strings cut 15-40% of tokens on coding tasks (HumanEval proves
+    # the pattern); tokenizer= is required for stop_strings support in transformers.
+    _STOP = ["\ndef ", "\nclass ", "\nif __name__", "\n\n\n", "\n```"]
     kw = dict(max_new_tokens=max_new_tokens, pad_token_id=_tok.eos_token_id,
               repetition_penalty=REP_PENALTY, no_repeat_ngram_size=NO_REPEAT_NGRAM,
-              do_sample=DO_SAMPLE)
+              do_sample=DO_SAMPLE, stop_strings=_STOP, tokenizer=_tok)
     if DO_SAMPLE:
         kw.update(temperature=TEMPERATURE, top_p=TOP_P)
     if stream_cb is None:

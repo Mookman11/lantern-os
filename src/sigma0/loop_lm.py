@@ -147,7 +147,10 @@ class Sigma0LoopLM:
         if messages is not None:
             ids = self.tok.apply_chat_template(messages, add_generation_prompt=True, return_tensors="pt")
         else:
-            ids = self.tok(prompt, return_tensors="pt").input_ids
+            # #774/fix-3: match the training template byte-exactly so the trained
+            # "### Instruction / ### Response" delimiters activate the adapter.
+            formatted = f"### Instruction:\n{prompt}\n\n### Response:\n"
+            ids = self.tok(formatted, return_tensors="pt").input_ids
         ids = ids.to(self._backbone().device if hasattr(self._backbone(), "device") else "cuda")
         depths = []
         exit_deltas = []   # contraction trajectory per token (converge mode)
