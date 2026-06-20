@@ -478,35 +478,56 @@ module.exports = async (req, res, url, deps) => {
           }
         });
 
-        // ── 4. patch (diff emitted BEFORE it is applied — observation) ────
-        step("patch", "start");
-        const { diffText, files } = await generatePatch(REPO_ROOT, plan);
-        const affected = files.map((f) => (f.newFile || f.oldFile || "").replace(/^[ab]\//, ""));
-        send("diff", { diffText, files: affected });
+        // ── 4-5. patch → apply, with a feedback retry loop ────────────────
+        // LLM diffs routinely miss exact hunk context/counts. Instead of aborting
+        // on the first apply failure, feed the apply errors back to the model and
+        // let it self-correct (up to MAX_PATCH_ATTEMPTS). Each failed attempt is
+        // rolled back so the tree stays clean between tries.
+        const MAX_PATCH_ATTEMPTS = 3;
+        let diffText = "", stats = null, changedFiles = [], feedback = null, applied = false;
+        for (let attempt = 1; attempt <= MAX_PATCH_ATTEMPTS; attempt++) {
+          step("patch", attempt === 1 ? "start" : "retry", { attempt, of: MAX_PATCH_ATTEMPTS });
+          const gen = await generatePatch(REPO_ROOT, plan, feedback ? { feedback } : {});
+          diffText = gen.diffText;
+          const affected = (gen.files || []).map((f) => (f.newFile || f.oldFile || "").replace(/^[ab]\//, ""));
+          send("diff", { diffText, files: affected, attempt });
 
-        if (dryRun) {
-          receipt.stoppedAt = "dry_run";
-          step("apply", "skipped", { reason: "dry_run" });
-          send("done", { ok: true, ...receipt, message: "Dry run — diff shown, nothing applied." });
-          res.end();
-          return;
-        }
+          if (dryRun) {
+            receipt.stoppedAt = "dry_run";
+            step("apply", "skipped", { reason: "dry_run" });
+            send("done", { ok: true, ...receipt, message: "Dry run — diff shown, nothing applied." });
+            res.end();
+            return;
+          }
 
-        // ── 5. apply ─────────────────────────────────────────────────────
-        step("apply", "start");
-        const stats = applyPatch(REPO_ROOT, diffText);
-        const changedFiles = [...(stats.changed || []), ...(stats.created || [])];
+          step("apply", "start", { attempt });
+          stats = applyPatch(REPO_ROOT, diffText);
+          changedFiles = [...(stats.changed || []), ...(stats.created || [])];
 
-        // Anti-fraud gate: refuse to proceed if the patch changed nothing or had
-        // hunk errors. Otherwise a hallucinated/failed patch would let unrelated
-        // data-file churn be committed as the "fix" (the data-file fraud pattern).
-        if (changedFiles.length === 0 || (stats.errors && stats.errors.length > 0)) {
+          // Anti-fraud gate: a usable patch changes ≥1 file with zero hunk errors.
+          // Otherwise a hallucinated/failed patch could let unrelated data-file churn
+          // be committed as the "fix" (the data-file fraud pattern).
+          if (changedFiles.length > 0 && !(stats.errors && stats.errors.length > 0)) {
+            applied = true;
+            break;
+          }
+
+          // Failed — roll the tree back clean and carry the errors into the next try.
           await new Promise((resolve) =>
             execFile("git", ["checkout", "--", "."], { cwd: REPO_ROOT, timeout: 10000, windowsHide: true }, () => resolve()));
+          feedback = {
+            priorDiff: diffText,
+            errors: (stats.errors && stats.errors.length)
+              ? stats.errors.map((e) => `${e.file}: ${e.error}`).join("\n")
+              : "the diff changed no files (paths/hunks did not match the repo)",
+          };
+          step("apply", attempt < MAX_PATCH_ATTEMPTS ? "retry" : "error", { stats, attempt });
+        }
+
+        if (!applied) {
           receipt.applied = false;
           receipt.stoppedAt = "patch_did_not_apply";
-          step("apply", "error", { stats, error: "patch_did_not_apply" });
-          send("done", { ok: false, ...receipt, message: "Generated patch produced no usable code changes (hunks failed or empty). Aborted — nothing committed." });
+          send("done", { ok: false, ...receipt, message: `Generated patch produced no usable code changes after ${MAX_PATCH_ATTEMPTS} attempts (hunks failed or empty). Aborted — nothing committed.` });
           res.end();
           return;
         }
