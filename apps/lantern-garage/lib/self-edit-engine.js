@@ -747,20 +747,38 @@ Rules:
 - If creating a new file, use \`--- /dev/null\` and \`+++ b/path\` with a single hunk starting at line 0.
 `;
 
-async function generatePatch(repoRoot, plan) {
+async function generatePatch(repoRoot, plan, opts = {}) {
   let fileContext = "";
+  // Include (nearly) the FULL file, not a 6KB slice. A truncated file makes the
+  // model invent context for anything past the cut — the #1 cause of "hunk context
+  // mismatch" apply failures (e.g. a leaderboard write near the end of a long file).
+  const PER_FILE_CAP = 24000;
   for (const fp of plan.affectedFiles || []) {
     if (!isPathSafe(repoRoot, fp)) continue;
     const full = path.join(repoRoot, fp);
     if (fs.existsSync(full)) {
-      const content = fs.readFileSync(full, "utf8").slice(0, 6000);
+      const raw = fs.readFileSync(full, "utf8");
+      const content = raw.length > PER_FILE_CAP ? raw.slice(0, PER_FILE_CAP) + "\n…(truncated)…\n" : raw;
       fileContext += `\n--- ${fp} ---\n${content}\n`;
     } else {
       fileContext += `\n--- ${fp} ---\n<new file>\n`;
     }
   }
 
-  const userPrompt = `Plan summary: ${plan.summary}\n\nSteps:\n${plan.steps.map((s, i) => `${i + 1}. [${s.action}] ${s.file}: ${s.description}`).join("\n")}\n\n${fileContext}\n\nGenerate the unified diff.`;
+  let userPrompt = `Plan summary: ${plan.summary}\n\nSteps:\n${plan.steps.map((s, i) => `${i + 1}. [${s.action}] ${s.file}: ${s.description}`).join("\n")}\n\n${fileContext}\n\nGenerate the unified diff.`;
+
+  // Feedback retry: when a prior diff failed to apply, show the model its own diff
+  // and the exact apply errors, and insist it copy context EXACTLY from the file
+  // bodies above (which are ground truth). This is what lets autowork self-correct
+  // hunk-count / hallucinated-context failures instead of aborting on attempt 1.
+  if (opts.feedback && opts.feedback.errors) {
+    userPrompt +=
+      `\n\n--- YOUR PREVIOUS DIFF FAILED TO APPLY ---\nErrors:\n${opts.feedback.errors}\n\n` +
+      (opts.feedback.priorDiff ? `Previous diff:\n${opts.feedback.priorDiff}\n\n` : "") +
+      `The file contents shown above are the GROUND TRUTH. Reproduce context lines ` +
+      `byte-for-byte (exact whitespace, exact text), use correct @@ line numbers/counts, ` +
+      `and do not invent lines that aren't in the file. Output ONLY the corrected unified diff.`;
+  }
 
   const raw = await callLlm(PATCH_SYSTEM_PROMPT, userPrompt, "auto");
   const diffText = raw.replace(/^```diff\n?/, "").replace(/^```\n?/, "").replace(/\n?```$/, "").trim();
