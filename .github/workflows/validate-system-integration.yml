@@ -95,17 +95,40 @@ jobs:
       - name: Validate tunnel configuration file
         shell: bash
         run: |
-          # Check if cloudflared config would exist at ~/.cloudflared/config.yml
-          CONFIG_TEMPLATE_PATH="${{ github.workspace }}/manifests/cloudflare-config.yml"
-          if [ -f "$CONFIG_TEMPLATE_PATH" ]; then
-            echo "✓ Tunnel config template found"
-            grep -q "mcp.lantern-os.net" "$CONFIG_TEMPLATE_PATH" && echo "✓ MCP hostname configured"
-            grep -q "lantern-os.net" "$CONFIG_TEMPLATE_PATH" && echo "✓ Primary hostname configured"
-            grep -q "localhost:8772" "$CONFIG_TEMPLATE_PATH" && echo "✓ OAuth port configured"
-            grep -q "localhost:4177" "$CONFIG_TEMPLATE_PATH" && echo "✓ Garage port configured"
-          else
-            echo "⚠ Tunnel config template not found (expected at $CONFIG_TEMPLATE_PATH)"
+          CONFIG_PATH="${{ github.workspace }}/cloudflare-config.yml"
+          if [ ! -f "$CONFIG_PATH" ]; then
+            echo "::error::Tunnel config not found at $CONFIG_PATH"
+            exit 1
           fi
+          echo "✓ Tunnel config found: $CONFIG_PATH"
+
+          fail=0
+          assert() { # <grep-pattern> <human message>
+            if grep -q "$1" "$CONFIG_PATH"; then
+              echo "✓ $2"
+            else
+              echo "::error::$2 — missing pattern '$1' in cloudflare-config.yml"
+              fail=1
+            fi
+          }
+
+          assert "lantern-os.net"     "Primary hostname configured"
+          assert "mcp.lantern-os.net" "MCP hostname configured"
+          assert "127.0.0.1:4177"     "Dream Journal (garage) port configured"
+
+          # Regression guard for #672: the deleted tunnel UUID must never return
+          # as an ACTIVE directive. Comments are stripped first so documentation
+          # that mentions the bad UUID (e.g. troubleshooting notes) is allowed.
+          if sed 's/#.*//' "$CONFIG_PATH" | grep -q "16689f09-f5f6-4ba9-92a4-68460117997e"; then
+            echo "::error::cloudflare-config.yml actively references the DELETED tunnel UUID 16689f09-... (issue #672). Use the live 'lantern-os' tunnel — verify with 'cloudflared tunnel list'."
+            fail=1
+          fi
+
+          # Informational — optional MCP routes (ports may legitimately vary).
+          grep -q "127.0.0.1:8771" "$CONFIG_PATH" && echo "✓ MCP (no-auth) port configured" || echo "ℹ MCP no-auth port (8771) not pinned"
+          grep -q "127.0.0.1:8772" "$CONFIG_PATH" && echo "✓ MCP (OAuth2) port configured" || echo "ℹ MCP OAuth2 port (8772) not pinned"
+
+          exit $fail
 
   # ── Dream Chat Agent Validation ────────────────────────────────────────────
   dream-chat-validation:

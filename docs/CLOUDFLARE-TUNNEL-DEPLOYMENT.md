@@ -89,7 +89,7 @@ This opens a browser and asks you to:
 2. Authorize the tunnel agent
 3. Choose the domain (must be a domain you own in Cloudflare DNS)
 
-A certificate file is saved to: `~\.cloudflare\cert.pem`
+A certificate file is saved to: `~/.cloudflared/cert.pem`
 
 ### 3. Create a Tunnel
 
@@ -99,11 +99,15 @@ cloudflared tunnel create lantern-os
 
 Output:
 ```
-Tunnel credentials written to ~/.cloudflare/lantern-os.json
+Tunnel credentials written to ~/.cloudflared/<UUID>.json
 Tunnel ID: <UUID>
 Tunnel Name: lantern-os
 Account Tag: <account_id>
 ```
+
+> The credentials file is named after the tunnel **UUID** (e.g.
+> `7045ac00-f326-4884-a59a-288b769015a8.json`) and lives in `~/.cloudflared/`.
+> Note the directory is `.cloudflared` (with a "d"), not `.cloudflare`.
 
 ### 4. Configure Tunnel Routes
 
@@ -111,7 +115,9 @@ Create or update `cloudflare-config.yml` in your lantern-os root:
 
 ```yaml
 tunnel: lantern-os
-credentials-file: ~/.cloudflare/lantern-os.json
+# Credentials are auto-discovered at ~/.cloudflared/<UUID>.json after
+# `cloudflared tunnel create`. Only set credentials-file for a non-default path:
+#   credentials-file: /home/you/.cloudflared/7045ac00-f326-4884-a59a-288b769015a8.json
 
 ingress:
   # Dream Journal
@@ -275,6 +281,39 @@ Go to [Cloudflare Dashboard → Tunnels](https://dash.cloudflare.com/tunnels) an
 | 502 Bad Gateway | Verify local server is running on port 4177; check firewall |
 | Slow response | Check Cloudflare dashboard for rate limiting; increase plan if needed |
 | Certificate errors | Ensure `tlsSkip: false` in config; check certificate renewal |
+| `Unauthorized: Tunnel not found` | The tunnel/credentials are stale or deleted — see below ([#672](https://github.com/alex-place/lantern-os/issues/672)) |
+
+### "Unauthorized: Tunnel not found" (issue #672)
+
+cloudflared logs this (often repeatedly) when the tunnel it is trying to run no
+longer exists in Cloudflare, or the cached credentials point at a **deleted**
+tunnel UUID:
+
+```
+ERR failed to serve incoming request error="Unauthorized: Tunnel not found"
+ERR Register tunnel error from server side error="Unauthorized: Tunnel not found"
+```
+
+This affects **public access only** (`https://lantern-os.net`); the local server
+keeps serving on `http://127.0.0.1:4177`. To recover:
+
+```powershell
+# 1. List tunnels and confirm "lantern-os" + its CURRENT UUID
+cloudflared tunnel list
+
+# 2. If it is missing, re-authenticate and recreate it
+cloudflared tunnel login
+cloudflared tunnel create lantern-os
+
+# 3. Point BOTH configs at the CURRENT UUID (never a deleted one):
+#    - ~/.cloudflared/config.yml   (used by `npm start` / server.js)
+#    - cloudflare-config.yml       (used by `cloudflared tunnel run ... --config`)
+```
+
+> **Root cause for #672:** the cached config referenced UUID
+> `16689f09-f5f6-4ba9-92a4-68460117997e`, which had been deleted in Cloudflare.
+> The live tunnel `lantern-os` is `7045ac00-f326-4884-a59a-288b769015a8`. Always
+> verify with `cloudflared tunnel list` rather than trusting a hardcoded UUID.
 
 ---
 

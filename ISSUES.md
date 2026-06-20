@@ -20,6 +20,26 @@
 
 ---
 
+## Cloudflare Tunnel
+
+### `Unauthorized: Tunnel not found` (public access only)
+**Symptom:** cloudflared logs this repeatedly on startup:
+```
+ERR failed to serve incoming request error="Unauthorized: Tunnel not found"
+ERR Register tunnel error from server side error="Unauthorized: Tunnel not found"
+```
+**Cause:** The tunnel (or its cached credentials) no longer exists in Cloudflare — usually a **deleted/stale tunnel UUID** in `~/.cloudflared/config.yml`. Local access (`http://127.0.0.1:4177`) is unaffected. (issue #672)  
+**Fix:**
+```powershell
+cloudflared tunnel list                 # confirm "lantern-os" + its CURRENT UUID
+cloudflared tunnel login                # only if the tunnel must be recreated
+cloudflared tunnel create lantern-os
+# Point ~/.cloudflared/config.yml AND cloudflare-config.yml at the current UUID.
+```
+The repo `cloudflare-config.yml` is now name-based (`tunnel: lantern-os`) with auto-discovered credentials, so it no longer pins a UUID that can rot. Full guide: [docs/CLOUDFLARE-TUNNEL-DEPLOYMENT.md](docs/CLOUDFLARE-TUNNEL-DEPLOYMENT.md).
+
+---
+
 ## Server
 
 ### Port 4177 already in use
