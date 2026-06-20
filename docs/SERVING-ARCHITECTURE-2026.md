@@ -1,7 +1,7 @@
 # Lantern OS Serving Architecture 2026: Fast Default + Deep Research Mode
 
 **Decision Date:** 2026-06-18  
-**Status:** Implementation Complete (Phase 1)  
+**Status:** Phase 1 complete · Phase 2 validation tooling complete (#730)  
 **Owner:** Lantern Core Team  
 
 ## Problem Statement
@@ -97,18 +97,34 @@ decode_params = get_decode_params(mode)
 
 ---
 
-## Performance Baseline
+## Performance Baseline (measured)
 
-Running on golden set (10 diverse prompts):
+Golden set (10 diverse prompts), measured 2026-06-20 on the local Ollama host
+(no cloud credentials configured, so cloud rows accrue via CI once secrets are
+set). These are the **real** numbers from `src/serving_benchmark.py`, not
+estimates — see `data/benchmarks/leaderboard.jsonl` for the raw runs.
 
-| Provider | Model | Mode | Latency | Repetition | Tokens | Cost |
-|----------|-------|------|---------|-----------|--------|------|
-| ollama | qwen2.5-coder | FAST | 450ms | 0.92 | 85 | $0.00 |
-| ollama | qwen2.5-coder | DEEP | 75s | 0.89 | 320 | $0.00 |
-| groq | llama-3.1-70b | FAST | 280ms | 0.94 | 110 | ~$0.00 |
-| openai | gpt-4o-mini | FAST | 820ms | 0.96 | 92 | $0.003 |
+| Provider | Model | Mode | Avg latency | Avg repetition | Avg tokens | Cost |
+|----------|-------|------|------------:|---------------:|-----------:|------|
+| ollama | qwen2.5-coder | FAST | 0.97–1.29 s | 0.848–0.862 | ~52 | $0.00 |
+| ollama | lantern-sigma0-coder | FAST | 1.48 s | 0.830 | ~66 | $0.00 |
+| ollama | qwen2.5-coder | DEEP* | 1.52 s | 0.814 | ~71 | $0.00 |
 
-(See `data/benchmarks/leaderboard.jsonl` for full historical data.)
+\* DEEP here exercises the **deep decode params** through the FAST cached engine.
+The native Σ₀ Q-exit runtime (the source of the 70–85 s latency target) is not
+yet wired for Ollama, so DEEP latency does not — and is not expected to — hit the
+70–85 s band on this path. The validation gate treats that band as a WARN for
+non-native providers (see below).
+
+**Finding:** `qwen2.5-coder` is the recommended FAST default. Its repetition
+ratio averages ~0.855 across runs, straddling the 0.85 target (genuine sampling
+variance on short replies), so the gate treats 0.80 as a hard floor and 0.85 as a
+target. `lantern-sigma0-coder` sits below target (0.83) and is **not** recommended
+as the FAST default.
+
+> ⚠️ The previous version of this table contained pre-measurement estimates
+> (e.g. "450ms / 0.92"). Those were never measured and have been replaced with
+> real benchmark output per the External Reality Rule.
 
 ---
 
@@ -117,20 +133,64 @@ Running on golden set (10 diverse prompts):
 ### Standing Benchmark
 
 ```bash
-# Run benchmark on a single provider:model pair
-python src/serving_benchmark.py --run ollama:qwen2.5-coder
+# Run one provider:model pair (FAST mode, the product default)
+python src/serving_benchmark.py --run ollama:qwen2.5-coder --mode fast
 
-# Summarize all runs
+# Run several at once; DEEP mode sets OURO_NATIVE for the run
+python src/serving_benchmark.py --providers "ollama:qwen2.5-coder,openai:gpt-4.1-mini" --mode fast
+
+# Validate the latest run per config against the FAST/DEEP contract (exit 1 on regression)
+python src/serving_benchmark.py --validate
+
+# Refresh the human-readable monitoring report
+python src/serving_benchmark.py --report   # → data/benchmarks/REPORT.md
+
+# Summarize the leaderboard
 python src/serving_benchmark.py --summarize
 ```
 
-**Golden set:**
-- 10 diverse prompts (reasoning, creative, code, domain)
-- Metrics: latency, tokens, repetition_ratio, cost
+**Golden set:** 10 diverse prompts (reasoning, creative, code, domain).
+**Metrics:** latency, tokens, repetition_ratio (+ per-task pass), cost, throughput.
+**Leaderboard:** `data/benchmarks/leaderboard.jsonl` · **Report:** `data/benchmarks/REPORT.md`.
 
-**Leaderboard location:** `data/benchmarks/leaderboard.jsonl`
+#### Honesty contract
 
-Every production deploy appends a new benchmark run. Over time, this becomes a measurable performance history.
+The connector silently falls back to a canned **offline persona stub** when a
+provider is unreachable. The benchmark therefore pins the requested model onto
+the provider config, streams with `fallback=False`, and rejects any run whose
+metadata reports `source: offline` or whose output is empty — such a run is
+recorded as an **error**, never as provider data. (A misconfigured model, e.g. an
+Ollama model that isn't pulled, returns HTTP 404; before this hardening that 404
+was silently recorded as a sub-second "successful" run of offline dream text.)
+
+#### Validation contract (#730)
+
+| Mode | Latency | Repetition (target / floor) | Success rate |
+|------|---------|------------------------------|--------------|
+| FAST | ≤ 2 s (**error**) | 0.85 / **0.80** | ≥ 0.90 (**error**) |
+| DEEP | 70–85 s band (**warn**\*) | 0.80 / **0.75** | ≥ 0.90 (**error**) |
+
+Repetition is **WARN** below target but **ERROR** only below the floor — a real
+`✅✅✅` token-loop scores ~0.1–0.3, far under the floor, while honest short
+replies hover near the target. Plus a per-task check fails if any single golden-set
+task collapses below repetition 0.5.
+\* The DEEP latency band only binds the native Σ₀ runtime; it is informational for
+cached providers.
+
+### Daily automation
+
+- **CI:** `.github/workflows/serving-benchmark.yml` runs daily (07:17 UTC) +
+  `workflow_dispatch`. It runs the logic tests, benchmarks every cloud provider
+  whose API key is present as a repo secret, regenerates the report, commits the
+  leaderboard, then runs `--validate` as a gate. Providers without a key are
+  skipped — never fabricated.
+- **Local (Ollama):** GitHub-hosted runners have no local model, so the host PC
+  accrues daily Ollama runs via `scripts/Run-ServingBenchmark.ps1` (register with
+  Windows Task Scheduler — see the script header). This is what drives the
+  Definition-of-Done "≥7 daily runs" for the local models.
+
+Over time the leaderboard becomes a measurable performance history; each run
+appends one row.
 
 ---
 
@@ -142,11 +202,14 @@ Every production deploy appends a new benchmark run. Over time, this becomes a m
 - [x] Create standing benchmark
 - [x] Default to FAST (product-ready)
 
-### Phase 2: Validation (Weeks of 2026-06-25)
-- [ ] Run benchmark on all providers daily
-- [ ] Measure reply quality (human + automated)
-- [ ] Validate no regression in reasoning tasks
-- [ ] Document FAST mode expectations (limits, constraints)
+### Phase 2: Validation (#730)
+- [x] Harden benchmark for honest metrics (model pinning, offline-stub rejection)
+- [x] Add `--validate` FAST/DEEP threshold gate (two-tier repetition)
+- [x] Daily benchmark automation — CI workflow + local Task Scheduler script
+- [x] Seed leaderboard with real Ollama runs; regression/quality gate in CI
+- [x] Document FAST/DEEP expectations + per-provider defaults (PROVIDERS.md)
+- [ ] Accrue ≥7 daily runs (automated; accrues over the first week)
+- [ ] Benchmark cloud providers (pending OPENAI/GROQ secrets)
 
 ### Phase 3: Optimization (Weeks of 2026-07-02)
 - [ ] Tune decode params per provider

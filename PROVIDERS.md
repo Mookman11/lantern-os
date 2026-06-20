@@ -266,6 +266,70 @@ curl -X POST http://127.0.0.1:4177/api/dream/chat/stream \
 
 ---
 
+## Serving Defaults & Decode Parameters (#730)
+
+Lantern serves in one of two modes (`src/serving_modes.py`). **FAST** is the
+product default; **DEEP** is opt-in via `OURO_NATIVE=1`. Each provider's streamer
+in `src/unified_agent_connector.py` injects the mode-appropriate anti-repetition
+decode params on every call.
+
+### Decode parameters by provider
+
+| Provider(s) | FAST params | DEEP params |
+|-------------|-------------|-------------|
+| OpenAI / Groq / Deepseek / Gemini | `top_p=0.95, frequency_penalty=0.5` | `top_p=0.98, frequency_penalty=0.2` |
+| Ollama | `top_p=0.95, repeat_penalty=1.1, repeat_last_n=64` | `top_p=0.98, repeat_penalty=1.05, repeat_last_n=128` |
+| Anthropic | *(no `frequency_penalty` — unsupported by API)* | *(unchanged)* |
+
+`temperature` defaults to 0.7 (0.2 for the Keystone coder path). Ollama uses
+`repeat_penalty`/`repeat_last_n`; the OpenAI-compatible providers use
+`frequency_penalty`. These are verified by `tests/test_serving_modes.py`.
+
+### Default model + cost per provider
+
+| Provider | Default model | Cost (USD / 1M output tok) | FAST default? |
+|----------|---------------|---------------------------:|---------------|
+| ollama | `qwen2.5-coder` (recommended) | $0.00 (local) | ✅ recommended |
+| groq | `llama-3.1-70b-versatile` | $0.00 (free tier) | ✅ |
+| openai | `gpt-4.1-mini` | $0.15 | ✅ |
+| gemini | `gemini-2.5-flash` | $0.075 | ✅ |
+| deepseek | `deepseek-chat` | $0.14 | ✅ |
+| anthropic | `claude-haiku-4-5-20251001` | $0.80 | ✅ |
+
+> ⚠️ **Ollama model gotcha (real finding):** `config/agent-profiles.json` pins the
+> Ollama model to `llama3.2`. If that model isn't pulled, `/api/chat` returns
+> **HTTP 404** and the connector silently degrades to the canned offline stub — so
+> live dream-chat replies become offline text instead of real inference. Fix:
+> `ollama pull llama3.2`, or point the profile / `OLLAMA_MODEL` at an installed
+> model (e.g. `qwen2.5-coder`). The benchmark pins the requested model and rejects
+> offline-stub responses instead of recording them as data.
+
+### Validation contract & measured baseline
+
+| Mode | Latency | Repetition (target / floor) | Success |
+|------|---------|------------------------------|---------|
+| FAST | ≤ 2 s (hard) | 0.85 / 0.80 | ≥ 0.90 |
+| DEEP | 70–85 s (native Σ₀ only; warn elsewhere) | 0.80 / 0.75 | ≥ 0.90 |
+
+Measured 2026-06-20 (local Ollama): `qwen2.5-coder` FAST ≈ 0.97–1.29 s,
+repetition ≈ 0.855 (recommended FAST default); `lantern-sigma0-coder` FAST ≈ 1.48 s,
+repetition 0.83 (below target — not recommended as FAST default). Cloud providers
+accrue once their API keys are set as CI secrets.
+
+Run / validate / monitor:
+
+```bash
+python src/serving_benchmark.py --run ollama:qwen2.5-coder --mode fast
+python src/serving_benchmark.py --validate        # exit 1 on regression
+python src/serving_benchmark.py --report          # → data/benchmarks/REPORT.md
+```
+
+Daily automation: `.github/workflows/serving-benchmark.yml` (cloud providers) and
+`scripts/Run-ServingBenchmark.ps1` (local Ollama via Task Scheduler). Full design:
+[docs/SERVING-ARCHITECTURE-2026.md](docs/SERVING-ARCHITECTURE-2026.md).
+
+---
+
 ## Security Notes
 
 ⚠️ **API Keys:**
