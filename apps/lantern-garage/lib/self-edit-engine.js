@@ -194,6 +194,51 @@ function applyPatchStrict(repoRoot, files) {
   return stats;
 }
 
+// Repair dropped-prefix paths in an LLM diff. The model frequently emits a bare
+// basename (`a/ouro_serve.py`) when the real file lives under a directory
+// (`scripts/ouro_serve.py`). git apply and the strict applier both key on the
+// literal path, so the patch lands nowhere → the anti-fraud gate aborts ("no usable
+// code changes"). When a CHANGED target doesn't exist but the repo holds exactly one
+// tracked file with that basename (or one whose path uniquely ends with the target),
+// rewrite the diff's header lines to the real path. New files (oldFile=/dev/null) are
+// left as authored; ambiguous (>1 candidate) matches are left untouched.
+function resolveDiffPaths(repoRoot, diffText, files) {
+  const rewrites = [];
+  const seen = new Set();
+  for (const f of files) {
+    if (f.oldFile === "/dev/null") continue; // intentional new file
+    let target = (f.newFile && f.newFile !== "/dev/null" ? f.newFile : f.oldFile) || "";
+    target = target.replace(/^(a|b)\//, "").replace(/\\/g, "/");
+    if (!target || seen.has(target)) continue;
+    seen.add(target);
+    if (fs.existsSync(path.join(repoRoot, target))) continue; // already correct
+    const base = path.posix.basename(target);
+    if (!base) continue;
+    let candidates = [];
+    try {
+      const out = execFileSync("git", ["ls-files", `*/${base}`, base], {
+        cwd: repoRoot, encoding: "utf8", timeout: 10000, windowsHide: true,
+      });
+      candidates = out.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+    } catch (_e) { /* no git or no match */ }
+    if (!candidates.length) continue;
+    const suffix = candidates.filter((c) => c === target || c.endsWith("/" + target));
+    const resolved = suffix.length === 1 ? suffix[0] : (candidates.length === 1 ? candidates[0] : null);
+    if (resolved && resolved !== target && isPathSafe(repoRoot, resolved)) {
+      rewrites.push({ from: target, to: resolved });
+    }
+  }
+  if (!rewrites.length) return { diffText, rewrites };
+  const lines = diffText.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    if (!(lines[i].startsWith("--- ") || lines[i].startsWith("+++ ") || lines[i].startsWith("diff --git "))) continue;
+    for (const { from, to } of rewrites) {
+      lines[i] = lines[i].split(`a/${from}`).join(`a/${to}`).split(`b/${from}`).join(`b/${to}`);
+    }
+  }
+  return { diffText: lines.join("\n"), rewrites };
+}
+
 // Apply a unified diff. LLM-generated diffs almost always have line-number drift
 // and minor context fuzz, which a strict exact-match applier rejects (→ the patch
 // never lands → autowork can't actually complete issues). We use git's robust
@@ -201,7 +246,15 @@ function applyPatchStrict(repoRoot, files) {
 // only if git is unavailable. validateDiff still gates format + path safety, and
 // the caller's anti-fraud gate still rejects empty/errored results.
 function applyPatch(repoRoot, diffText) {
-  const files = validateDiff(diffText, repoRoot);
+  let files = validateDiff(diffText, repoRoot);
+  // Repair dropped-prefix paths (e.g. ouro_serve.py -> scripts/ouro_serve.py) so the
+  // patch lands on the real file instead of failing the apply and aborting the run.
+  const pathFix = resolveDiffPaths(repoRoot, diffText, files);
+  const pathRewrites = pathFix.rewrites;
+  if (pathRewrites.length) {
+    diffText = pathFix.diffText;
+    files = validateDiff(diffText, repoRoot);
+  }
   const targets = diffTargets(files);
   const os = require("os");
   const tmp = path.join(os.tmpdir(), `autowork-${process.pid}-${Date.now()}.diff`);
@@ -231,12 +284,14 @@ function applyPatch(repoRoot, diffText) {
       created: targets.filter((t) => t.created).map((t) => t.target),
       errors: [],
       applier: "git",
+      pathRewrites,
     };
   }
 
   // git apply rejected the diff — fall back to the strict applier (exact match).
   const strict = applyPatchStrict(repoRoot, files);
   strict.applier = "strict";
+  strict.pathRewrites = pathRewrites;
   if (strict.errors.length > 0 && lastErr) strict.gitApplyError = lastErr;
   return strict;
 }
