@@ -498,6 +498,7 @@ function isAllowedTest(cmd) {
 // Shell metacharacters that must never reach an executed command. The allowlist
 // regexes already exclude them; this is the second, no-shell layer. #873
 const SHELL_META = /[;&|$`(){}<>\n\r\\"'*?~]/;
+const ALLOWED_TEST_BINS = new Set(["node", "python", "npm", "npx"]);
 
 // Split an allowlisted command into argv with NO shell involvement, rejecting any
 // token bearing a shell metacharacter. Returns argv; throws on an unsafe token.
@@ -507,6 +508,13 @@ function tokenizeAllowedCommand(cmd) {
     if (!t || SHELL_META.test(t)) throw new Error("unsafe_command_token");
   }
   return argv;
+}
+
+function resolveAllowedTestBinary(bin) {
+  const normalized = String(bin || "").trim();
+  if (!ALLOWED_TEST_BINS.has(normalized)) throw new Error("unsafe_command_bin");
+  if (process.platform === "win32" && (normalized === "npm" || normalized === "npx")) return normalized + ".cmd";
+  return normalized;
 }
 
 // opts.env overrides the child environment — used to point NODE_PATH at the main
@@ -520,14 +528,14 @@ function runTests(repoRoot, testCommands, opts = {}) {
       continue;
     }
     let argv;
-    try { argv = tokenizeAllowedCommand(cmd); }
-    catch {
+    let bin;
+    try {
+      argv = tokenizeAllowedCommand(cmd);
+      bin = resolveAllowedTestBinary(argv[0]);
+    } catch {
       results.push({ cmd, ok: false, error: "test_command_unsafe", output: "" });
       continue;
     }
-    // npm/npx are shell scripts on Windows — resolve to the .cmd shim, still no shell.
-    let bin = argv[0];
-    if (process.platform === "win32" && (bin === "npm" || bin === "npx")) bin += ".cmd";
     try {
       const out = execFileSync(bin, argv.slice(1), { cwd: repoRoot, encoding: "utf8", timeout: 60000, maxBuffer: 1024 * 1024, env, shell: false });
       results.push({ cmd, ok: true, output: out.slice(0, MAX_OUTPUT), truncated: out.length > MAX_OUTPUT });
