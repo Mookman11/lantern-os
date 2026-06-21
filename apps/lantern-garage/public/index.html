@@ -74,6 +74,25 @@
     .hero > h1, .hero > .tagline, .hero > .hero-cta-row, .hero > .sub { position: relative; z-index: 1; }
     .hero h1 { margin-bottom: 12px; }
     .hero .tagline { margin-bottom: 22px; }
+    /* Readability scrim behind the hero copy — sits above the mandala (all of
+       home-main is z-index:1) and below the text (z-index:1 within the hero),
+       so the copy stays crisp over the densest part of the spinning graphic. */
+    .hero::before {
+      content: "";
+      position: absolute; z-index: 0;
+      left: 50%; top: 50%;
+      transform: translate(-50%, -50%);
+      width: 150%; height: 152%;
+      pointer-events: none;
+      background: radial-gradient(ellipse at center,
+        color-mix(in srgb, var(--bg) 72%, transparent) 0%,
+        color-mix(in srgb, var(--bg) 38%, transparent) 46%,
+        transparent 72%);
+    }
+    /* Solid, high-contrast copy over the busy background */
+    .hero .tagline { color: var(--text); max-width: 600px; margin-left: auto; margin-right: auto; }
+    html[data-theme="dark"] .hero h1 { text-shadow: 0 2px 26px rgba(0,0,0,.5), 0 1px 2px rgba(0,0,0,.4); }
+    html[data-theme="dark"] .hero .tagline { text-shadow: 0 1px 3px rgba(0,0,0,.55); }
     /* ── Secondary experiences — redesigned tiles ── */
     .home-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
     @media (max-width: 680px) { .home-tiles { grid-template-columns: 1fr; } }
