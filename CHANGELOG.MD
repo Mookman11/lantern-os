@@ -71,6 +71,16 @@ matching `## [X.X.X] - YYYY-MM-DD` entry below before it can be pushed. See
 
 ---
 
+## [1.5.1] - 2026-06-20
+
+### Changed
+- **Wide-screen "newspaper" reading layout.** The doc reading view (`lib/markdown-render.js` `.md-page`), the Knowledge Center hub (`knowledgecenter.html` `.kc-page`), and the shared `.page` container now use the full width of large displays and flow long-form reading into balanced multi-column text instead of one dense ~820/920px ribbon. Responsive tiers (verified via preview computed styles): `<1100px` single column / 820px (unchanged); `~1080p` ~1640px, 3 columns; ultrawide ~2200px, 4 columns (a long article's height drops from ~8000px to ~1500px). Section headings and wide blocks (code, tables, quotes, rules) span the full width so each section's columns stay short and readable; narrow/mobile screens are unaffected.
+
+### Docs
+- **Refreshed the 32 oldest docs** (first commit ≤ 2026-06-11) that the Knowledge-Center attribution pass (#842) skipped: added `author` / `created` (first-commit date) / `updated` YAML frontmatter — which renders as a byline — and renamed the dead **"Lantern OS" → "Keystone OS"** brand in prose. Code identifiers (`lantern-os`, `lantern-garage`), the README's intentional "formerly Lantern OS" note, and external boilerplate (`CODE_OF_CONDUCT.md`) are preserved.
+
+---
+
 ## [1.5.0] - 2026-06-20
 
 ### Changed
