@@ -20,6 +20,7 @@ const { appendConversationEntry } = require("./conversation-store");
 const { getProviderState, recordProviderSuccess, recordProviderFailure } = require("./provider-cache");
 const { swarmOrchestrate } = require("./swarm-orchestrator");
 const { emitConvergenceRecord } = require("./convergence-records");
+const { writeMemory } = require("./convergence-memory");
 const { unifiedAgentStreamSSE } = require("./unified-agent");
 const sse = require("./stream-chat/sse");
 const { parseStreamChatRequest } = require("./stream-chat/request");
@@ -587,6 +588,23 @@ async function handleStreamChat(req, url, res) {
             });
             recordId = rec && rec.id;
           } catch (_e) { /* record emit is best-effort */ }
+          // Converge → Remember: fold the converged result back into the append-only
+          // memory log so the next continuation can retrieve it (#848, live serving path).
+          try {
+            await writeMemory({
+              source: "convergance-council",
+              confidence: conf,
+              content: {
+                kind: "convergence",
+                question: question.slice(0, 300),
+                answer: answer.slice(0, 2000),
+                providers: members.map((m) => `${m.role}:${m.provider}`),
+                synthesizer: `${result.provider}/${result.model}`,
+                record_id: recordId,
+              },
+              evidence_ids: recordId ? [recordId] : [],
+            });
+          } catch (_e) { /* memory write-back is best-effort */ }
           for (const w of answer.split(" ")) sendToken(w + " ");
           sendDone("keystone", {
             agent: "Keystone",
