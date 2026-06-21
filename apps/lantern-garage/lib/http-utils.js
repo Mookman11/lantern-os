@@ -29,6 +29,9 @@ function sendFile(res, filePath) {
     ".json": "application/json; charset=utf-8",
     ".md": "text/markdown; charset=utf-8",
     ".pdf": "application/pdf",
+    ".woff2": "font/woff2",
+    ".woff": "font/woff",
+    ".ttf": "font/ttf",
   }[ext] || "application/octet-stream";
 
   fs.readFile(filePath, (error, data) => {

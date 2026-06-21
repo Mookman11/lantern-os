@@ -432,12 +432,12 @@
 </footer>
 
 <script src="/js/theme-toggle.js"></script>
-<script src="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<script src="/vendor/pdfjs/pdf.min.js"></script>
 <script>
 (function () {
   if (typeof pdfjsLib === 'undefined') return;
   pdfjsLib.GlobalWorkerOptions.workerSrc =
-    'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+    '/vendor/pdfjs/pdf.worker.min.js';
 
   let allCards = [];
 
