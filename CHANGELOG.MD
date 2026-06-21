@@ -71,6 +71,13 @@ matching `## [X.X.X] - YYYY-MM-DD` entry below before it can be pushed. See
 
 ---
 
+## [1.5.3] - 2026-06-20
+
+### Fixed
+- **Autowork `plan_parse_failed` — robust plan JSON extraction.** The autonomous-work "Generate plan" step (`self-edit-engine.js` `generatePlan`/`extractJson`) aborted with `plan_parse_failed: no valid JSON found` whenever the model wrapped its plan in a lone ```json fence with no closing fence, added a trailing comma or `//`/`/* */` comment, or got cut off mid-JSON (surfaced auto-working #873). `extractJson` now cascades fence → first`{`..last`}` → first`[`..last`]` → repair, tolerates comments/trailing commas, and best-effort-repairs truncated output by closing open strings and unbalanced `{`/`[`. `generatePlan` also retries once with a stricter "raw JSON only" reminder. Added 9 unit tests (`tests/test_self_edit_engine.js`) incl. the exact truncated-fence case; 24/24 pass.
+
+---
+
 ## [1.5.2] - 2026-06-20
 
 ### Changed
