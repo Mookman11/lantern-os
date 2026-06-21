@@ -120,6 +120,7 @@ def main():
     rows = [json.loads(l) for l in open(PROMPTS, encoding="utf-8") if l.strip()]
     detail, n_ok, total_dt, approx_tokens = [], 0, 0.0, 0
     depths, contractions = [], []
+    by_tier = {}  # difficulty tier -> [n_ok, n_total]; acceptance wants per-tier accuracy (#843)
     print(f"{'#':>2}  {'ok':<3} {'lat':>6}  expected -> reply", flush=True)
     for r in rows:
         meta = None
@@ -134,7 +135,12 @@ def main():
         n_ok += int(ok)
         total_dt += dt
         approx_tokens += max(1, len(reply.split()))
-        d = {"id": r["id"], "prompt": r["prompt"], "expected": r["expected"],
+        # bucket accuracy by difficulty tier (smoke/easy/medium/hard) for Gate A/B reporting
+        tier = r.get("difficulty") or r.get("tier") or r.get("category") or "unknown"
+        bucket = by_tier.setdefault(tier, [0, 0])
+        bucket[0] += int(ok)
+        bucket[1] += 1
+        d = {"id": r["id"], "tier": tier, "prompt": r["prompt"], "expected": r["expected"],
              "reply": reply, "ok": ok, "latency_s": round(dt, 2)}
         if meta is not None:
             d["mean_depth"] = meta.get("mean_depth")
@@ -159,6 +165,10 @@ def main():
         # E1: realized latent depth; E2: did the loop contract?
         "mean_depth": round(sum(depths) / len(depths), 2) if depths else None,
         "mean_contraction": round(sum(contractions) / len(contractions), 4) if contractions else None,
+        # per-tier accuracy (smoke/easy/medium/hard) — acceptance for live Gate A/B (#843)
+        "by_tier": {t: {"n": c[1], "ok": c[0],
+                        "accuracy": round(c[0] / c[1], 3) if c[1] else 0.0}
+                    for t, c in by_tier.items()},
     }
     os.makedirs(os.path.join(ROOT, "data", "eval", "runs"), exist_ok=True)
     with open(os.path.join(ROOT, "data", "eval", "runs", f"{a.label}-{a.ts}.jsonl"), "w", encoding="utf-8") as f:
@@ -168,6 +178,13 @@ def main():
         f.write(json.dumps(summary, ensure_ascii=False) + "\n")
     print(f"\n{a.label}: accuracy={summary['accuracy']*100:.0f}%  "
           f"avg_latency={summary['avg_latency_s']}s  ~{summary['tok_per_s']} tok/s  (n={n})", flush=True)
+    tier_order = ["smoke", "easy", "medium", "hard"]
+    ordered = [t for t in tier_order if t in by_tier] + [t for t in by_tier if t not in tier_order]
+    print("  by tier:", flush=True)
+    for t in ordered:
+        ok_c, n_c = by_tier[t]
+        pct = f"{ok_c / n_c * 100:5.1f}%" if n_c else "  n/a"
+        print(f"    {t:<7} {ok_c:>2}/{n_c:<2}  {pct}", flush=True)
 
 
 if __name__ == "__main__":
