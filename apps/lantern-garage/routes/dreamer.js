@@ -49,7 +49,7 @@ module.exports = async function dreamerRoutes(req, res, url, deps) {
   }
   if (url.pathname === "/api/agents" && req.method === "GET") {
     sendJson(res, {
-      agents: AGENT_PERSONAS.map((a) => ({ id: a.id, name: a.name, symbol: a.symbol })),
+      agents: AGENT_PERSONAS.map((a) => ({ id: a.id, name: a.name, symbol: a.symbol, avatar: a.avatar || null, role: a.role || null })),
       default: AGENT_PERSONAS[0].id,
     });
     return true;
@@ -108,13 +108,16 @@ module.exports = async function dreamerRoutes(req, res, url, deps) {
       let fileInfo = null;
       let entryJson = null;
       let uploadError = null;
+      let writePromise = null; // resolves once the video is fully flushed to disk
 
-      const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500MB
+      // Generous default so long gameplay videos (often 1–3 GB) upload fully.
+      // Override with LANTERN_MAX_UPLOAD_MB if needed.
+      const MAX_FILE_SIZE = (Number(process.env.LANTERN_MAX_UPLOAD_MB) || 5120) * 1024 * 1024; // 5 GB default
       let bytesUploaded = 0;
 
       bb.on("file", (fieldname, file, info) => {
         if (fieldname === "file") {
-          // Validate mime type
+          // Validate mime type — drain (resume), never destroy, so 'close' still fires.
           if (!info.mimeType || !info.mimeType.startsWith("video/")) {
             uploadError = new Error(`Invalid file type: ${info.mimeType}. Expected video/*`);
             file.resume();
@@ -125,29 +128,52 @@ module.exports = async function dreamerRoutes(req, res, url, deps) {
           const filename = `${timestamp}-${info.filename}`;
           const filepath = path.join(videosDir, filename);
           const writeStream = fs.createWriteStream(filepath);
+          let overLimit = false;
+          const cleanupPartial = () => { try { if (fs.existsSync(filepath)) fs.unlinkSync(filepath); } catch (_) {} };
 
           file.on("error", (err) => { uploadError = err; });
-          writeStream.on("error", (err) => { uploadError = err; });
 
           file.on("data", (chunk) => {
             bytesUploaded += chunk.length;
-            if (bytesUploaded > MAX_FILE_SIZE) {
-              uploadError = new Error(`File exceeds maximum size of ${MAX_FILE_SIZE / (1024 * 1024)}MB`);
-              file.destroy();
+            if (!overLimit && bytesUploaded > MAX_FILE_SIZE) {
+              overLimit = true;
+              uploadError = new Error(`File exceeds maximum size of ${Math.round(MAX_FILE_SIZE / (1024 * 1024))}MB`);
+              // Stop writing and remove the partial file, but DRAIN the rest of the
+              // request (file.resume) so busboy emits 'close' and we can respond.
+              // Calling file.destroy() here stalls request parsing and hangs the
+              // upload indefinitely (the ~27–32% freeze on long videos).
+              file.unpipe(writeStream);
+              writeStream.destroy();
+              cleanupPartial();
+              file.resume();
             }
           });
 
-          writeStream.on("finish", () => {
-            if (!uploadError) {
-              const stats = fs.statSync(filepath);
-              fileInfo = {
-                filename: info.filename,
-                savedAs: filename,
-                mimeType: info.mimeType,
-                size: stats.size,
-                path: path.relative(repoRoot, filepath)
-              };
-            }
+          // Respond only after the file is fully written, so fileInfo is populated
+          // (busboy 'close' can otherwise fire before the disk write finishes).
+          writePromise = new Promise((resolve) => {
+            let settled = false;
+            const done = () => { if (!settled) { settled = true; resolve(); } };
+            writeStream.on("error", (err) => { uploadError = err; cleanupPartial(); done(); });
+            // 'close' also covers writeStream.destroy() in the over-limit path,
+            // which emits neither 'finish' nor 'error' — without this the handler
+            // would await this promise forever and re-introduce the hang.
+            writeStream.on("close", done);
+            writeStream.on("finish", () => {
+              if (!uploadError && !overLimit) {
+                try {
+                  const stats = fs.statSync(filepath);
+                  fileInfo = {
+                    filename: info.filename,
+                    savedAs: filename,
+                    mimeType: info.mimeType,
+                    size: stats.size,
+                    path: path.relative(repoRoot, filepath)
+                  };
+                } catch (err) { uploadError = err; }
+              }
+              done();
+            });
           });
 
           file.pipe(writeStream);
@@ -183,6 +209,8 @@ module.exports = async function dreamerRoutes(req, res, url, deps) {
 
       bb.on("close", async () => {
         try {
+          // Wait for the video to finish flushing to disk before replying.
+          if (writePromise) await writePromise;
           console.log(`[dreamer] Close event - entryJson=${entryJson ? "defined" : "null"}, uploadError=${uploadError ? "yes" : "no"}`);
 
           if (uploadError) {

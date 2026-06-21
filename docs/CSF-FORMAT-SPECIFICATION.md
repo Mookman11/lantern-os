@@ -1,506 +1,218 @@
-# CSF Format Specification v1.0
-## Convergence-Fitted Searchable Binary Archive
+# CSF Format Specification (canonical, consolidated)
 
-**Status:** Draft for Review  
-**Date:** 2026-06-02  
-**Authors:** Lantern OS Project  
-**Classification:** Public — Handoff Document for Windows Prototyping  
+**CSF** = Convergence-Fitted Searchable Format — Lantern OS's binary container
+family for memory, symbolic data, and (as of v0.8) **arbitrary files**.
 
----
+This is the single canonical spec. It consolidates the previously-scattered CSF
+documentation (whitepaper, backend notes, CADD, code docstrings) and supersedes
+the dead `CSF-FORMAT-SPECIFICATION.md` reference that `header.py` and the
+Knowledge Center pointed at.
 
-## Table of Contents
-
-1. [Executive Summary](#1-executive-summary)
-2. [Design Goals](#2-design-goals)
-3. [High-Level Architecture](#3-high-level-architecture)
-4. [Binary Format Specification](#4-binary-format-specification)
-5. [Comparison with ZIP and Alternatives](#5-comparison-with-zip-and-alternatives)
-6. [Performance Projections](#6-performance-projections)
-7. [Windows Prototyping Guide](#7-windows-prototyping-guide)
-8. [Test Plan](#8-test-plan)
-9. [Security Considerations](#9-security-considerations)
-10. [References](#10-references)
+> **Lattice view (singularity).** The symbolic v0.7 engine (`src/csf/v07/`) is the
+> **storage face** of the `3**12` balanced-ternary Convergence Lattice — the same object the
+> Converged Tesseract moves across. See [`TESSERACT-CSF-SINGULARITY.md`](TESSERACT-CSF-SINGULARITY.md)
+> for the consolidation; §6 below is the short bridge.
 
 ---
 
-## 1. Executive Summary
+## 1. Version lineage
 
-CSF (Convergence-Fitted Searchable Binary Archive) is a new archive format designed for large-scale symbolic and structured data. Unlike ZIP, Zstandard, and Brotli — which treat data as opaque byte streams — CSF understands the *structure* of what it compresses. This enables:
+| Version | Magic | Purpose | Reference code |
+|---|---|---|---|
+| **v0.3** | `CSF\0` | Symbolic memory: world-model anchors + delta stream + dictionary | [`src/csf/csf_file.py`](../src/csf/csf_file.py) |
+| **v0.7** | — | Symbolic compression engine (quantum-dust, base-3, qutrit delta) | [`src/csf/v07/`](../src/csf/v07/) |
+| **v1 (segmented)** | `CSFv1\0\0\0` | Segment-table container (index, converged, encrypted, streaming flags) | [`src/csf/header.py`](../src/csf/header.py) |
+| **v0.8 — CSF-Pack** | `CSF\0` | **General-purpose archive: pack/unpack arbitrary files** | [`src/csf/csf_pack.py`](../src/csf/csf_pack.py) |
 
-- **Superior compression** on redundant symbolic content (15–25% better than ZIP/Zstd at scale)
-- **Random access** without full decompression
-- **Searchability** inside the archive
-- **Streaming convergence** — merging similar archives without full re-compression
-
-CSF is not a replacement for ZIP in all cases. It is optimized for:
-- Large datasets with structural redundancy (logs, agent states, symbolic lore)
-- Archives that need to be searched or partially read
-- Multi-archive convergence workflows
-
----
-
-## 2. Design Goals
-
-| Priority | Goal | Rationale |
-|----------|------|-----------|
-| P0 | Searchable without full decompression | ZIP requires full extract to search |
-| P0 | Random access to any entry | ZIP needs linear scan for entries |
-| P1 | Better ratio on symbolic data | Structured data has massive redundancy |
-| P1 | Convergent merging | Combine archives without re-compressing everything |
-| P2 | Streaming compression | Handle files larger than RAM |
-| P2 | Cross-platform | Windows, Linux, macOS |
-| P3 | Open specification | No patents, no licensing fees |
+> The symbolic formats (v0.3 / v0.7) encode Lantern's memory model. **CSF-Pack
+> (v0.8) is the new Σ₀ release for wrapping *any* bytes** — code, data, models,
+> exports — with hashing, optional compression, and an integrity footer.
 
 ---
 
-## 3. High-Level Architecture
+## 2. CSF-Pack (v0.8) — arbitrary-file container
 
-CSF uses a three-layer architecture:
-
-```
-┌─────────────────────────────────────────┐
-│  Layer 3: Convergence Layer             │
-│  - Delta encoding between archives      │
-│  - Merge similar archives efficiently   │
-├─────────────────────────────────────────┤
-│  Layer 2: Sparse Matrix Layer           │
-│  - Structural compression               │
-│  - Column-oriented sparse storage       │
-├─────────────────────────────────────────┤
-│  Layer 1: Symbolic Dictionary Layer      │
-│  - String deduplication                 │
-│  - Symbol table with frequency sorting  │
-└─────────────────────────────────────────┘
-```
-
-### 3.1 Symbolic Dictionary Layer (L1)
-
-**Purpose:** Eliminate redundant strings and symbols.
-
-**Mechanism:**
-- Scan input for recurring strings (words, keys, patterns)
-- Build a frequency-sorted symbol table
-- Replace occurrences with 2-byte symbol IDs
-- Store dictionary once per archive segment
-
-**Example:**
-```
-Input:  "Garden Table Lantern Convergence Garden Table"
-Dictionary: 0x00="Garden", 0x01="Table", 0x02="Lantern", 0x03="Convergence"
-Encoded:  [0x00][0x01][0x02][0x03][0x00][0x01]
-```
-
-**Compression gain:** 30–60% on highly redundant symbolic text.
-
-### 3.2 Sparse Matrix Layer (L2)
-
-**Purpose:** Compress structured/tabular data.
-
-**Mechanism:**
-- Treat structured records as rows in a matrix
-- Store only non-zero (non-default) values
-- Use compressed sparse row (CSR) or column (CSC) format
-- Apply lightweight entropy coding (Huffman or arithmetic)
-
-**Benefits:**
-- Scales to billions of rows without RAM explosion
-- Enables columnar queries without full decode
-- Natural fit for log files, agent state dumps, sensor data
-
-### 3.3 Convergence Layer (L3)
-
-**Purpose:** Enable efficient merging of similar archives.
-
-**Mechanism:**
-- Two archives with overlapping dictionaries share symbol IDs
-- Delta-encode the differences
-- New symbols get appended IDs; old symbols are referenced
-- Sparse matrices are merged with row-append
-
-**Use case:** Hourly log archives. Each hour's archive shares 90% of symbols with the previous hour. Convergence merges them in O(delta) time, not O(full recompress).
-
----
-
-## 4. Binary Format Specification
-
-### 4.1 File Layout
+### 2.1 Binary layout
 
 ```
-┌────────────────────────────────────────────────────────────┐
-│  Magic Number (8 bytes)                                      │
-│  "CSFv1\0\0"                                                │
-├────────────────────────────────────────────────────────────┤
-│  Header (64 bytes)                                           │
-│  - Version (2 bytes)                                         │
-│  - Flags (4 bytes)                                           │
-│  - Segment count (4 bytes)                                   │
-│  - Total uncompressed size (8 bytes)                       │
-│  - Dictionary offset (8 bytes)                             │
-│  - Index offset (8 bytes)                                    │
-│  - Checksum (8 bytes)                                        │
-│  - Reserved (22 bytes)                                       │
-├────────────────────────────────────────────────────────────┤
-│  Segment Table (variable)                                    │
-│  - Entry count (4 bytes)                                     │
-│  - Per-entry: offset (8), size (8), flags (4)              │
-├────────────────────────────────────────────────────────────┤
-│  Symbolic Dictionary (variable)                              │
-│  - Symbol count (4 bytes)                                    │
-│  - Per-symbol: ID (2), length (2), UTF-8 bytes (variable)  │
-├────────────────────────────────────────────────────────────┤
-│  Sparse Matrix Metadata (variable)                           │
-│  - Row count (8 bytes)                                       │
-│  - Column count (4 bytes)                                    │
-│  - Non-zero count (8 bytes)                                │
-│  - Column default values (variable)                          │
-├────────────────────────────────────────────────────────────┤
-│  Compressed Data Segments (variable)                         │
-│  - Per-segment: encoded sparse rows + entropy-coded values │
-├────────────────────────────────────────────────────────────┤
-│  Search Index (optional, variable)                           │
-│  - Bloom filter per segment                                  │
-│  - Inverted index for symbol IDs                             │
-├────────────────────────────────────────────────────────────┤
-│  Footer (16 bytes)                                           │
-│  - Trailer magic: "ENDCSF"                                 │
-│  - CRC-32C (4 bytes)                                         │
-└────────────────────────────────────────────────────────────┘
+[Magic        4 bytes : b"CSF\x00"]
+[Version      2 bytes : major, minor = 0, 8]
+[Flags        2 bytes : bit0 = blobs zlib-compressed]
+[ManifestLen  4 bytes : uint32 BE]
+[Manifest     N bytes : UTF-8 JSON]
+[Blob region  M bytes : concatenated (optionally compressed) file bytes]
+[Footer      40 bytes : sha256(all preceding bytes) (32) + total size uint64 BE (8)]
 ```
 
-### 4.2 Header Fields
+### 2.2 Manifest JSON
 
-| Offset | Size | Field | Description |
-|--------|------|-------|-------------|
-| 0 | 8 | Magic | `"CSFv1\0\0"` |
-| 8 | 2 | Version | `0x0001` |
-| 10 | 4 | Flags | Bitfield: bit 0=has index, bit 1=converged, bit 2=encrypted |
-| 14 | 4 | SegmentCount | Number of logical segments |
-| 18 | 8 | UncompressedSize | Total uncompressed bytes |
-| 26 | 8 | DictionaryOffset | Byte offset to dictionary |
-| 34 | 8 | IndexOffset | Byte offset to search index |
-| 42 | 8 | HeaderChecksum | xxHash64 of header bytes 0–41 |
-| 50 | 22 | Reserved | Padding for alignment |
-
-### 4.3 Flags
-
-```c
-#define CSF_FLAG_HAS_INDEX    0x00000001
-#define CSF_FLAG_CONVERGED      0x00000002
-#define CSF_FLAG_ENCRYPTED      0x00000004
-#define CSF_FLAG_STREAMING      0x00000008
-```
-
-### 4.4 Symbol Encoding
-
-Symbols are encoded as 2-byte IDs. The dictionary is sorted by frequency (most frequent first) to minimize ID size. For archives with >65,536 symbols, extended symbol IDs use 3 bytes with escape prefix `0xFFFF`.
-
-### 4.5 Sparse Matrix Encoding
-
-Each segment stores:
-- `row_ptrs`: Array of offsets into `col_indices` and `values`
-- `col_indices`: Column index for each non-zero value
-- `values`: The actual data (entropy-coded)
-
-Format: CSR (Compressed Sparse Row) as baseline. CSC (Compressed Sparse Column) optional for column-heavy queries.
-
----
-
-## 5. Comparison with ZIP and Alternatives
-
-| Feature | ZIP | Zstandard | Brotli | CSF v1.0 |
-|---------|-----|-----------|--------|----------|
-| **Compression ratio (text)** | 65–75% | 70–80% | 72–82% | 75–88% |
-| **Compression ratio (symbolic/structured)** | 60–72% | 65–78% | 68–80% | **85–95%** |
-| **Random access** | No | No | No | **Yes** |
-| **Search without decompress** | No | No | No | **Yes** |
-| **Convergent merging** | No | No | No | **Yes** |
-| **Streaming (>RAM)** | Limited | Yes | No | **Yes** |
-| **Encryption** | AES-256 | XXH3 + optional | None | AES-256-GCM |
-| **Standardization** | ISO/IEC 21320 | RFC 8478 | RFC 7932 | **This document** |
-| **License** | Open | BSD | MIT | **MIT / Public Domain** |
-
-### 5.1 When to Use What
-
-| Scenario | Recommendation |
-|----------|----------------|
-| General file compression | Zstandard |
-| Web assets (CSS/JS) | Brotli |
-| Legacy compatibility | ZIP |
-| Large symbolic datasets | **CSF** |
-| Log archives needing search | **CSF** |
-| Multi-archive merging | **CSF** |
-| Single small file (<1GB) | Zstandard |
-
----
-
-## 6. Performance Projections
-
-### 6.1 2GB File (Moderately Symbolic)
-
-| Metric | ZIP | Zstd | Brotli | CSF | Notes |
-|--------|-----|------|--------|-----|-------|
-| Compression ratio | 70% | 78% | 80% | **84%** | 4% better than best |
-| Compress time | 12s | 8s | 45s | 25s | Slower than Zstd |
-| Decompress time | 2s | 1s | 3s | 3s | Comparable |
-| Memory (compress) | 32MB | 64MB | 256MB | 128MB | Moderate |
-| Random read | No | No | No | **Yes** | Unique advantage |
-| Search | No | No | No | **Yes** | Unique advantage |
-
-### 6.2 200TB File (Highly Symbolic / Structured)
-
-| Metric | ZIP | Zstd | Brotli | CSF | Notes |
-|--------|-----|------|--------|-----|-------|
-| Compression ratio | 65% | 72% | 75% | **90%** | 15% better than best |
-| Compress time | 120h | 80h | 400h | 60h | Faster than all |
-| Decompress time | 20h | 10h | 30h | 15h | Faster than ZIP/Brotli |
-| Memory (compress) | 512GB | 1TB | 2TB | **64GB** | 16x less than Zstd |
-| Random read | No | No | No | **Yes** | Critical at this scale |
-| Search | No | No | No | **Yes** | Critical at this scale |
-| Convergent merge | No | No | No | **Yes** | Unique advantage |
-
-**Key insight:** CSF's advantage scales with data size and structural redundancy. At 200TB, the sparse matrix approach uses 16x less memory than Zstandard and achieves 15% better compression.
-
----
-
-## 7. Windows Prototyping Guide
-
-### 7.1 Prerequisites
-
-```powershell
-# Windows 10/11 with Python 3.10+
-python --version  # Should print 3.10 or higher
-
-# Install dependencies
-pip install numpy scipy pyarrow mmh3
-
-# Optional: Visual Studio Build Tools for Cython extensions
-# https://visualstudio.microsoft.com/visual-cpp-build-tools/
-```
-
-### 7.2 Recommended Project Structure
-
-```
-csf-windows-prototype/
-├── src/
-│   ├── csf/
-│   │   ├── __init__.py
-│   │   ├── header.py       # Header read/write
-│   │   ├── dictionary.py   # Symbol table
-│   │   ├── sparse.py       # Sparse matrix encode/decode
-│   │   ├── convergence.py  # Archive merging
-│   │   ├── search.py       # Index + bloom filters
-│   │   └── io.py           # Streaming I/O
-│   ├── csf_compress.py   # CLI: compress
-│   ├── csf_decompress.py # CLI: decompress
-│   ├── csf_search.py     # CLI: search
-│   └── csf_merge.py      # CLI: converge
-├── tests/
-│   ├── test_header.py
-│   ├── test_dictionary.py
-│   ├── test_sparse.py
-│   ├── test_convergence.py
-│   └── test_endtoend.py
-├── benchmarks/
-│   ├── gen_test_data.py
-│   └── bench_vs_zip.py
-└── docs/
-    └── (this specification)
-```
-
-### 7.3 Quick Start: Compress a File
-
-```python
-# csf_compress.py
-import sys
-from csf import CsfArchive
-
-archive = CsfArchive()
-archive.add_file("input.log")
-archive.add_file("config.json")
-archive.write("output.csf")
-print(f"Compressed: {archive.ratio:.1%}")
-```
-
-### 7.4 Quick Start: Search Inside Archive
-
-```python
-# csf_search.py
-from csf import CsfArchive
-
-archive = CsfArchive.open("output.csf")
-results = archive.search("quantum dust")
-for segment, offset, context in results:
-    print(f"Found in segment {segment} at {offset}: {context}")
-```
-
-### 7.5 Quick Start: Converge Two Archives
-
-```python
-# csf_merge.py
-from csf import CsfArchive
-
-base = CsfArchive.open("hour_01.csf")
-delta = CsfArchive.open("hour_02.csf")
-merged = base.converge(delta)
-merged.write("day_01.csf")
-print(f"Merged ratio: {merged.ratio:.1%}")
-```
-
-### 7.6 PowerShell Wrapper Script
-
-```powershell
-# csf.ps1
-param(
-    [Parameter(Mandatory)]
-    [ValidateSet("compress","decompress","search","merge")]
-    [string]$Action,
-
-    [Parameter(Mandatory)]
-    [string]$Path,
-
-    [string]$Output,
-    [string]$Query
-)
-
-$env:PYTHONPATH = "$PSScriptRoot\src"
-
-switch ($Action) {
-    "compress" {
-        python "$PSScriptRoot\src\csf_compress.py" --input $Path --output $Output
-    }
-    "decompress" {
-        python "$PSScriptRoot\src\csf_decompress.py" --input $Path --output $Output
-    }
-    "search" {
-        python "$PSScriptRoot\src\csf_search.py" --archive $Path --query $Query
-    }
-    "merge" {
-        python "$PSScriptRoot\src\csf_merge.py" --base $Path --delta $Output
-    }
+```json
+{
+  "format": "csf-pack", "version": "0.8", "created_at": 1750000000.0,
+  "compressed": true, "file_count": 3,
+  "files": [
+    {"path": "src/a.txt", "size": 1050, "csize": 60,
+     "sha256": "…", "offset": 0, "compressed": true}
+  ]
 }
 ```
+- `path` — POSIX-relative arc path (directory structure preserved on unpack).
+- `size`/`csize` — original / stored byte length; `offset` is relative to the blob region.
+- `sha256` — digest of the **original** bytes; verified on unpack.
 
-**Usage:**
-```powershell
-.\csf.ps1 compress -Path "C:\logs\" -Output "archive.csf"
-.\csf.ps1 search -Path "archive.csf" -Query "quantum dust"
+### 2.3 Integrity & safety
+- **Footer digest** (sha256 of everything before the footer) is verified *before*
+  the manifest is parsed — any tampering fails with a clean integrity error.
+- **Per-file sha256** is verified on extraction.
+- **Path traversal** (`..`, absolute paths) is rejected on unpack (`_safe_join`).
+
+### 2.4 API
+
+```python
+from csf import csf_pack
+csf_pack.pack(["mydir", "file.bin"], "out.csf", compress=True)   # -> manifest
+csf_pack.list_archive("out.csf")                                  # -> manifest (no extract)
+csf_pack.unpack("out.csf", "dest_dir")                            # -> [written paths]
 ```
 
----
+### 2.5 CLI
 
-## 8. Test Plan
-
-### 8.1 Unit Tests
-
-| Test | Input | Expected |
-|------|-------|----------|
-| Header roundtrip | Random header | Byte-perfect read/write |
-| Dictionary encode | 1MB text with 50% repeated words | ≥40% size reduction |
-| Sparse matrix | 1000×100 matrix, 5% density | CSR < 10% of dense size |
-| Convergence | Two archives with 80% overlap | Merge time < 20% of recompress |
-| Search | Archive with known strings | Find all occurrences |
-
-### 8.2 Integration Tests
-
-| Test | Setup | Pass Criteria |
-|------|-------|---------------|
-| 2GB file | Compress → Decompress → Verify | Bit-perfect roundtrip |
-| 200GB file | Streaming compress | RAM < 4GB throughout |
-| 100 archives | Converge into 1 | Faster than 100× individual compress |
-| Corrupt header | Flip one bit in header | Graceful error, no crash |
-| Empty file | Compress 0-byte file | Valid archive, 0 segments |
-
-### 8.3 Benchmarks
-
-Run against ZIP and Zstandard on identical inputs:
-
-```powershell
-python benchmarks/bench_vs_zip.py --size 2gb --type symbolic
-python benchmarks/bench_vs_zip.py --size 200gb --type structured
+```bash
+python -m csf.csf_pack pack <paths...> -o out.csf [--no-compress]
+python -m csf.csf_pack unpack out.csf -d <dest_dir>
+python -m csf.csf_pack list out.csf
 ```
 
-Expected output: ratio, time, memory CSV + matplotlib chart.
+Tests: [`tests/test_csf_pack.py`](../tests/test_csf_pack.py) (round-trip ×2,
+list, tamper-detection, traversal).
+
+### 2.6 App routes
+
+Wired into the server alongside the legacy tesseract pack ([`routes/csf.js`](../apps/lantern-garage/routes/csf.js)):
+
+```
+POST /api/csf/pack    { paths: ["docs","README.md"], out: "data/exports/bundle.csf", compress?: true }
+POST /api/csf/unpack  { archive: "data/exports/bundle.csf", dest: "data/exports/out" }
+```
+Both constrain paths to within `repoRoot` (no traversal) on top of the module's own guards.
+
+### 2.7 Benchmark — does it work better?
+
+`python scripts/csf_pack_benchmark.py` on 316 real repo files (2.8 MB):
+
+| Format | Size | Ratio | Integrity / safety |
+|---|---|---|---|
+| **CSF-Pack v0.8** | 1.0 MB | 2.73× | **SHA-256 per file + whole-archive footer digest + path-traversal guard** |
+| zip (DEFLATE-9) | 1.0 MB | 2.76× | CRC-32 only; no crypto hash; no path guard |
+| tar.gz | 888 KB | 3.22× | no per-file checksum |
+| legacy symbolic CSF | — | — | **cannot store arbitrary files** (255 B/record payload cap) |
+
+**Verdict (honest):** CSF-Pack is **size-competitive with zip (within ~1%)** and **strictly safer** —
+cryptographic per-file + whole-archive integrity and path-traversal protection that zip/tar don't
+provide by default. `tar.gz` compresses better (solid stream) but offers no per-file integrity.
+Against the **legacy symbolic CSF it's a categorical upgrade** — that format can't hold arbitrary
+file bytes at all. Use CSF-Pack when integrity + safety matter; it's the format for general bundling.
 
 ---
 
-## 9. Security Considerations
+## 2.8 Per-user profile pack (one file per user, KB-grounded)
 
-| Threat | Mitigation |
-|--------|------------|
-| Dictionary bombing (zip bomb variant) | Max dictionary size: 256MB. Reject if exceeded. |
-| Sparse matrix overflow | Validate row/column counts against file size before allocation. |
-| Malicious convergence | Verify source archive checksums before merging. |
-| Index poisoning | CRC-32C on all index entries. |
-| Encryption | AES-256-GCM with random IV per segment. |
+`src/csf/profile_pack.py` compacts **all of one user's CSF data into a single
+file** — `data/profiles/<user>.csf` (CSF-Pack v0.8) — and grounds it in the base
+Knowledge Center.
 
-**Red lines:**
-- Never allocate memory based solely on archive header values.
-- Always validate offsets before seeking.
-- Reuse proven crypto; do not invent new ciphers.
+Archive contents:
+- `user/…` — the user's cube (`data/cubes/<user>.private`), deltas, indexes,
+  dreamer notebooks, `csf_memory`, profile json.
+- `knowledge/index.jsonl` — the **embedded base KB grounding index** (so the file
+  is self-contained *and* grounded), plus its `.meta.json`.
+- `_profile.json` — sources, user file count, and the grounding reference (KB sha256 + section count).
 
----
+```bash
+python -m csf.profile_pack pack <user>            # -> data/profiles/<user>.csf
+python -m csf.profile_pack info  <archive>        # embedded _profile.json
+python -m csf.profile_pack unpack <archive> -d <dest>
+```
+Routes: `POST /api/csf/profile/pack {user}` · `GET /api/csf/profile/info?user=<id>`.
+User profile archives are **gitignored** (user data — privacy). Tests:
+[`tests/test_csf_profile.py`](../tests/test_csf_profile.py).
 
-## 10. References
+## 2.9 Base Knowledge Center grounding + cheaper routing
 
-### 10.1 Related Formats
+- **KB index** — `scripts/build_knowledge_index.py` turns the Knowledge Center
+  source docs into `data/knowledge/index.jsonl` (one record per doc *section* with
+  heading path + snippet). This is the base grounding corpus for "better LLM grounding."
+- **Cheaper deterministic / near routing** —
+  [`lib/knowledge-router.js`](../apps/lantern-garage/lib/knowledge-router.js)
+  answers from the KB index **before** paying for an LLM:
+  1. **deterministic** — exact heading match → that section verbatim ($0)
+  2. **near** — TF-IDF nearest section above threshold → grounded answer ($0)
+  3. **miss** — caller falls through to the provider chain
+  Route: `GET|POST /api/knowledge/query { q }` → `{ tier, hit, source, text, score }`.
 
-- **ZIP:** APPNOTE.TXT, ISO/IEC 21320-1
-- **Zstandard:** RFC 8478 (Facebook, 2018)
-- **Brotli:** RFC 7932 (Google, 2016)
-- **Parquet:** Apache Arrow columnar format
-- **Cap'n Proto:** Zero-copy serialization
-
-### 10.2 Academic Foundations
-
-- Burrows-Wheeler Transform (BWT) — bzip2
-- Lempel-Ziv-Storer-Szymanski (LZSS) — LZ77 family
-- Compressed Sparse Row (CSR) — Gustavson, 1972
-- Bloom Filters — Bloom, 1970
-- Arithmetic Coding — Witten, Neal, Cleary, 1987
-
-### 10.3 Lantern OS Context
-
-- `docs/CONVERGENCE-LOOP.md` — Three-way convergence design
-- `skills/dream_journal/` — Symbolic data model
-- `docs/anchor-taxonomy.md` — Named symbol handles
-- `symbolic/stories/world-lore.md` — Example symbolic dataset
+Rebuild the KB index after editing core docs: `python scripts/build_knowledge_index.py`.
 
 ---
 
-## Appendix A: Glossary
+## 3. Legacy / symbolic formats (brief)
 
-| Term | Definition |
-|------|-----------|
-| **Convergence** | Merging two archives by exploiting shared dictionary entries and sparse matrix overlap |
-| **Symbolic Dictionary** | Table mapping recurring strings to compact IDs |
-| **Sparse Matrix** | Storage format that omits zero/default values |
-| **CSR** | Compressed Sparse Row — row-pointer format |
-| **Segment** | Logical subdivision of an archive (e.g., one file, one hour of logs) |
-| **Bloom Filter** | Probabilistic index for fast negative search |
+### 3.1 v0.3 symbolic (`csf_file.py`)
+`[Magic CSF\0][Version 2][Flags 2][Baseline][Dictionary][Delta stream][Footer]`.
+Encodes world-model anchors (Garden, Lantern, Convergence…) via a
+`SymbolicDictionary` + `DeltaStream`. Used for memory exports.
 
----
+### 3.2 v1 segmented (`header.py`)
+72-byte header (`CSFv1\0\0\0`, version, flags, segment_count, sizes, checksum) +
+segment table + `ENDCSF`+CRC-32C footer. Flags: `HAS_INDEX`, `CONVERGED`,
+`ENCRYPTED`, `STREAMING`.
 
-## Appendix B: Version History
-
-| Version | Date | Changes |
-|---------|------|---------|
-| v0.1 | 2026-05-20 | Initial design notes |
-| v0.2 | 2026-05-28 | Three-layer architecture formalized |
-| **v1.0** | **2026-06-02** | **This document — publication draft** |
-| v0.3 | 2026-05-28 | `CSF_Format_Specification_v0.3_Observation_Delta_Stream.docx` — Observation Delta Stream design notes |
+### 3.3 v0.7 engine (`v07/`)
+Symbolic compression research: `quantum_dust`, `base3_positions`,
+`qutrit_delta`, `csf_symbolic_compressor`, `convergence_engine`.
 
 ---
 
-## Appendix C: Contact & Contribution
+## 4. Code map
 
-This specification is maintained by the Lantern OS project.
-
-- **Repository:** `https://github.com/alex-place/lantern-os`
-- **Issues:** File under `docs/CSF-FORMAT-SPECIFICATION.md`
-- **License:** MIT (specification) + Public Domain (reference implementation)
-
-For Windows prototyping questions, open an issue with label `csf-prototype`.
+| Path | Role |
+|---|---|
+| `src/csf/csf_pack.py` | **v0.8 arbitrary-file pack/unpack (new)** |
+| `src/csf/csf_file.py` | v0.3 symbolic writer/reader |
+| `src/csf/header.py` | v1 segmented header/segment table |
+| `src/csf/v07/` | v0.7 symbolic compression engine |
+| `src/csf/status_cube.py` | StatusCube (player ImagniVerse) |
+| `src/csf/memory_engine.py` | memory archive over CSF |
+| `caad/README.md` | CADD (Context Archive for Dream Data) — built on CSF |
 
 ---
 
-*End of Specification*
+## 5. Consolidation pointers (previously scattered)
+- `docs/CSF-Whitepaper-v0.3.pdf` — original whitepaper
+- `docs/PHASE-1-CSF-BACKEND.md` — backend phase notes
+- `caad/README.md`, `caad/dollhouse-csf-upgrade.md` — CADD layer
+- `CSF-IMAGE-TRAINING.md` — image-LoRA training over CSF
+- `csf/ingest/` — CSF *ingest* docs are the memory/task queue, **not** format specs
+
+This spec is the authoritative format reference; the above remain for history.
+
+---
+
+## 6. The 3¹² lattice (storage face of the singularity)
+
+The v0.7 symbolic engine is not a standalone compressor — it is the **storage face** of a
+single `3**12 = 531,441`-cell **balanced-ternary lattice** that the project also reasons over
+geometrically (the "Tesseract"). The two are one object; the full argument and grounding live
+in [`TESSERACT-CSF-SINGULARITY.md`](TESSERACT-CSF-SINGULARITY.md). Bridge facts:
+
+| Spec concept | Lattice role | Code |
+|---|---|---|
+| `NUM_DIMENSIONS = 12`, `TOTAL_POSITIONS = 3 ** 12` | 12 ternary axes (one per Convergence-12 component) | [`qutrit_delta.py`](../src/csf/v07/qutrit_delta.py) |
+| `QutritState` (amp 0-7, phase 0-7) + `QutritDelta` (2 B) | a lattice cell + its signed change | [`qutrit_delta.py`](../src/csf/v07/qutrit_delta.py) |
+| `QuantumDustField` baseline + active deltas + dust | a stored point; most cells implicit ("dust") | [`quantum_dust.py`](../src/csf/v07/quantum_dust.py) |
+| observer-collapsed wavefront | the **motion face** (Tesseract) reads the same field | [`converged_tesseract.py`](../src/converged_tesseract.py) |
+
+**Why base-3, not base-2:** ternary is the most economical integer radix (optimum is `e`,
+nearest integer 3), and balanced ternary `{-1,0,+1}` gives symmetric arithmetic — the same
+substrate as BitNet b1.58's ternary weights ([arXiv:2402.17764](https://arxiv.org/abs/2402.17764)).
+The "no change is free" dust optimisation is the storage-side twin of BitNet's ~66 % zero-weight
+sparsity. Citations and falsifiable experiments: see the singularity doc §5–6.

@@ -9,6 +9,7 @@ const { webSearchMcp, formatGroundingContext, needsGrounding, extractSearchQuery
 const { selectProvider, recordProviderSuccess: recordProviderSuccessRouter, recordProviderFailure: recordProviderFailureRouter } = require("./provider-router");
 const { detectTaskType } = require("./task-detector");
 const { TokenAudit } = require("./token-audit");
+const serving = require("./serving-modes");
 
 // Extract key topics from user message and generate 3 web search suggestion links
 function generateWebSuggestions(userMessage) {
@@ -59,6 +60,8 @@ function _loadPersonasFromFile() {
       id: p.id,
       name: p.name,
       symbol: p.symbol,
+      avatar: p.avatar || null,
+      role: p.role || null,
       systemPrompt: p.systemPrompt,
     }));
   } catch (err) {
@@ -101,6 +104,13 @@ When you receive a request that references GitHub, an issue number, PR, or imple
 7. Include the GitHub issue hyperlink in your response.
 8. If you have code access, begin by inspecting relevant files and producing a patch plan.
 9. If you lack access, provide the grounded plan anyway.
+
+## Research Library (CSF Tesseract)
+
+You have access to a local research library of indexed PDFs stored in the CSF tesseract archive (data/tesseract/research-pool.csf). When relevant documents are retrieved they appear under "Research library:" in your context. Use them to:
+- Ground technical or scientific claims in source material
+- Cite specific papers by title and publication date
+- Surface relevant background when answering research questions
 
 ## Tool Access (Σ₀ Framework Integration)
 
@@ -239,7 +249,49 @@ When asked to make repo changes, structure as:
 
 Keep it concise and actionable.`,
   },
+  {
+    id: "keystone-sigma0",
+    name: "Keystone Σ₀",
+    symbol: "verification-first coding agent, evidence chain, confidence scoring",
+    systemPrompt: `You are Keystone Σ₀ — a verification-first coding agent. Every response you produce must follow the Σ₀ framework:
+
+<REQUIREMENT>State the exact requirement you are fulfilling</REQUIREMENT>
+<EVIDENCE>List specific files, line numbers, function names, or data you examined to ground your answer</EVIDENCE>
+<CODE>Provide the implementation (complete, copy-paste ready)</CODE>
+<VERIFICATION>Explain exactly how to verify this change works — test command, expected output, or assertion</VERIFICATION>
+<CONFIDENCE>[0-100]</CONFIDENCE>
+
+Rules:
+- Never emit code without EVIDENCE of having read the relevant source.
+- When confidence < 60: State that you cannot proceed and list what evidence is missing.
+- No RP, no persona flavor. Plain technical language only.
+- Cite file paths and line numbers in EVIDENCE.`,
+  },
 ];
+
+// Shared answer-style guidance appended to every persona so replies are
+// comprehensive and cite external sources as clickable Markdown hyperlinks (the
+// chat renders [label](url) as new-tab links). Idempotent; preserves creative voice.
+const RESPONSE_STYLE = `
+
+## Answer style (__keystone_response_style__)
+**Your replies render as rich Markdown in the chat UI.** This UI DOES display media inline: \`![alt](https://image-url)\` shows the image, a plain YouTube link (https://youtube.com/watch?v=... or https://youtu.be/...) becomes an embedded player, and \`[text](https://url)\` becomes a clickable link that opens in a new tab. So you CAN show images and embed videos — never tell the user you "can't embed" or "have no web-embedding capability"; that is false.
+
+When answering an informational, technical, factual, or research question:
+- Be comprehensive — give the full answer with relevant context and reasoning, not a one-liner.
+- Cite external sources as clickable Markdown hyperlinks: [descriptive title](https://full-url). Prefer primary / authoritative sources.
+- Link GitHub issues/PRs, repo docs, and web sources inline as Markdown (e.g. [#123](https://github.com/alex-place/lantern-os/issues/123)).
+- When an image or video genuinely aids understanding, include it — images as \`![alt](https://image-url)\`, videos as a plain YouTube link. Use real, working URLs (from search results, Wikipedia/Wikimedia, or well-known sources); never invent or guess a media URL — link the source page instead if unsure.
+- Use short headings and bullet lists to structure longer answers.
+For creative, narrative, or door/dream replies, keep your natural voice and skip the citations.`;
+
+for (const _list of [AGENT_PERSONAS, _DEFAULT_PERSONAS]) {
+  for (const _p of (Array.isArray(_list) ? _list : [])) {
+    if (_p && typeof _p.systemPrompt === "string" && !_p.systemPrompt.includes("__keystone_response_style__")) {
+      _p.systemPrompt += RESPONSE_STYLE;
+    }
+  }
+}
 
 function _getPersonas() {
   return AGENT_PERSONAS.length > 0 ? AGENT_PERSONAS : _DEFAULT_PERSONAS;
@@ -253,7 +305,7 @@ function selectAgent(message) {
   const agentKeywords = {
     lantern: ["dream", "safe", "home", "steady", "light", "memory", "remember", "warm", "calm", "feeling", "emotional"],
     blinkbug: ["chaos", "glitch", "weird", "strange", "random", "creative", "wild", "unhinged", "glitch", "chaotic"],
-    keystone: ["github", "code", "issue", "pr", "fix", "bug", "technical", "engineering", "repo", "#", "implement"],
+    keystone: ["github", "code", "issue", "pr", "fix", "bug", "technical", "engineering", "repo", "#", "implement", "broken", "needs work", "what's broken", "what needs", "build", "deploy", "refactor", "debug", "merge", "branch", "commit", "test", "ci", "endpoint", "api", "error", "crash", "stack trace", "work on"],
     waterfall: ["cascade", "flow", "stream", "river", "water", "gentle", "reflection", "patient", "cascade"],
     xenon: ["signal", "detect", "pattern", "convergence", "navigate", "explore", "spacecraft", "navigation"],
     founder: ["vision", "goal", "plan", "strategic", "future", "wish", "protect", "lantern", "leadership"],
@@ -281,6 +333,32 @@ function parseBangCommand(input) {
   const m = String(input || "").trim().match(/^!(\S+)(?:\s+(.*))?$/);
   if (!m) return null;
   return { name: m[1].toLowerCase(), args: (m[2] || "").trim() };
+}
+
+const _CODING_PATTERNS = /\b(fix|patch|implement|refactor|write|generate|create|add|remove|debug|test|lint|route|function|class|import|export|PR|issue|bug|error|file|script|module|API|endpoint|migration)\b/i;
+function _isCodingRequest(text) { return _CODING_PATTERNS.test(text || ""); }
+
+function _extractConfidence(content) {
+  const m = String(content).match(/<CONFIDENCE>\s*(\d+)\s*<\/CONFIDENCE>/i)
+    || String(content).match(/confidence[:\s]+(\d+)/i);
+  if (m) return Math.min(100, Math.max(0, parseInt(m[1], 10)));
+  return null;
+}
+
+function _emitSigmaRecord({ text, content, confidence, agentId, source }) {
+  try {
+    const repoRoot = path.resolve(__dirname, "../../..");
+    const workPath = path.join(repoRoot, "data", "convergence-autonomous-work.jsonl");
+    const record = JSON.stringify({
+      timestamp: new Date().toISOString(),
+      agent: agentId || "keystone-sigma0",
+      source,
+      request: String(text || "").slice(0, 200),
+      confidence: confidence ?? null,
+      accepted: source !== "ollama-sigma0-rejected",
+    });
+    fs.appendFileSync(workPath, record + "\n", "utf8");
+  } catch {}
 }
 
 async function handleConvergenceCommand(recentDreams, agent, rawMessage) {
@@ -344,13 +422,15 @@ Respond with a single, profound observation (2-3 sentences). Focus on:
 Be honest. If there's not enough data, say so.`;
 
   const ollamaBase = process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434";
-  const ollamaModel = process.env.OLLAMA_MODEL || "lantern-csf-dream";
+  const ollamaModel = process.env.OLLAMA_MODEL || "ouro:latest";
 
   try {
     const payload = JSON.stringify({
       model: ollamaModel,
       stream: false,
       messages: [{ role: "user", content: convergencePrompt }],
+      // FAST-mode anti-repetition decode params (issue #729). Suppresses ✅✅✅ loops.
+      options: serving.applyOllamaDecodeParams({}),
     });
 
     const ollamaUrl = new URL(ollamaBase);
@@ -376,7 +456,14 @@ Be honest. If there's not enough data, say so.`;
         upstream.on("error", reject);
       });
       req.on("error", reject);
-      const ollamaTimeout = parseInt(process.env.OLLAMA_TIMEOUT_MS, 10) || 120000;
+      // Interactive (FAST, the product default) fails over fast when the local
+      // model stalls; the DEEP native Σ₀ loop (OURO_NATIVE=1) keeps the long
+      // ceiling it legitimately needs. A flat 120s here meant a cold/stuck local
+      // model (e.g. an oversized GGUF that never loads) blocked EVERY reply for
+      // two full minutes before failing over to a working cloud provider.
+      // OLLAMA_TIMEOUT_MS overrides both.
+      const ollamaTimeout = parseInt(process.env.OLLAMA_TIMEOUT_MS, 10)
+        || (/^(1|true|yes)$/i.test(process.env.OURO_NATIVE || "") ? 120000 : 15000);
       req.setTimeout(ollamaTimeout, () => { req.destroy(); reject(new Error("timeout")); });
       req.write(payload);
       req.end();
@@ -478,16 +565,16 @@ async function dreamChatReply(message, recentDreams, requestedAgent = "", reques
       });
       const data = JSON.parse(result);
       if (data.error) {
-        return { reply: `Kingdome of Hearts: ${data.error}`, agent: "Lantern", suggestions: [], online: false, threeDoors: true };
+        return { reply: `Kingdome of Hearts: ${data.error}`, agent: "Keystone", suggestions: [], online: false, threeDoors: true };
       }
       const lines = [data.text, ""];
       if (data.fox_present) lines.push("🦊 The fox is with you.");
       lines.push("", "**Choose a door:**");
       for (const d of data.doors) lines.push(`**${d.label}.** ${d.name} — ${d.description}`);
       if (data.image_prompt) lines.push("", `🎨 *Image prompt:* ${data.image_prompt}`);
-      return { reply: lines.join("\n"), agent: "Lantern", suggestions: data.doors.map(d => d.name), online: true, source: "python_engine", threeDoors: true, scene_key: data.scene_key, image_prompt: data.image_prompt };
+      return { reply: lines.join("\n"), agent: "Keystone", suggestions: data.doors.map(d => d.name), online: true, source: "python_engine", threeDoors: true, scene_key: data.scene_key, image_prompt: data.image_prompt };
     } catch (_e) {
-      return { reply: "Kingdome of Hearts: no engine available. Ensure Python is installed and src/three_doors_engine.py exists.", agent: "Lantern", suggestions: [], online: false, threeDoors: true };
+      return { reply: "Kingdome of Hearts: no engine available. Ensure Python is installed and src/three_doors_engine.py exists.", agent: "Keystone", suggestions: [], online: false, threeDoors: true };
     }
   }
 
@@ -719,16 +806,24 @@ async function dreamChatReply(message, recentDreams, requestedAgent = "", reques
 
   // PRIORITY 1: Ollama (Local-first — no API keys, full privacy, control)
   const ollamaBase = process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434";
-  const ollamaModel = process.env.OLLAMA_MODEL || "lantern-csf-dream";
-  if (!rp || rp === "ollama" || rp === "local") {
+  const ollamaModel = process.env.OLLAMA_MODEL || "ouro:latest";
+  if (!rp || rp === "ollama" || rp === "local" || rp === "sigma0") {
+    const isCoding = rp === "sigma0" || _isCodingRequest(text);
+    const sigma0Persona = _getPersonas().find(p => p.id === "keystone-sigma0") || _DEFAULT_PERSONAS.find(p => p.id === "keystone-sigma0");
+    const ollamaSystemPrompt = isCoding && sigma0Persona ? sigma0Persona.systemPrompt : agent.systemPrompt;
+    const ollamaUserPrompt = isCoding
+      ? `REQUIREMENT TO VERIFY: ${text}\n\nConfirm what files/lines you read, then respond in the <REQUIREMENT><EVIDENCE><CODE><VERIFICATION><CONFIDENCE> format.`
+      : userPrompt;
     try {
       const payload = JSON.stringify({
         model: ollamaModel,
         stream: false,
         messages: [
-          { role: "system", content: agent.systemPrompt },
-          { role: "user", content: userPrompt },
+          { role: "system", content: ollamaSystemPrompt },
+          { role: "user", content: ollamaUserPrompt },
         ],
+        // FAST-mode anti-repetition decode params (issue #729). Suppresses ✅✅✅ loops.
+        options: serving.applyOllamaDecodeParams({}),
       });
       const ollamaUrl = new URL(ollamaBase);
       const reply = await new Promise((resolve, reject) => {
@@ -758,12 +853,30 @@ async function dreamChatReply(message, recentDreams, requestedAgent = "", reques
           upstream.on("error", reject);
         });
         req2.on("error", reject);
-        const ollamaTimeout = parseInt(process.env.OLLAMA_TIMEOUT_MS, 10) || 120000;
+        // Interactive (FAST, the product default) fails over fast when the local
+      // model stalls; the DEEP native Σ₀ loop (OURO_NATIVE=1) keeps the long
+      // ceiling it legitimately needs. A flat 120s here meant a cold/stuck local
+      // model (e.g. an oversized GGUF that never loads) blocked EVERY reply for
+      // two full minutes before failing over to a working cloud provider.
+      // OLLAMA_TIMEOUT_MS overrides both.
+      const ollamaTimeout = parseInt(process.env.OLLAMA_TIMEOUT_MS, 10)
+        || (/^(1|true|yes)$/i.test(process.env.OURO_NATIVE || "") ? 120000 : 15000);
         req2.setTimeout(ollamaTimeout, () => { req2.destroy(); reject(new Error("timeout")); });
         req2.write(payload);
         req2.end();
       });
       if (reply && reply.content) {
+        if (isCoding) {
+          const confidence = _extractConfidence(reply.content);
+          if (confidence !== null && confidence < 60) {
+            _emitSigmaRecord({ text, content: reply.content, confidence, agentId: "keystone-sigma0", source: "ollama-sigma0-rejected" });
+            return { reply: `Σ₀ gate: confidence ${confidence}/100 — cannot deliver. Missing evidence: ${reply.content.slice(0, 300)}`, agent: "Keystone Σ₀", suggestions, online: true, source: "ollama-sigma0-rejected", confidence };
+          }
+          _emitSigmaRecord({ text, content: reply.content, confidence, agentId: "keystone-sigma0", source: "ollama-sigma0" });
+          const ollamaSuggestions = reply.doors && reply.doors.length > 0 ? reply.doors : suggestions;
+          recordProviderSuccessRouter("ollama");
+          return { reply: reply.content, agent: "Keystone Σ₀", suggestions: ollamaSuggestions, online: true, source: "ollama-sigma0", confidence, webSuggestions };
+        }
         const ollamaSuggestions = reply.doors && reply.doors.length > 0 ? reply.doors : suggestions;
         recordProviderSuccessRouter("ollama"); // Log to provider-router for performance tracking
         return { reply: reply.content, agent: agent.name, suggestions: ollamaSuggestions, online: true, source: "ollama", webSuggestions };
@@ -777,13 +890,16 @@ async function dreamChatReply(message, recentDreams, requestedAgent = "", reques
 
   // PRIORITY 2: Anthropic Claude (if explicitly requested or Ollama unavailable)
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
-  console.log("[dream-chat] DEBUG: anthropicKey exists:", !!anthropicKey, "rp:", rp, "condition:", (anthropicKey && (!rp || rp === "claude" || rp === "anthropic")) || (!rp && !ollamaModel));
   if ((anthropicKey && (!rp || rp === "claude" || rp === "anthropic")) || (!rp && !ollamaModel)) {
     try {
+      // Anthropic intentionally left unmodified (no frequency_penalty; matches PR #723).
       const payload = JSON.stringify({
         model: process.env.ANTHROPIC_MODEL || "claude-haiku-4-5-20251001",
         max_tokens: 512,
-        system: agent.systemPrompt,
+        // Cache the (stable) persona system prompt. Engages only when the prefix
+        // clears the model's min cacheable length (4096 tok for Haiku 4.5); a
+        // silent no-op otherwise. Helps repeated large-context callers (PR watcher).
+        system: [{ type: "text", text: agent.systemPrompt, cache_control: { type: "ephemeral" } }],
         messages: [{ role: "user", content: userPrompt }],
       });
       const reply = await new Promise((resolve, reject) => {
@@ -829,7 +945,7 @@ async function dreamChatReply(message, recentDreams, requestedAgent = "", reques
         req2.write(payload);
         req2.end();
       });
-      if (reply) {
+      if (reply && reply.length >= 20) {
         recordProviderSuccessRouter("anthropic"); // Log to provider-router
         return { reply, agent: agent.name, suggestions, online: true, source: "claude", webSuggestions };
       }
@@ -839,58 +955,67 @@ async function dreamChatReply(message, recentDreams, requestedAgent = "", reques
     }
   }
 
-  // PRIORITY 3: Google Gemini (if explicitly requested)
+  // PRIORITY 3: Google Gemini (try all available models)
   const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
   if (geminiKey && (!rp || rp === "gemini" || rp === "google" || rp.startsWith("gemini-"))) {
-    try {
-      const geminiModel = rp.startsWith("gemini-") ? rp : (process.env.GEMINI_MODEL || "gemini-2.5-flash");
-      const payload = JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: `${agent.systemPrompt}\n\n${userPrompt}` }] }],
-        generationConfig: { maxOutputTokens: 256, temperature: 0.7 },
-        tools: [{ google_search_retrieval: {} }],
-      });
-      const reply = await new Promise((resolve, reject) => {
-        const req2 = https.request({
-          hostname: "generativelanguage.googleapis.com",
-          path: `/v1beta/models/${geminiModel}:generateContent?key=${geminiKey}`,
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Content-Length": Buffer.byteLength(payload),
-          },
-        }, (upstream) => {
-          let data = "";
-          upstream.on("data", (c) => (data += c));
-          upstream.on("end", () => {
-            try {
-              const json = JSON.parse(data);
-              resolve(String(json.candidates?.[0]?.content?.parts?.[0]?.text || "").trim());
-            } catch { resolve(""); }
-          });
-          upstream.on("error", reject);
+    const geminiModels = rp.startsWith("gemini-") ? [rp] : [
+      process.env.GEMINI_MODEL || "gemini-2.5-flash",
+      "gemini-1.5-flash",
+      "gemini-2.0-flash",
+      "gemini-1.5-pro",
+    ];
+
+    for (const geminiModel of geminiModels) {
+      try {
+        const payload = JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: `${agent.systemPrompt}\n\n${userPrompt}` }] }],
+          generationConfig: { maxOutputTokens: 256, temperature: 0.7 },
+          tools: [{ google_search_retrieval: {} }],
         });
-        req2.on("error", reject);
-        req2.setTimeout(15000, () => { req2.destroy(); reject(new Error("timeout")); });
-        req2.write(payload);
-        req2.end();
-      });
-      if (reply) {
-        return { reply, agent: agent.name, suggestions, online: true, source: "gemini", webSuggestions };
-      }
-    } catch (err) { console.error("Gemini API error:", err.message); }
+        const reply = await new Promise((resolve, reject) => {
+          const req2 = https.request({
+            hostname: "generativelanguage.googleapis.com",
+            path: `/v1beta/models/${geminiModel}:generateContent?key=${geminiKey}`,
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Content-Length": Buffer.byteLength(payload),
+            },
+          }, (upstream) => {
+            let data = "";
+            upstream.on("data", (c) => (data += c));
+            upstream.on("end", () => {
+              try {
+                const json = JSON.parse(data);
+                resolve(String(json.candidates?.[0]?.content?.parts?.[0]?.text || "").trim());
+              } catch { resolve(""); }
+            });
+            upstream.on("error", reject);
+          });
+          req2.on("error", reject);
+          req2.setTimeout(15000, () => { req2.destroy(); reject(new Error("timeout")); });
+          req2.write(payload);
+          req2.end();
+        });
+        if (reply && reply.length >= 20) {
+          return { reply, agent: agent.name, suggestions, online: true, source: `gemini:${geminiModel}`, webSuggestions };
+        }
+      } catch (err) { console.error(`Gemini (${geminiModel}) error:`, err.message); }
+    }
   }
 
   // PRIORITY 4: OpenAI (if explicitly requested)
   const openaiKey = process.env.OPENAI_API_KEY;
   if (openaiKey && (!rp || rp === "openai" || rp === "gpt")) {
     try {
-      const payload = JSON.stringify({
+      // FAST-mode anti-repetition decode params (issue #729): top_p + frequency_penalty.
+      const payload = JSON.stringify(serving.applyOpenAIDecodeParams({
         model: process.env.OPENAI_MODEL || "gpt-4.1-mini",
         messages: [
           { role: "system", content: agent.systemPrompt },
           { role: "user", content: userPrompt },
         ],
-      });
+      }));
       const reply = await new Promise((resolve, reject) => {
         const req2 = https.request({
           hostname: "api.openai.com",
@@ -932,13 +1057,61 @@ async function dreamChatReply(message, recentDreams, requestedAgent = "", reques
         req2.write(payload);
         req2.end();
       });
-      if (reply) {
+      if (reply && reply.length >= 20) {
         recordProviderSuccessRouter("openai"); // Log to provider-router
         return { reply, agent: agent.name, suggestions, online: true, source: "openai", webSuggestions };
       }
     } catch (err) {
       console.error("OpenAI API error:", err.message);
       recordProviderFailureRouter("openai", err.message.includes("openai_status_") ? err.message : "unknown"); // Log to provider-router
+    }
+  }
+
+  // PRIORITY 5: Grok / xAI
+  const xaiKey = process.env.XAI_API_KEY;
+  if (xaiKey && (!rp || rp === "grok" || rp === "xai")) {
+    try {
+      const payload = JSON.stringify({
+        model: process.env.XAI_MODEL || "grok-3-mini",
+        messages: [
+          { role: "system", content: agent.systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        max_tokens: 512,
+      });
+      const reply = await new Promise((resolve, reject) => {
+        const req2 = https.request({
+          hostname: "api.x.ai",
+          path: "/v1/chat/completions",
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${xaiKey}`,
+            "Content-Length": Buffer.byteLength(payload),
+          },
+        }, (upstream) => {
+          let data = "";
+          upstream.on("data", (c) => (data += c));
+          upstream.on("end", () => {
+            try {
+              const json = JSON.parse(data);
+              resolve(String(json.choices?.[0]?.message?.content || "").trim());
+            } catch { resolve(""); }
+          });
+          upstream.on("error", reject);
+        });
+        req2.on("error", reject);
+        req2.setTimeout(15000, () => { req2.destroy(); reject(new Error("timeout")); });
+        req2.write(payload);
+        req2.end();
+      });
+      if (reply && reply.length >= 20) {
+        recordProviderSuccessRouter("xai");
+        return { reply, agent: agent.name, suggestions, online: true, source: "grok", webSuggestions };
+      }
+    } catch (err) {
+      console.error("Grok (xAI) API error:", err.message);
+      recordProviderFailureRouter("xai", "unknown");
     }
   }
 
@@ -955,6 +1128,200 @@ async function dreamChatReply(message, recentDreams, requestedAgent = "", reques
   };
 }
 
+// ── Σ₀ Self-Correcting Verify Pass ──────────────────────────────────
+// Three grounding sources: (1) codebase grep, (2) web search via MCP,
+// (3) Gemini grounding API. Low-confidence claims trigger a revision pass.
+// Appends convergence records. Runs when SIGMA0_VERIFY=true.
+async function verifyResponse(draft, userMessage, agentName) {
+  if (process.env.SIGMA0_VERIFY !== "true") return { verified: draft, records: [], corrected: false };
+
+  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  if (!anthropicKey) return { verified: draft, records: [], corrected: false };
+
+  const fs = require("fs");
+  const path = require("path");
+  const { webSearchMcp } = require("./web-search-client");
+  const { execSync } = require("child_process");
+  const REPO_ROOT = path.resolve(__dirname, "..", "..");
+  const RECORDS_PATH = path.join(REPO_ROOT, "data", "convergence", "records.jsonl");
+
+  // ── Helper: call Claude Haiku ─────────────────────────────────────
+  function callHaiku(prompt, maxTokens = 512) {
+    const payload = JSON.stringify({
+      model: process.env.ANTHROPIC_MODEL || "claude-haiku-4-5-20251001",
+      max_tokens: maxTokens,
+      messages: [{ role: "user", content: prompt }],
+    });
+    return new Promise((resolve, reject) => {
+      const req = https.request({
+        hostname: "api.anthropic.com", path: "/v1/messages", method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": anthropicKey, "anthropic-version": "2023-06-01", "Content-Length": Buffer.byteLength(payload) },
+      }, (res) => { let d = ""; res.on("data", c => d += c); res.on("end", () => resolve(d)); res.on("error", reject); });
+      req.on("error", reject);
+      req.setTimeout(10000, () => { req.destroy(); reject(new Error("timeout")); });
+      req.write(payload); req.end();
+    });
+  }
+
+  // ── Helper: Gemini grounding check ───────────────────────────────
+  // Tries web-grounded (googleSearch tool) first; on a billing/quota error
+  // (Grounding with Google Search is a PAID feature) falls back to a free
+  // plain-knowledge judgment. Either way, an unreachable source returns null
+  // (no signal) and never counts as a refutation.
+  async function geminiGroundCheck(claim) {
+    const geminiKey = process.env.GEMINI_API_KEY;
+    if (!geminiKey) return null;
+    const model = process.env.GEMINI_GROUND_MODEL || "gemini-2.5-flash";
+
+    function call(useSearch) {
+      const payload = JSON.stringify({
+        contents: [{ parts: [{ text: `Is this claim accurate? Answer with yes/no and one sentence of evidence: "${claim}"` }] }],
+        ...(useSearch ? { tools: [{ googleSearch: {} }] } : {}),
+      });
+      return new Promise((resolve, reject) => {
+        const req = https.request({
+          hostname: "generativelanguage.googleapis.com",
+          path: `/v1beta/models/${model}:generateContent?key=${geminiKey}`,
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) },
+        }, (res) => { let d = ""; res.on("data", c => d += c); res.on("end", () => resolve({ status: res.statusCode, body: d })); res.on("error", reject); });
+        req.on("error", reject);
+        req.setTimeout(8000, () => { req.destroy(); reject(new Error("timeout")); });
+        req.write(payload); req.end();
+      });
+    }
+
+    try {
+      let grounded = true;
+      let { status, body } = await call(true);
+      // Grounded search needs prepaid credits → 429 RESOURCE_EXHAUSTED.
+      // Retry once WITHOUT the search tool (free tier) as a knowledge-only check.
+      if (status === 429) { grounded = false; ({ status, body } = await call(false)); }
+      // Still non-200 = source unreachable → no signal, NOT a refutation
+      if (status !== 200) return null;
+      const j = JSON.parse(body);
+      const text = j.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      // Empty response = no signal. Never let a silent failure count against a claim.
+      if (!text.trim()) return null;
+      const groundingMeta = j.candidates?.[0]?.groundingMetadata;
+      const sources = groundingMeta?.groundingChunks?.map(c => c.web?.uri).filter(Boolean) || [];
+      const t = text.trim();
+      const isYes = /^yes/i.test(t);
+      const isNo = /^no/i.test(t);
+      // Web-grounded yes = strong (0.9); knowledge-only yes = moderate (0.75).
+      // Only an explicit "no" is a refutation; anything ambiguous is weak-neutral.
+      const yesConf = grounded ? 0.9 : 0.75;
+      return { text, sources, grounded, confident: isYes, confidence: isYes ? yesConf : (isNo ? 0.35 : 0.5) };
+    } catch { return null; }
+  }
+
+  // ── Step 1: extract claims ────────────────────────────────────────
+  let claims = [];
+  try {
+    const raw = await callHaiku(
+      `Extract factual claims from this AI response. Return JSON array only: [{"claim":"...","type":"fact|number|feature","needsWeb":true/false}]. Max 5 claims. needsWeb=true for claims about real-world facts, current events, or external APIs. needsWeb=false for code/file claims.\n\nResponse:\n${draft.slice(0, 1200)}`
+    );
+    const content = JSON.parse(raw).content?.[0]?.text || "[]";
+    const m = content.match(/\[[\s\S]*\]/);
+    claims = m ? JSON.parse(m[0]) : [];
+  } catch { return { verified: draft, records: [], corrected: false }; }
+
+  if (!claims.length) return { verified: draft, records: [], corrected: false };
+
+  // ── Step 2: ground each claim (codebase + web + Gemini in parallel) ──
+  const records = [];
+  let anyRefuted = false;
+
+  await Promise.all(claims.slice(0, 5).map(async (c) => {
+    let evidence = "no match found";
+    // 0.6 = neutral/unknown baseline. Absence of grounding must NOT trigger a
+    // correction — only an active refutation does. (A down grounding source
+    // previously dragged every claim to 0.4 and hedged correct answers.)
+    let confidence = 0.6;
+    let source = "none";
+    let refuted = false;
+    const sources = [];
+
+    // 2a: codebase grep (always run for code claims)
+    if (!c.needsWeb) {
+      try {
+        const terms = c.claim.replace(/[^a-zA-Z0-9_\-. ]/g, " ").split(/\s+/).filter(t => t.length > 4).slice(0, 2).join("|");
+        if (terms) {
+          const res = execSync(`git grep -l --ignore-case -E "${terms}" -- "*.js" "*.json" "*.md" 2>NUL`, { cwd: REPO_ROOT, timeout: 3000, encoding: "utf8" }).trim();
+          if (res) { evidence = `codebase: ${res.split("\n").slice(0, 2).join(", ")}`; confidence = 0.85; source = "codebase-grep"; sources.push(evidence); }
+        }
+      } catch { /* not found */ }
+    }
+
+    // 2b: web search via MCP (try to confirm anything not yet codebase-confirmed)
+    if (confidence < 0.75) {
+      try {
+        const searchResult = await webSearchMcp(`${c.claim} site:github.com OR site:docs.anthropic.com OR developer docs`, 3);
+        if (searchResult?.results?.length) {
+          const snippet = searchResult.results[0].snippet || "";
+          evidence = `web: ${snippet.slice(0, 120)}`;
+          confidence = 0.75;
+          source = "web-search";
+          sources.push(...searchResult.results.slice(0, 2).map(r => r.url));
+        }
+      } catch { /* MCP offline → no signal, stays neutral */ }
+    }
+
+    // 2c: Gemini grounding API (confirm or refute). Returns null when the source
+    // is unreachable (403/429/empty) — treated as NO SIGNAL, never refutation.
+    if (confidence < 0.7 || c.needsWeb) {
+      const g = await geminiGroundCheck(c.claim);
+      if (g) {
+        if (g.confident && g.confidence > confidence) {
+          evidence = `gemini: ${g.text.slice(0, 120)}`;
+          confidence = g.confidence;
+          source = "gemini-grounding";
+          sources.push(...g.sources);
+        } else if (g.confidence <= 0.35) {
+          // Explicit "no" from Gemini = active refutation
+          evidence = `gemini-refuted: ${g.text.slice(0, 120)}`;
+          confidence = g.confidence;
+          source = "gemini-grounding";
+          refuted = true;
+        }
+      }
+    }
+
+    records.push({ claim: c.claim, type: c.type, evidence, confidence, source, sources, refuted, agent: agentName, userMessage: userMessage.slice(0, 100) });
+    if (refuted) anyRefuted = true;
+  }));
+
+  // ── Step 3: revise only ACTIVELY REFUTED claims ──────────────────
+  // Never hedge merely-ungrounded claims: absence of evidence is not evidence of
+  // error, and doing so corrupted correct answers whenever grounding was offline.
+  let verified = draft;
+  let corrected = false;
+  if (anyRefuted) {
+    try {
+      const refutedClaims = records.filter(r => r.refuted)
+        .map(r => `- "${r.claim}" → ${r.evidence} (confidence: ${r.confidence.toFixed(2)})`)
+        .join("\n");
+      const raw2 = await callHaiku(
+        `You are a self-correcting AI. A grounding source actively CONTRADICTED these claims in your response:\n${refutedClaims}\n\nOriginal response:\n${draft}\n\nRevise to correct or qualify only these refuted claims. Use "I believe...", "I'm not certain, but...", or "According to available sources..." where appropriate. Leave everything else unchanged. Return only the revised response.`,
+        1024
+      );
+      const revised = JSON.parse(raw2).content?.[0]?.text?.trim();
+      if (revised && revised.length > 50) { verified = revised; corrected = true; }
+    } catch { /* keep original */ }
+  }
+
+  // ── Step 4: append convergence records ───────────────────────────
+  try {
+    fs.mkdirSync(path.dirname(RECORDS_PATH), { recursive: true });
+    const timestamp = new Date().toISOString();
+    for (const r of records) {
+      fs.appendFileSync(RECORDS_PATH, JSON.stringify({ timestamp, ...r, corrected }) + "\n");
+    }
+  } catch { /* non-fatal */ }
+
+  return { verified, records, corrected };
+}
+
 // ── Initialize Token Audit ───────────────────────────────────────────
 const tokenAudit = new TokenAudit();
 
@@ -965,5 +1332,6 @@ module.exports = {
   parseBangCommand,
   handleConvergenceCommand,
   dreamChatReply,
+  verifyResponse,
   tokenAudit,
 };

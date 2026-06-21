@@ -18,7 +18,7 @@ module.exports = async function dreamRoutes(req, res, url, deps) {
     readRecentDreams, dreamChatReply, appendConversationEntry,
     unifiedAgentGreet, unifiedAgentHealth, unifiedAgentInspect,
     handleStreamChat } = deps;
-  const { handleConvergenceCommand, selectAgent } = require("../lib/dream-chat");
+  const { handleConvergenceCommand, selectAgent, verifyResponse } = require("../lib/dream-chat");
   const { classifyIntent, CAPABILITY_REGISTRY } = require("../lib/intent-router");
 
   // ── CSF search endpoint ───────────────────────────────────────────────
@@ -266,6 +266,14 @@ module.exports = async function dreamRoutes(req, res, url, deps) {
         result = await handleConvergenceCommand(recentDreams, agent, message);
       } else {
         result = await dreamChatReply(message, recentDreams, body.agent || "", body.provider || "");
+        // Σ₀ self-correction pass (only when SIGMA0_VERIFY=true and reply exists)
+        if (result.reply && process.env.SIGMA0_VERIFY === "true") {
+          try {
+            const { verified, corrected, records } = await verifyResponse(result.reply, message, result.agent || "lantern");
+            if (corrected) result.reply = verified;
+            result.sigma0 = { corrected, claims: records.length, verified: records.filter(r => r.confidence >= 0.5).length };
+          } catch { /* verification non-fatal */ }
+        }
       }
 
       const provLatency = Date.now() - provStart;
@@ -327,7 +335,28 @@ module.exports = async function dreamRoutes(req, res, url, deps) {
 
   if ((url.pathname === "/api/dream/stream" && req.method === "GET") ||
       (url.pathname === "/api/dream/chat/stream" && req.method === "POST")) {
-    await handleStreamChat(req, url, res);
+    try {
+      await handleStreamChat(req, url, res);
+    } catch (err) {
+      // Honest fallback: never leave an SSE socket hanging on an internal throw.
+      console.error("[dream/stream] handler error (non-fatal to client):", err && err.stack ? err.stack : err);
+      if (!res.writableEnded) {
+        try {
+          if (!res.headersSent) {
+            res.writeHead(200, {
+              "Content-Type": "text/event-stream; charset=utf-8",
+              "Cache-Control": "no-cache",
+              "Connection": "keep-alive",
+              "Access-Control-Allow-Origin": "*",
+              "X-Accel-Buffering": "no",
+            });
+          }
+          res.write(`data: ${JSON.stringify({ type: "error", text: "The streaming engine hit an internal error." })}\n\n`);
+          res.write(`data: ${JSON.stringify({ type: "done", source: "offline", online: false, error: String(err && err.message || err) })}\n\n`);
+          res.end();
+        } catch { /* socket already gone */ }
+      }
+    }
     return true;
   }
 
@@ -374,43 +403,28 @@ module.exports = async function dreamRoutes(req, res, url, deps) {
       const choice = String(body.choice || "");
       const agent = String(body.agent || "").slice(0, 32);
 
-      const { spawn } = require("child_process");
-      const py = process.platform === "win32" ? "python" : "python3";
+      // ── Unified Node.js Game Engine (replaced Python subprocess) ──
+      const { ThreeDoorsEngine } = require("../lib/three-doors-engine");
+      const engine = new ThreeDoorsEngine(userId);
+      if (agent) engine.agent = agent;
 
-      const script = `import sys,json
-from three_doors_engine import ThreeDoorsEngine
-req = json.loads(sys.stdin.read())
-e = ThreeDoorsEngine(req['userId'])
-if req.get('agent'):
-    e.agent = req['agent']
-if req['action'] == 'reset':
-    e.reset()
-    result = e.to_api_response(e.start_game())
-elif req['action'] in ['start']:
-    scene = e.start_game()
-    result = e.to_api_response(scene)
-elif req['action'] == 'choose':
-    scene = e.choose_door(req['choice'])
-    result = e.to_api_response(scene)
-else:
-    result = {"error": "unknown_action"}
-print(json.dumps(result))`;
+      let data;
+      if (action === "reset") {
+        data = engine.toApiResponse(engine.resetGame());
+      } else if (action === "start") {
+        data = engine.toApiResponse(engine.startGame());
+      } else if (action === "choose") {
+        const result = engine.chooseDoor(choice);
+        if (!result) {
+          sendJson(res, { error: "invalid_door_choice" }, 400);
+          return true;
+        }
+        data = engine.toApiResponse(result);
+      } else {
+        sendJson(res, { error: "unknown_action" }, 400);
+        return true;
+      }
 
-      const result = await new Promise((resolve, reject) => {
-        const proc = spawn(py, ["-c", script], { cwd: repoRoot, env: { ...process.env, PYTHONPATH: path.join(repoRoot, "src") } });
-        let out = "", err = "";
-        proc.stdout.on("data", (c) => (out += c));
-        proc.stderr.on("data", (c) => (err += c));
-        proc.on("close", (code) => {
-          if (code !== 0) reject(new Error(err || `exit ${code}`));
-          else resolve(out.trim());
-        });
-        proc.on("error", reject);
-        proc.stdin.write(JSON.stringify({ userId, action, choice, agent }));
-        proc.stdin.end();
-      });
-
-      const data = JSON.parse(result);
       sendJson(res, { ...data, generatedAt: new Date().toISOString() });
     } catch (error) { sendJson(res, { error: error.message, code: error.message === "request_body_too_large" ? 413 : 500 }, error.message === "request_body_too_large" ? 413 : 500); }
     return true;

@@ -634,6 +634,23 @@ module.exports = async function tradingRoutes(req, res, url, deps) {
       }
 
       // GET — Crypto intraday markets (15m, 1h, daily predictions)
+      // GLOBAL TRADING-PAUSE GATE — when data/kalshi/TRADING-PAUSED exists, every
+      // trade-suggestion deck returns ZERO cards. Engaged after the realized-PnL
+      // backtest showed no edge after fees (experiments/kalshi_pnl_backtest.py);
+      // remove the flag only once a strategy is proven net-profitable.
+      if (req.method === 'GET' && kalshi.tradingPaused && kalshi.tradingPaused() && [
+            '/api/trading/kalshi/crypto-intraday',
+            '/api/trading/kalshi/impossibility-deck',
+            '/api/trading/kalshi/decisive-deck',
+            '/api/trading/kalshi/positions-deck',
+          ].includes(url.pathname)) {
+        return sendJson(res, {
+          cards: [], count: 0, exitCount: 0, entryCount: 0, paused: true,
+          generatedAt: new Date().toISOString(),
+          note: 'TRADING PAUSED — all cards cleared. No strategy is proven net-profitable after fees. Remove data/kalshi/TRADING-PAUSED to re-enable.',
+        }, 200), true;
+      }
+
       if (url.pathname === '/api/trading/kalshi/crypto-intraday' && req.method === 'GET') {
         const cryptoSuggest = require('../lib/kalshi-crypto-suggester');
         const limit = q.limit ? Number(q.limit) : 20;
@@ -844,8 +861,11 @@ module.exports = async function tradingRoutes(req, res, url, deps) {
         const RegimeDetector = require('../lib/regime-detector');
         const performanceLogger = require('../lib/strategy-performance-logger');
         const strategyRegistry = require('../lib/strategy-registry');
+        const sigma0Deck = require('../lib/sigma0-deck');
         const collector = deps.kalshiCollector || null;
         const nowMs = Date.now();
+        // Σ₀ ranking knob: 0 = safety (lowest loss odds), 1 = return (largest delta)
+        const riskAppetite = q.risk != null ? Number(q.risk) : 0.5;
 
         try {
           // Initialize regime detector
@@ -929,32 +949,47 @@ module.exports = async function tradingRoutes(req, res, url, deps) {
             }
           }
 
-          // Step 5: Rank by conviction × time-weight × strategy fitness
+          // Step 5: Legacy decisionScore (kept as a tiebreaker signal)
           const allCards = Array.from(decisiveMap.values());
           allCards.forEach(card => {
             const timeWeight = (card.minsToClose ?? 60) < 60 ? 1.2 : (card.minsToClose ?? 60) < 240 ? 1.0 : 0.7;
             const strategyWeight = Math.min(1.5, 1.0 + (card.strategy_fitness?.stability || 0.5) * 0.5);
             card.decisionScore = (card.conviction || 0) * timeWeight * strategyWeight;
           });
-          allCards.sort((a, b) => (b.decisionScore || 0) - (a.decisionScore || 0));
+
+          // Step 5b: Σ₀ END-STATE RANKING — predict each card's attractor + a
+          // contraction confidence, score by risk-adjusted capturable delta gated
+          // by confidence (minimize loss / maximize gain per swipe). Exits keep
+          // priority (not acting on a stop is itself a loss); within each group
+          // Σ₀ score orders, with legacy decisionScore as the final tiebreaker.
+          const scored = sigma0Deck.rankDeck(allCards, { riskAppetite });
+          scored.sort((a, b) => {
+            const aExit = a.kind === 'exit' ? 0 : 1, bExit = b.kind === 'exit' ? 0 : 1;
+            if (aExit !== bExit) return aExit - bExit;
+            const ds = (b.sigma0?.score || 0) - (a.sigma0?.score || 0);
+            if (Math.abs(ds) > 1e-6) return ds;
+            return (b.decisionScore || 0) - (a.decisionScore || 0);
+          });
 
           // Step 6: Return top 6 trades (focused, decisive deck)
-          const decisive = allCards.slice(0, 6);
+          const decisive = scored.slice(0, 6);
 
           return sendJson(res, {
             count: decisive.length,
             generatedAt: new Date().toISOString(),
-            note: 'Decisive Deck: ONE action per market (regime-aware strategy selection)',
+            note: 'Decisive Deck: Σ₀ end-state ranking — risk-adjusted delta per swipe',
+            riskAppetite,
             regime_stats: {
               regimes_detected: [...new Set(decisive.map(c => c.regime))],
               strategies_active: strategyIds,
             },
             cards: decisive.map(c => ({
               ...c,
-              // Expose regime + strategy info to human for validation
+              // Expose regime + strategy info + Σ₀ prediction for human validation
               regime: c.regime,
               best_strategy: c.best_strategy,
               strategy_fitness: c.strategy_fitness,
+              sigma0: c.sigma0,
             })),
           }, 200), true;
         } catch (error) {

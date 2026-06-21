@@ -142,10 +142,41 @@ function appendSceneMsg(sceneKey, sceneData, geminiText, source) {
   }
 
   el.innerHTML = `
-    <div class="agent-avatar">🏮</div>
+    <div class="agent-avatar mandala-avatar">
+      <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" style="width:44px;height:44px;display:block">
+        <!-- Outer ring -->
+        <circle cx="50" cy="50" r="48" fill="none" stroke="var(--accent)" stroke-width="1" opacity="0.4"/>
+        <circle cx="50" cy="50" r="40" fill="none" stroke="var(--accent)" stroke-width="0.8" opacity="0.3"/>
+        <!-- 12-pointed petals -->
+        <g stroke="var(--accent)" stroke-width="1.2" fill="none" opacity="0.7">
+          <path d="M50,10 Q45,25 50,35 Q55,25 50,10" />
+          <path d="M70,20 Q60,28 55,38 Q65,32 70,20" />
+          <path d="M85,35 Q72,40 62,45 Q75,42 85,35" />
+          <path d="M90,50 Q75,50 65,50 Q80,50 90,50" />
+          <path d="M85,65 Q72,60 62,55 Q75,58 85,65" />
+          <path d="M70,80 Q60,72 55,62 Q65,68 70,80" />
+          <path d="M50,90 Q45,75 50,65 Q55,75 50,90" />
+          <path d="M30,80 Q40,72 45,62 Q35,68 30,80" />
+          <path d="M15,65 Q28,60 38,55 Q25,58 15,65" />
+          <path d="M10,50 Q25,50 35,50 Q20,50 10,50" />
+          <path d="M15,35 Q28,40 38,45 Q25,42 15,35" />
+          <path d="M30,20 Q40,28 45,38 Q35,32 30,20" />
+        </g>
+        <!-- Inner hexagram -->
+        <g fill="var(--accent)" opacity="0.8">
+          <circle cx="50" cy="50" r="3"/>
+          <circle cx="50" cy="35" r="1.5"/>
+          <circle cx="60" cy="43" r="1.5"/>
+          <circle cx="60" cy="57" r="1.5"/>
+          <circle cx="50" cy="65" r="1.5"/>
+          <circle cx="40" cy="57" r="1.5"/>
+          <circle cx="40" cy="43" r="1.5"/>
+        </g>
+      </svg>
+    </div>
     <div class="message-content">
       <div style="font-size:11px;color:var(--muted);margin-bottom:8px;display:flex;align-items:center;gap:4px">
-        Lantern ${sourceBadge}
+        Keystone ${sourceBadge}
       </div>
       ${breadcrumb}
       <div class="scene-image">
@@ -155,7 +186,7 @@ function appendSceneMsg(sceneKey, sceneData, geminiText, source) {
         <div class="sd-badge">SD prompt — hover to copy</div>
       </div>
       <div id="${descId}" style="font-size:14px;line-height:1.6;margin-bottom:10px">${md(displayText)}</div>
-      ${foxPresent ? `<div class="fox-line">🏮 Lantern, your guide, is with you.</div>` : ""}
+      ${foxPresent ? `<div class="fox-line">🏮 Keystone, your guide, is with you.</div>` : ""}
       ${doorHTML}
     </div>`;
 
@@ -305,7 +336,7 @@ async function refreshSceneText(sceneKey, textEl) {
   const archetype = scene.archetype || "mystical";
   const history = (gameState?.history || []).filter(h => h.startsWith("Chose ")).slice(-3).join(", ") || "just arrived";
   const loopNote = loopCount > 0 ? ` Loop ${loopCount + 1} — the space feels rewritten, familiar but altered.` : "";
-  const prompt = `You are Lantern, the dreaming guide. Describe the scene "${sceneKey}" (archetype: ${archetype}) in 3 evocative sentences. The dreamer arrived via: ${history}.${loopNote} Be symbolic and sensory — never the same twice. End on a threshold feeling. Scene core: ${scene.text.replace(/\*\*/g,"").replace(/\*/g,"").slice(0,200)}`;
+  const prompt = `You are Keystone, the dreaming guide. Describe the scene "${sceneKey}" (archetype: ${archetype}) in 3 evocative sentences. The dreamer arrived via: ${history}.${loopNote} Be symbolic and sensory — never the same twice. End on a threshold feeling. Scene core: ${scene.text.replace(/\*\*/g,"").replace(/\*/g,"").slice(0,200)}`;
   const ctrl = new AbortController();
   setTimeout(() => ctrl.abort(), 20000);
   try {

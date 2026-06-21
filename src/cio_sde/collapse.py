@@ -67,14 +67,12 @@ class SemanticCollapseOperator:
                  rank_frac: float = 0.5,
                  anisotropy_eps: float = 5e-2,
                  ctrl_eps: float = 1e-2,
-                 eig_eps: float = 1e-2,
-                 log_barrier_strength: float = 0.1) -> None:
+                 eig_eps: float = 1e-2) -> None:
         self.grad_eps = grad_eps          # ∇ₓL below this ⇒ no optimization signal
         self.rank_frac = rank_frac        # eff_rank/dim below this ⇒ rank-deficient
         self.anisotropy_eps = anisotropy_eps  # Σ eigval spread below this ⇒ flat
         self.ctrl_eps = ctrl_eps          # ∂H/∂u below this ⇒ control singularity
         self.eig_eps = eig_eps            # |λ| below this ⇒ null eigenmode
-        self.log_barrier_strength = log_barrier_strength  # smooth boundary penalty
 
     @torch.no_grad()
     def _effective_rank(self, A: Tensor) -> float:
@@ -116,19 +114,15 @@ class SemanticCollapseOperator:
             return torch.zeros_like(x), CollapseOutcome.NULL
         V = evecs[:, null_mask]                 # (d, k) null subspace basis
         P = V @ V.T                             # projector onto invariant manifold
-        
-        # Log-barrier for smooth boundary: -strength * log(1 - ‖P x‖ / ‖x‖)
-        # This penalizes approaching the boundary smoothly instead of hard clamp
-        if self.log_barrier_strength > 0:
-            x_norm = x.norm(dim=-1, keepdim=True).clamp_min(1e-8)
-            proj_norm = (x @ P.T).norm(dim=-1, keepdim=True)
-            barrier_ratio = (proj_norm / x_norm).clamp_max(0.99)
-            barrier = -self.log_barrier_strength * torch.log(1.0 - barrier_ratio)
-            # Apply barrier as a soft penalty to the projection
-            x_star = x @ P.T * (1.0 - barrier)
-        else:
-            x_star = x @ P.T
-        
+
+        # Collapse is the orthogonal projection onto the invariant null manifold.
+        # P = V Vᵀ is idempotent and symmetric, so it is non-expansive:
+        # ‖P x‖ ≤ ‖x‖ for all x — the projection is already a contraction toward
+        # the manifold and there is no boundary to enforce. (The former
+        # "log-barrier" multiplicative shrink was misnamed and, for strengths
+        # above 1/ln(100) ≈ 0.217, flipped sign and grew ‖x*‖ — the opposite of
+        # collapse. See issue #661.)
+        x_star = x @ P.T
         return x_star, CollapseOutcome.ATTRACTOR
 
     def evaluate(self, model, x: Tensor, u: Tensor, sigma: Tensor,
@@ -187,6 +181,12 @@ class CollapseCertificate:
     # contraction; it is tighter than the conservative small-gain `alpha` bound.
     spectral_abscissa: float = float("nan")  # max Re λ(A) on the full A (via eig)
     full_contracting: bool = False           # spectral_abscissa < −margin
+    # #768 Tier-A provable region-wideners (see stability_gates()). Sufficient
+    # contraction certificates that strictly EXTEND the conservative small-gain `alpha`.
+    numerical_range_abscissa: float = float("nan")  # ω(A)=λ_max(A_s); rightmost pt of W(A)
+    gate_numerical_range: bool = False  # ω(A) < −margin → monotone Euclidean contraction
+    gate_lyapunov: bool = False         # ∃P≻0 ⟺ max Re λ(A) < −margin (accepts non-normal)
+    lyapunov_transient_bound: float = float("nan")  # √cond(P): bound on sup_t‖e^{tA}‖
 
     def summary(self) -> str:
         verdict = "GUARANTEED" if self.guaranteed else "NOT guaranteed"
@@ -197,6 +197,12 @@ class CollapseCertificate:
             f"rate={self.contraction_rate:.4f} "
             f"null_dim={self.null_dim} active_dim={self.active_dim}"
         )
+
+    @property
+    def proven_contracting(self) -> bool:
+        """#768: certified contracting by EITHER provable gate — a strictly wider
+        proven region than the conservative small-gain `guaranteed`/`alpha`."""
+        return self.gate_numerical_range or self.gate_lyapunov
 
 
 @torch.no_grad()
@@ -209,9 +215,11 @@ def collapse_certificate(A: Tensor, eig_eps: float = 1e-2,
     where A_s is the symmetric part. This provides a conservative bound
     that accounts for cross-terms in the non-normal case.
 
-    Model collapse grounding (arXiv:2406.07284): Synthetic data induces error
-    plateau at T_synth > k^β; contraction margin prevents this by maintaining
-    spectral distance from collapse boundary (α < -margin).
+    Model-collapse grounding (Dohmatob et al., "A Tale of Tails", arXiv:2402.07043,
+    ICML 2024): synthetic data changes the scaling law and truncates gains; a
+    contraction margin keeps spectral distance from the collapse boundary
+    (α < -margin). The matrix-measure bound is classical contraction analysis
+    (Lohmiller & Slotine 1998, Automatica 34(6):683-696).
     """
     Abar = A.mean(0) if A.dim() == 3 else A
     A_s = 0.5 * (Abar + Abar.T)
@@ -225,6 +233,9 @@ def collapse_certificate(A: Tensor, eig_eps: float = 1e-2,
     spectral_abscissa = float(torch.linalg.eigvals(Abar).real.max().item())
     full_contracting = spectral_abscissa < -margin
 
+    # #768 Tier-A provable gates (widen the proven region vs the small-gain `alpha`).
+    g = stability_gates(Abar, margin=margin)
+
     null_mask = evals.abs() < eig_eps
     active = evals[~null_mask]
     null_dim = int(null_mask.sum().item())
@@ -233,7 +244,11 @@ def collapse_certificate(A: Tensor, eig_eps: float = 1e-2,
         return CollapseCertificate(True, float("-inf"), float("inf"),
                                    null_dim, 0,
                                    spectral_abscissa=spectral_abscissa,
-                                   full_contracting=full_contracting)
+                                   full_contracting=full_contracting,
+                                   numerical_range_abscissa=g.numerical_range_abscissa,
+                                   gate_numerical_range=g.gate_numerical_range,
+                                   gate_lyapunov=g.gate_lyapunov,
+                                   lyapunov_transient_bound=g.lyapunov_transient_bound)
 
     # Small-gain bound for non-normal case
     alpha_sym = float(active.max().item())
@@ -249,6 +264,159 @@ def collapse_certificate(A: Tensor, eig_eps: float = 1e-2,
         active_dim=int(active.numel()),
         spectral_abscissa=spectral_abscissa,
         full_contracting=full_contracting,
+        numerical_range_abscissa=g.numerical_range_abscissa,
+        gate_numerical_range=g.gate_numerical_range,
+        gate_lyapunov=g.gate_lyapunov,
+        lyapunov_transient_bound=g.lyapunov_transient_bound,
+    )
+
+
+@dataclass
+class StabilityGates:
+    """#768 Tier-A provable region-wideners for (possibly non-normal) A."""
+    numerical_range_abscissa: float   # ω(A)=λ_max(A_s) — rightmost point of W(A)
+    spectral_abscissa: float          # max Re λ(A)
+    gate_numerical_range: bool        # ω(A) < −margin  → MONOTONE Euclidean contraction
+    gate_lyapunov: bool               # ∃P≻0 ⟺ max Re λ(A) < −margin (accepts non-normal)
+    lyapunov_transient_bound: float   # √cond(P): bound on sup_t‖e^{tA}‖ (nan if not Hurwitz)
+    crouzeix_transient_bound: float   # 1+√2 when W(A) ⊂ LHP (ω ≤ 0), else nan
+    # #768 gate #2 — ε-pseudospectral abscissa + Kreiss constant (transient-growth bounds).
+    pseudospectral_abscissa: float    # provable upper bound: α_ε(A) ≤ ω(A)+ε (field-of-values)
+    gate_pseudospectral: bool         # α_ε(A) < −margin → no ε-transient escapes the LHP
+    kreiss_bound: float               # K(A) lower bound (continuous Kreiss const) ≤ sup_t‖e^{tA}‖
+    pseudospectral_eps: float         # the ε used for the pseudospectral abscissa/gate
+    margin: float
+
+    @property
+    def proven_contracting(self) -> bool:
+        return self.gate_numerical_range or self.gate_lyapunov
+
+    def summary(self) -> str:
+        nr = "PASS" if self.gate_numerical_range else "fail"
+        ly = "PASS" if self.gate_lyapunov else "fail"
+        return (f"gates[#768]: numerical-range(ω={self.numerical_range_abscissa:+.4f})={nr} "
+                f"lyapunov(maxReλ={self.spectral_abscissa:+.4f})={ly} "
+                f"transient≤{self.lyapunov_transient_bound:.3g} "
+                f"α_ε≤{self.pseudospectral_abscissa:+.4f} K(A)≥{self.kreiss_bound:.3g} → "
+                f"{'PROVEN contracting' if self.proven_contracting else 'not certified'}")
+
+
+@torch.no_grad()
+def stability_gates(A: Tensor, margin: float = 0.0, pseudo_eps: float = 1e-2) -> StabilityGates:
+    """#768 Tier-A provable region-wideners for a (possibly non-normal) Jacobian A.
+
+    Two SUFFICIENT contraction certificates, each strictly wider than the conservative
+    small-gain bound (alpha_sym + ‖A−A_s‖₂) used by collapse_certificate():
+
+    1. Numerical-range gate (monotone, Euclidean):
+         ω(A) = λ_max(A_s) < −margin  ⟹  ‖e^{tA}‖₂ ≤ e^{ω t}
+       a strict, no-transient contraction (matrix measure μ₂; Lohmiller–Slotine 1998,
+       Automatica 34(6)). ω(A) is the rightmost point of the numerical range W(A); since
+       spec(A) ⊂ W(A), this gate IMPLIES the Lyapunov gate — it is the stricter of the two.
+
+    2. Lyapunov gate (asymptotic, optimal metric):
+         ∃P≻0 : (A+margin·I)ᵀP + P(A+margin·I) ≺ 0   ⟺   max Re λ(A) < −margin
+       (classical Lyapunov theorem; equivalent to inf_T μ₂(T A T⁻¹) < −margin). Certified
+       by solving the Lyapunov equation and checking P≻0. Accepts strongly non-normal A
+       with transient growth (e.g. [[−1,3],[−3,0]]) that small-gain over-rejects.
+       √cond(P) upper-bounds the Euclidean transient amplification sup_t ‖e^{tA}‖.
+
+    Two transient-growth quantities round out the certificate (#768 gate #2):
+      • pseudospectral abscissa — PROVABLE upper bound α_ε(A) ≤ ω(A)+ε via the field-of-
+        values resolvent inequality ‖(zI−A)⁻¹‖₂ ≤ 1/dist(z, W(A)). gate_pseudospectral
+        certifies α_ε(A) < −margin: no ε-sized perturbation pushes a mode into the RHP, a
+        transient-aware strengthening of the monotone gate (reduces to ω(A) < −ε−margin).
+      • Kreiss constant — K(A)=sup_{Re z>0} Re(z)·‖(zI−A)⁻¹‖₂, LOWER-bounded by sampling the
+        RHP. Kreiss matrix theorem (continuous): K(A) ≤ sup_t‖e^{tA}‖ ≤ e·n·K(A), so it is a
+        rigorous lower bound on the transient peak (complements √cond(P) / Crouzeix uppers).
+
+    HONEST SCOPE: sufficient, not necessary; certify the FULL Jacobian's contraction
+    (not collapse-onto-manifold). Crouzeix–Palencia (2017) gives the PROVEN transient
+    bound ‖e^{tA}‖ ≤ (1+√2) when W(A) ⊂ LHP (ω ≤ 0); constant 2 is Crouzeix's conjecture.
+    """
+    import numpy as np
+    Abar = A.mean(0) if A.dim() == 3 else A
+    M = Abar.detach().cpu().numpy().astype(float)
+    n = M.shape[0]
+    A_s = 0.5 * (M + M.T)
+    omega = float(np.linalg.eigvalsh(A_s).max())
+    spectral_abscissa = float(np.linalg.eigvals(M).real.max())
+
+    gate_nr = omega < -margin
+
+    gate_lyap = False
+    transient = float("nan")
+    try:
+        import warnings
+        from scipy.linalg import solve_continuous_lyapunov
+        eye = np.eye(n)
+        # Lyapunov theorem: A+margin·I Hurwitz ⟺ the solution P of (A+mI)ᵀP+P(A+mI)=−I
+        # is ≻0  ⟺  max Re λ(A) < −margin. A near-singular Lyapunov operator (an
+        # eigenvalue pair of A+mI summing to ≈0, i.e. A on the stability boundary) makes
+        # scipy perturb the coefficients and warn; we reject BOTH that warning AND an
+        # ill-conditioned P (relative test below), so the conservative "never certify on
+        # the boundary" behavior does not depend on scipy's warning internals.
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            Pm = solve_continuous_lyapunov((M + margin * eye).T, -eye)
+            pem = np.linalg.eigvalsh(0.5 * (Pm + Pm.T))
+            if float(pem.min()) > 1e-12 * max(float(pem.max()), 1.0):
+                gate_lyap = True
+                # Transient bound for the ACTUAL dynamics e^{tA}: a margin-0 Lyapunov
+                # solve (valid since gate-pass ⟹ A itself is Hurwitz). √cond(P₀) ≥
+                # sup_t‖e^{tA}‖ exactly; the margin only sets the certified decay rate
+                # (so this field is the true e^{tA} transient, not the m-inflated one).
+                P0 = solve_continuous_lyapunov(M.T, -eye)
+                pe0 = np.linalg.eigvalsh(0.5 * (P0 + P0.T))
+                transient = float(np.sqrt(pe0.max() / pe0.min()))
+    except Exception:
+        pass
+
+    crouzeix = (1.0 + 2.0 ** 0.5) if omega <= 0.0 else float("nan")
+
+    # #768 gate #2 — ε-pseudospectral abscissa: PROVABLE upper bound α_ε(A) ≤ ω(A)+ε
+    # (every z in the ε-pseudospectrum has dist(z, W(A)) ≤ ε, so Re(z) ≤ ω(A)+ε). The gate
+    # certifies α_ε(A) < −margin, i.e. no ε-sized perturbation reaches the RHP.
+    pseudospectral_abscissa = omega + pseudo_eps
+    gate_pseudospectral = pseudospectral_abscissa < -margin
+
+    # Kreiss constant LOWER bound: K(A)=sup_{Re z>0} Re(z)·‖(zI−A)⁻¹‖₂ ≥ any sampled value.
+    # ‖(zI−A)⁻¹‖₂ = 1/σ_min(zI−A). The resolvent SVD is O(n³); cap the sample budget for
+    # large Jacobians (loop_lm's hidden-dim A) — a single RHP probe still gives a valid
+    # lower bound. K(A) ≥ 1 always; >1 signals genuine non-normal transient growth.
+    kreiss = 1.0
+    try:
+        eigs = np.linalg.eigvals(M)
+        if n <= 64:
+            y_span = float(np.max(np.abs(eigs.imag))) + 1.0
+            scale = abs(spectral_abscissa) + 1.0
+            xs = np.array([1e-3, 1e-2, 0.05, 0.1, 0.25, 0.5, 1.0]) * scale
+            ys = np.linspace(-1.5 * y_span, 1.5 * y_span, 41)
+        else:
+            # one probe just inside the RHP, level with the rightmost eigenvalue
+            xs = np.array([abs(spectral_abscissa) + 1e-2])
+            ys = np.array([float(eigs.imag[int(np.argmax(eigs.real))])])
+        eye_c = np.eye(n)
+        for x in xs:
+            for y in ys:
+                smin = float(np.linalg.svd((x + 1j * y) * eye_c - M, compute_uv=False).min())
+                if smin > 1e-15:
+                    kreiss = max(kreiss, float(x) / smin)
+    except Exception:
+        kreiss = float("nan")
+
+    return StabilityGates(
+        numerical_range_abscissa=omega,
+        spectral_abscissa=spectral_abscissa,
+        gate_numerical_range=gate_nr,
+        gate_lyapunov=gate_lyap,
+        lyapunov_transient_bound=transient,
+        crouzeix_transient_bound=crouzeix,
+        pseudospectral_abscissa=pseudospectral_abscissa,
+        gate_pseudospectral=gate_pseudospectral,
+        kreiss_bound=kreiss,
+        pseudospectral_eps=pseudo_eps,
+        margin=margin,
     )
 
 

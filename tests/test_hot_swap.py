@@ -231,3 +231,95 @@ def test_oscillation_guard_blocks_repeated_swap():
     )
     # Guard should block this swap (already recorded 2 times)
     assert all(not e.success for e in events2) or len(events2) == 0
+
+
+# ── #764 G11 — provider-diversity cap prevents monoculture ────────────────────
+
+def _fleet_3(a_health=0.1):
+    """A 3-node fleet: anthropic (degraded) + two healthy openai nodes."""
+    g = CEGraph()
+    a = _resource("anthropic", health=a_health)
+    for n in (a, _resource("openai", health=1.0), _resource("openai", health=1.0)):
+        g.add_node(n)
+    return g, a
+
+
+def test_diversity_cap_diverts_from_monoculture():
+    reg = HotSwapRegistry(policy=SwapPolicy(health_threshold=0.5, provider_diversity_cap=0.6))
+    g, a = _fleet_3()
+    openai_cand = _resource("openai", health=0.95)  # higher health → greedy pick
+    gemini_cand = _resource("gemini", health=0.90)
+    reg.register_candidate(a.node_id, openai_cand)
+    reg.register_candidate(a.node_id, gemini_cand)
+    events = reg.check_and_swap(
+        g,
+        resource_health={"anthropic": 0.1, "openai": 1.0, "gemini": 0.90},
+        resource_latency={},
+        contract_max_cost=10.0,
+        current_tick=1,
+    )
+    evt = [e for e in events if e.old_node_id == a.node_id]
+    assert len(evt) == 1 and evt[0].success
+    # openai would push the fleet to 3/3 (> 0.6 cap); the cap diverts to gemini.
+    assert evt[0].new_node_id == gemini_cand.node_id
+
+
+def test_diversity_cap_off_allows_best_health():
+    reg = HotSwapRegistry(policy=SwapPolicy(health_threshold=0.5, provider_diversity_cap=1.0))
+    g, a = _fleet_3()
+    openai_cand = _resource("openai", health=0.95)
+    gemini_cand = _resource("gemini", health=0.90)
+    reg.register_candidate(a.node_id, openai_cand)
+    reg.register_candidate(a.node_id, gemini_cand)
+    events = reg.check_and_swap(
+        g,
+        resource_health={"anthropic": 0.1, "openai": 1.0, "gemini": 0.90},
+        resource_latency={},
+        contract_max_cost=10.0,
+        current_tick=1,
+    )
+    evt = [e for e in events if e.old_node_id == a.node_id][0]
+    # Cap disabled → greedy best-health wins (the monoculture path).
+    assert evt.new_node_id == openai_cand.node_id
+
+
+def test_cap_never_blocks_when_no_alternative():
+    """Single-node fleet, one candidate: the swap must still proceed (fallback invariant)."""
+    reg = HotSwapRegistry(policy=SwapPolicy(health_threshold=0.5, provider_diversity_cap=0.6))
+    old = _resource("anthropic", health=0.1)
+    g = _graph_with(old)
+    only = _resource("openai", health=0.95)
+    reg.register_candidate(old.node_id, only)
+    events = reg.check_and_swap(
+        g,
+        resource_health={"anthropic": 0.1, "openai": 0.95},
+        resource_latency={},
+        contract_max_cost=10.0,
+        current_tick=1,
+    )
+    assert len(events) == 1 and events[0].success
+    assert events[0].new_node_id == only.node_id
+
+
+def test_select_candidate_unit_respects_cap():
+    reg = HotSwapRegistry(policy=SwapPolicy(provider_diversity_cap=0.6))
+    node_id = "n-1"
+    openai_cand = _resource("openai", health=0.95)
+    gemini_cand = _resource("gemini", health=0.90)
+    reg.register_candidate(node_id, openai_cand)
+    reg.register_candidate(node_id, gemini_cand)
+    chosen = reg._select_candidate(
+        node_id,
+        state_health={"openai": 0.95, "gemini": 0.90},
+        current_tick=1,
+        provider_dist={"anthropic": 1, "openai": 2},
+        replacing_provider="anthropic",
+    )
+    assert chosen.provider_id == "gemini"
+
+
+def test_provider_distribution_counts_fleet():
+    reg = HotSwapRegistry()
+    g, _ = _fleet_3()
+    dist = reg._provider_distribution(g)
+    assert dist == {"anthropic": 1, "openai": 2}

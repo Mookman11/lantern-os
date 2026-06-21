@@ -51,3 +51,58 @@ def test_verify_with_monitor_reads_dict():
     r = verify_with_monitor(_rec(0.7), {"nis": 999.0, "dof": 6})
     assert r.verified is True
     assert r.confidence < 0.7  # a spook contradicts the claim
+
+
+# ── #764 G9 — deterministic-reverification ratchet is closed ───────────────────
+
+def test_replaying_same_passing_test_is_idempotent():
+    """Re-folding the identical passing test must NOT raise confidence again."""
+    r = _rec(0.3)
+    once = verify_with_test(r, passed=True).confidence
+    twice = verify_with_test(r, passed=True).confidence
+    assert twice == once  # second application is a no-op
+    assert "duplicate evidence" in r.verification_notes
+
+
+def test_replay_cannot_ratchet_confidence_to_one():
+    """The classic attack: hammer the same test to drive confidence → 1.0."""
+    r = _rec(0.3)
+    first = verify_with_test(r, passed=True).confidence
+    for _ in range(50):
+        verify_with_test(r, passed=True)
+    assert r.confidence == first
+    assert r.confidence < 0.7  # nowhere near a laundered 1.0
+
+
+def test_distinct_evidence_keys_each_count():
+    """Genuinely independent corroborations still accumulate."""
+    r = _rec(0.3)
+    verify_with_test(r, passed=True, evidence_key="run-A")
+    after_a = r.confidence
+    verify_with_test(r, passed=True, evidence_key="run-B")
+    assert r.confidence > after_a
+    assert set(r.applied_evidence) == {"run-A", "run-B"}
+
+
+def test_replaying_same_nis_reading_is_idempotent():
+    r = _rec(0.5)
+    once = verify_with_surprise(r, nis=4.0, dof=4).confidence
+    twice = verify_with_surprise(r, nis=4.0, dof=4).confidence
+    assert twice == once
+    assert "duplicate evidence" in r.verification_notes
+
+
+def test_applied_evidence_recorded_and_serialized():
+    r = _rec(0.4)
+    verify_with_test(r, passed=True)
+    assert len(r.applied_evidence) == 1
+    assert r.applied_evidence[0] in r.to_jsonl()
+
+
+def test_distinct_records_do_not_share_dedupe_keys():
+    """Default key is salted by record id — same test on two records both apply."""
+    r1, r2 = _rec(0.3), _rec(0.3)
+    r2.id = "cr-2"
+    c1 = verify_with_test(r1, passed=True).confidence
+    c2 = verify_with_test(r2, passed=True).confidence
+    assert c1 > 0.3 and c2 > 0.3  # neither was suppressed by the other

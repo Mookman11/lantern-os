@@ -12,6 +12,7 @@
 "use strict";
 
 const { scoreVideoV10 } = require("./score-v10");
+const { dropoffPenalty } = require("../calibration/dropoff-model");
 
 const STRATEGIES = {
   A: { id: "variantA", strategy: "maximum_retention", label: "Maximum Retention" },
@@ -60,15 +61,24 @@ function selectSegments(highlights, strategy, targetSec) {
       return takeUntil(byExcite, targetSec);
     }
     case "maximum_rewatch": {
-      // Build toward the single strongest moment placed LAST (payoff).
+      // B1 hook-first + payoff-last: open with a strong hook (intro retention is
+      // the #1 lever), build through the weakest, end on the strongest moment.
       const chosen = takeUntil(byScore, targetSec);
-      const sorted = [...chosen].sort((a, b) => (a.score || 0) - (b.score || 0)); // ascending -> peak last
-      return sorted;
+      if (chosen.length <= 2) return [...chosen].sort((a, b) => (b.score || 0) - (a.score || 0));
+      const asc = [...chosen].sort((a, b) => (a.score || 0) - (b.score || 0));
+      const peak = asc[asc.length - 1];          // strongest -> last (payoff)
+      const opener = asc[asc.length - 2];         // 2nd strongest -> strong hook first
+      const middle = asc.slice(0, asc.length - 2); // remainder, ascending build
+      return [opener, ...middle, peak];
     }
     case "story_arc": {
-      // Chronological narrative: a spread across the clip, in time order.
+      // B1 cold open: strongest hook first, THEN the rest in chronological order
+      // (a weak chronological opener tanks intro retention).
       const chosen = takeUntil(byScore, targetSec);
-      return [...chosen].sort((a, b) => (a.start || 0) - (b.start || 0));
+      if (chosen.length <= 1) return chosen;
+      const hook = [...chosen].sort((a, b) => (b.score || 0) - (a.score || 0))[0];
+      const rest = chosen.filter((h) => h !== hook).sort((a, b) => (a.start || 0) - (b.start || 0));
+      return [hook, ...rest];
     }
     case "balanced":
     default: {
@@ -131,12 +141,19 @@ function fallbackHighlights(analysis) {
 
 function generateVariantsV10(analysis = {}, opts = {}) {
   let highlights = Array.isArray(analysis.highlights) ? analysis.highlights : [];
-  // HARD GUARANTEE: never build empty variants. If there are no highlights,
-  // degrade gracefully to fallback windows so every variant carries segments.
+  // HARD GUARANTEE: never build empty (or single-segment) variants. We aim for
+  // at least 2 segments so a Short always has structure; if real highlights are
+  // short, top up with explicitly-tagged fallback windows (never fabricating
+  // quality — they score 0.5 and carry the "fallback" tag). Best-effort: a clip
+  // too short to yield a 2nd window stays as-is.
   let usedFallback = false;
-  if (highlights.length === 0) {
-    highlights = fallbackHighlights(analysis);
-    usedFallback = highlights.length > 0;
+  const realCount = highlights.length;
+  if (highlights.length < 2) {
+    for (const f of fallbackHighlights(analysis)) {
+      if (highlights.length >= 2) break;
+      if (!highlights.some((h) => Math.abs((h.start || 0) - f.start) < 1)) highlights.push(f);
+    }
+    usedFallback = highlights.length > realCount;
   }
   const targetSec = Math.min(MAX_TARGET_SEC, opts.targetSec || DEFAULT_TARGET_SEC);
 
@@ -151,12 +168,26 @@ function generateVariantsV10(analysis = {}, opts = {}) {
     const derived = buildDerivedTimeline(segments);
     const scored = scoreVideoV10(derived, opts);
 
+    // B1: structural strength of the OPENING segment — a proxy for hook quality
+    // and thus intro retention (the platform's #1 lever). NOT a calibrated
+    // retention %; it is the real score of whatever segment opens this variant.
+    const introStrength = segments.length ? round3(segments[0].score || 0) : 0;
+
+    // B2: mean drop-off penalty over this variant's segments. 0 (no-op) unless a
+    // CALIBRATED dropoffProfile is supplied (>=100 cliff-labeled outcomes) — so
+    // editing decisions are unchanged until the operator's own data supports them.
+    const dropPenalty = segments.length
+      ? round3(segments.reduce((s, seg) => s + dropoffPenalty(seg, opts.dropoffProfile), 0) / segments.length)
+      : 0;
+
     return {
       id: def.id,
       strategy: def.strategy,
       label: def.label,
       segments,                       // source cut-list (for rendering)
       durationSec: derived.duration,
+      introStrength,                  // 0-1 structural hook-strength proxy
+      dropoffPenalty: dropPenalty,    // 0 unless a calibrated profile is supplied
       score: scored.viral,
       gaming: scored.gaming || null,
       retention: scored.retention,
@@ -167,10 +198,14 @@ function generateVariantsV10(analysis = {}, opts = {}) {
   });
 
   // Rank by structural viral score (desc); ties broken by editor grade composite.
-  variants.sort((a, b) =>
-    (b.score.viralScore - a.score.viralScore) ||
-    (b.editorGrade.composite - a.editorGrade.composite)
-  );
+  // B2: when a CALIBRATED drop-off profile is supplied, discount each variant's
+  // rank key by its drop-off penalty (favoring edits that hold a flat curve).
+  // Without a calibrated profile this is identical to the prior pure-score rank.
+  const calibratedDropoff = !!(opts.dropoffProfile && opts.dropoffProfile.status === "ok");
+  const rankKey = (v) => calibratedDropoff
+    ? v.score.viralScore * (1 - 0.3 * v.dropoffPenalty)
+    : v.score.viralScore;
+  variants.sort((a, b) => (rankKey(b) - rankKey(a)) || (b.editorGrade.composite - a.editorGrade.composite));
   variants.forEach((v, i) => { v.rank = i + 1; });
 
   return {

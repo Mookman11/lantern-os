@@ -1,4 +1,5 @@
 const { spawn } = require("child_process");
+const { isOperatorRequest } = require("../lib/request-auth");
 
 // Operator notes, conversation log, action triggers
 module.exports = async function operatorRoutes(req, res, url, deps) {
@@ -24,10 +25,89 @@ module.exports = async function operatorRoutes(req, res, url, deps) {
   }
   if (url.pathname === "/api/conversations" && req.method === "GET") {
     const limit = Math.max(1, Math.min(200, Number(url.searchParams.get("limit") || 50)));
+    const sessionId = String(url.searchParams.get("sessionId") || "").trim().slice(0, 64) || null;
+    // #770: the un-scoped global (cross-session) read is operator-only. Never return the
+    // whole log to anonymous/public callers — require a sessionId or operator auth.
+    if (!sessionId && !isOperatorRequest(req)) {
+      sendJson(res, {
+        path: path.relative(repoRoot, conversationLogPath),
+        sessionId: null,
+        conversations: [],
+        note: "cross-session read requires a sessionId or operator auth",
+      });
+      return true;
+    }
     sendJson(res, {
       path: path.relative(repoRoot, conversationLogPath),
-      conversations: readConversationLog(limit),
+      sessionId,
+      conversations: readConversationLog(limit, sessionId),
     });
+    return true;
+  }
+  // List distinct chat sessions for the session switcher (#773). Title = the
+  // session's opening user message; sorted most-recent first. `operator` tells
+  // the UI whether to surface the gated "clear all history" control.
+  if (url.pathname === "/api/conversations/sessions" && req.method === "GET") {
+    const rows = readConversationLog(2000); // newest window, all sessions
+    const byId = new Map();
+    for (const r of rows) {
+      if (!r || !r.sessionId) continue; // skip legacy untagged turns
+      let s = byId.get(r.sessionId);
+      if (!s) { s = { sessionId: r.sessionId, title: "", lastActivity: "", turnCount: 0 }; byId.set(r.sessionId, s); }
+      s.turnCount += 1;
+      if (r.recordedAt && r.recordedAt > s.lastActivity) s.lastActivity = r.recordedAt;
+      // rows are chronological within the window, so the first operator turn seen
+      // for a session is its opening message — the natural title.
+      if (!s.title && r.role === "operator" && r.text) s.title = String(r.text).replace(/\s+/g, " ").trim().slice(0, 80);
+    }
+    const sessions = [...byId.values()]
+      .map((s) => ({ ...s, title: s.title || "(untitled session)" }))
+      .sort((a, b) => (b.lastActivity || "").localeCompare(a.lastActivity || ""))
+      .slice(0, 50);
+    sendJson(res, { sessions, operator: isOperatorRequest(req) });
+    return true;
+  }
+  if (url.pathname === "/api/conversations" && req.method === "DELETE") {
+    // Clear conversation history. Without ?sessionId, clears everything (admin reset);
+    // with ?sessionId=X, removes only that session's turns. Always archives first.
+    try {
+      const fs = require("fs");
+      const sessionId = String(url.searchParams.get("sessionId") || "").trim().slice(0, 64) || null;
+      // #770: clearing ALL sessions is an operator-only admin reset; per-session clears
+      // (?sessionId=) are self-service and allowed.
+      if (!sessionId && !isOperatorRequest(req)) {
+        sendJson(res, { error: "clear-all requires operator auth; pass ?sessionId to clear one session" }, 403);
+        return true;
+      }
+      let lines = [];
+      try {
+        lines = fs.readFileSync(conversationLogPath, "utf8").split(/\r?\n/).filter(Boolean);
+      } catch { /* missing file == already empty */ }
+
+      if (lines.length) {
+        const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+        const bak = path.join(path.dirname(conversationLogPath), `garage-conversations.cleared-${stamp}.jsonl.bak`);
+        try { fs.copyFileSync(conversationLogPath, bak); } catch { /* best-effort archive */ }
+      }
+
+      let removed = 0;
+      if (sessionId) {
+        const kept = [];
+        for (const line of lines) {
+          let obj = null;
+          try { obj = JSON.parse(line); } catch { kept.push(line); continue; }
+          if (obj && obj.sessionId === sessionId) removed += 1;
+          else kept.push(line);
+        }
+        fs.writeFileSync(conversationLogPath, kept.length ? kept.join("\n") + "\n" : "");
+      } else {
+        removed = lines.length;
+        fs.writeFileSync(conversationLogPath, "");
+      }
+      sendJson(res, { ok: true, removed, scope: sessionId ? "session" : "all" });
+    } catch (error) {
+      sendJson(res, { error: error.message }, 500);
+    }
     return true;
   }
   if (url.pathname === "/api/conversations" && req.method === "POST") {
@@ -112,7 +192,15 @@ module.exports = async function operatorRoutes(req, res, url, deps) {
         try {
           currentBranch = execSync("git branch --show-current", { cwd: repoRoot, encoding: "utf8" }).trim();
         } catch {}
-        const pull = execSync(`git pull origin ${currentBranch}`, { cwd: repoRoot, encoding: "utf8", timeout: 30000 });
+        // Stash local data-file changes so pull doesn't fail on dirty working tree
+        try { execSync("git stash --include-untracked -m autoupdate", { cwd: repoRoot, encoding: "utf8" }); } catch {}
+        let pull;
+        try {
+          pull = execSync(`git pull origin ${currentBranch}`, { cwd: repoRoot, encoding: "utf8", timeout: 30000 });
+        } finally {
+          // Always restore stashed data files after pull
+          try { execSync("git stash pop", { cwd: repoRoot, encoding: "utf8" }); } catch {}
+        }
         steps.push({ step: "git_pull", ok: true, output: pull.trim(), branch: currentBranch });
       } catch (e) {
         steps.push({ step: "git_pull", ok: false, output: e.stdout?.trim() || e.message });
@@ -176,9 +264,13 @@ module.exports = async function operatorRoutes(req, res, url, deps) {
               // Watchdog failed, final fallback
             }
             // Final fallback: detached spawn (old behavior)
+            // Use server-dev.js when running on dev port 4178, otherwise server.js
+            const serverScript = (process.env.LANTERN_GARAGE_PORT === "4178")
+              ? "apps/lantern-garage/server-dev.js"
+              : "apps/lantern-garage/server.js";
             const restartScript = process.platform === "win32"
-              ? `Start-Sleep -Seconds 2; Start-Process node -ArgumentList "apps/lantern-garage/server.js" -WindowStyle Hidden`
-              : `sleep 2 && node apps/lantern-garage/server.js`;
+              ? `Start-Sleep -Seconds 2; Start-Process node -ArgumentList "${serverScript}" -WindowStyle Hidden`
+              : `sleep 2 && node ${serverScript}`;
             const shell = process.platform === "win32" ? "powershell.exe" : "sh";
             const args = process.platform === "win32" ? ["-Command", restartScript] : ["-c", restartScript];
             spawn(shell, args, { detached: true, stdio: "ignore", cwd: repoRoot });

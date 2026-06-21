@@ -43,8 +43,43 @@ function prevYesCents(m) {
   return Number.isFinite(f) ? Math.round(f * 100) : null;
 }
 
+// Structural guard: only single-outcome binary markets are tradeable entries.
+// Two market structures bled the live account (Jun 2026) and no pricing model
+// here can value them, so they must never reach a tradeable entry card:
+//   1. Multivariate / parlay series (KXMV*) — all legs must hit; e.g.
+//      KXMVESPORTSMULTIGAMEEXTENDED (8-leg), KXMVECROSSCATEGORY.
+//   2. Price-BAND range markets — resolve YES only inside a [floor, cap] band
+//      (e.g. "price range … $0.085 to 0.0899999"); identified by a cap_strike
+//      alongside floor_strike, or a "between" strike_type.
+// Returns { ok, reason }. Keep this conservative: when in doubt, exclude.
+function isSupportedEntryMarket(m) {
+  const ticker = String(m.ticker || "");
+  if (/^KXMV/i.test(ticker)) {
+    return { ok: false, reason: "multivariate/parlay series (KXMV*)" };
+  }
+  const st = String(m.strike_type || "").toLowerCase();
+  if (st === "between") {
+    return { ok: false, reason: `range-band market (strike_type=${st})` };
+  }
+  const cap = num(m.cap_strike);
+  const floor = num(m.floor_strike);
+  if (cap != null && floor != null && cap > floor) {
+    return { ok: false, reason: "range-band market (floor+cap strike)" };
+  }
+  // Belt-and-suspenders: parlay titles are comma-joined multi-leg strings.
+  const title = String(m.title || "");
+  if ((title.match(/,/g) || []).length >= 2 && /\b(yes|no)\b/i.test(title)) {
+    return { ok: false, reason: "multi-leg parlay title" };
+  }
+  return { ok: true };
+}
+
 // Check if entry passes profitability filters
 function isEntryTradeable(m, conviction, spread) {
+  // 0. Structure gate: parlays and range bands are never tradeable here.
+  const supported = isSupportedEntryMarket(m);
+  if (!supported.ok) return supported;
+
   // 1. Conviction threshold: must be ≥65%
   if (conviction < MIN_CONVICTION) return { ok: false, reason: `conviction ${conviction}% < ${MIN_CONVICTION}%` };
 
@@ -137,16 +172,16 @@ async function buildExits(mkByTicker, nowMs) {
     const cost = costBasisCents(p, qty);
 
     // Use adaptive exit logic (convergence-driven, not mechanical)
-    const eval = evaluateExit(
+    const exitEval = evaluateExit(
       { side: heldSide, limitCents: cost || 50 },
       m,
       p.conviction || 50  // entry conviction if tracked
     );
 
-    if (!eval.shouldExit) continue;  // position holding — no exit signal
+    if (!exitEval.shouldExit) continue;  // position holding — no exit signal
 
-    const sellBid = eval.exitPrice || (m ? (heldSide === "yes" ? m.yes_bid : m.no_bid) : null);
-    const pnlPct = eval.pnlPct;
+    const sellBid = exitEval.exitPrice || (m ? (heldSide === "yes" ? m.yes_bid : m.no_bid) : null);
+    const pnlPct = exitEval.pnlPct;
 
     const heldLabel = heldSide === "yes"
       ? (m && m.yes_sub_title) || "YES" : (m && m.no_sub_title) || "NO";
@@ -158,7 +193,7 @@ async function buildExits(mkByTicker, nowMs) {
       "STOP-LOSS": 100,
       "CONFIDENCE-COLLAPSE": 85,
     };
-    const urgency = urgencyMap[eval.tag] || 80;
+    const urgency = urgencyMap[exitEval.tag] || 80;
 
     exits.push({
       kind: "exit", action: "sell",
@@ -168,8 +203,8 @@ async function buildExits(mkByTicker, nowMs) {
       yesPct: m && m.yes_ask != null && m.no_ask != null && m.yes_ask + m.no_ask > 0
         ? Math.round((m.yes_ask / (m.yes_ask + m.no_ask)) * 100) : null,
       favSide: heldSide, favLabel: heldLabel, favAsk: sellBid, qty,
-      conviction: urgency, exitTag: eval.tag, pnlPct: pnlPct != null ? +pnlPct.toFixed(1) : null,
-      reason: eval.reason,
+      conviction: urgency, exitTag: exitEval.tag, pnlPct: pnlPct != null ? +pnlPct.toFixed(1) : null,
+      reason: exitEval.reason,
       minsToClose: m && m.close_time ? Math.round((new Date(m.close_time).getTime() - nowMs) / 60000) : null,
       close: (m && m.close_time) || "",
     });
@@ -226,6 +261,7 @@ async function getSuggestions({ limit = 60, series_ticker = "KXMLBGAME", collect
 
     const denom = (m.yes_ask || 0) + (m.no_ask || 0);
     const yesPct = denom > 0 ? Math.round((m.yes_ask / denom) * 100) : (m.yes_ask || 0);
+    const favLabel = f.side === "yes" ? (m.yes_sub_title || "YES") : (m.no_sub_title || "NO");
     entries.push({
       kind: "entry", action: "buy",
       ticker: m.ticker,
@@ -234,13 +270,28 @@ async function getSuggestions({ limit = 60, series_ticker = "KXMLBGAME", collect
       noLabel: m.no_sub_title || "NO",
       yesCents: m.yes_ask, noCents: m.no_ask, yesPct,
       favSide: f.side,                                   // 'yes' | 'no'
-      favLabel: f.side === "yes" ? (m.yes_sub_title || "YES") : (m.no_sub_title || "NO"),
+      favLabel,
       favAsk: f.sideAsk,
       conviction: f.conviction,
       reason: f.reason,
       minsToClose: Number.isFinite(f.minsToClose) ? Math.round(f.minsToClose) : null,
       close: m.close_time || "",
     });
+
+    // Reason → Act: emit one ConvergenceRecord per tradeable entry suggestion.
+    // This reasoner has a RESOLVABLE outcome — the trade settles win/lose — so the
+    // record gives the convergence loop something real to grade later (Verify).
+    // Mirrors routes/dream.js: guarded so a failed record never breaks a suggestion.
+    try {
+      const { emitConvergenceRecord } = require("./convergence-records");
+      await emitConvergenceRecord({
+        hypothesis: `buy ${f.side.toUpperCase()} (${favLabel}) @ ${f.sideAsk}¢ — ${m.title || m.ticker} [${m.ticker}]`,
+        evidence_ids: [m.ticker],
+        result: `entry ${f.side} ${favLabel} @ ${f.sideAsk}¢ · ${f.reason}`,
+        confidence: Math.max(0, Math.min(1, f.conviction / 100)), // conviction is 0..100
+        reasoner: "kalshi-suggest",
+      });
+    } catch { /* convergence record non-critical */ }
   }
 
   // entries: time-sensitive — soonest-closing first, then conviction
@@ -265,4 +316,4 @@ async function getSuggestions({ limit = 60, series_ticker = "KXMLBGAME", collect
   };
 }
 
-module.exports = { getSuggestions };
+module.exports = { getSuggestions, isSupportedEntryMarket };

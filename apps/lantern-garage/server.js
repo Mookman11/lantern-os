@@ -3,22 +3,53 @@ const fs = require("fs");
 const path = require("path");
 const { spawn } = require("child_process");
 
+// ── Dependency preflight ───────────────────────────────────────────────────
+// When `git pull` adds a dependency to package.json but `npm install` hasn't run
+// yet, startup otherwise dies with a raw "Cannot find module 'x'" stack trace
+// (e.g. busboy via routes/pdfs.js). Surface an actionable message instead.
+(function preflightDependencies() {
+  let pkg;
+  try {
+    pkg = JSON.parse(fs.readFileSync(path.join(__dirname, "package.json"), "utf8"));
+  } catch {
+    return; // no/unreadable manifest → nothing to check
+  }
+  const missing = [];
+  for (const dep of Object.keys(pkg.dependencies || {})) {
+    try {
+      require.resolve(dep);
+    } catch (e) {
+      // Only a genuinely absent package is MODULE_NOT_FOUND. Other resolve errors
+      // (e.g. ERR_PACKAGE_PATH_NOT_EXPORTED) mean the package IS installed.
+      if (e && e.code === "MODULE_NOT_FOUND") missing.push(dep);
+    }
+  }
+  if (missing.length) {
+    console.error(
+      `\n[startup] Missing ${missing.length} dependenc${missing.length === 1 ? "y" : "ies"}: ${missing.join(", ")}` +
+      `\n[startup] Run:  npm install --prefix apps/lantern-garage\n`
+    );
+    process.exit(1);
+  }
+})();
+
 // Load .env.local then .env from repo root (two levels up from apps/lantern-garage/)
+// .env.local ALWAYS overrides system env — .env only sets if not already present
 const candidateEnvFiles = [
-  path.resolve(__dirname, "..", "..", ".env.local"),
-  path.resolve(__dirname, "..", "..", ".env"),
+  { path: path.resolve(__dirname, "..", "..", ".env.local"), override: true },
+  { path: path.resolve(__dirname, "..", "..", ".env"),       override: false },
 ];
-for (const envPath of candidateEnvFiles) {
+for (const { path: envPath, override } of candidateEnvFiles) {
   if (!fs.existsSync(envPath)) continue;
   fs.readFileSync(envPath, "utf8").split("\n").forEach((line) => {
     const m = line.replace(/\r$/, "").match(/^([A-Z0-9_]+)\s*=\s*(.*)$/);
-    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^['"]/g, "").replace(/['"]$/g, "");
+    if (m && (override || !process.env[m[1]])) process.env[m[1]] = m[2].replace(/^['"]/g, "").replace(/['"]$/g, "");
   });
 }
 
 const { sendJson, sendFile, sendHtml, collectRequestBody } = require("./lib/http-utils");
 const { readJson, readJsonl, appendJsonlQueued } = require("./lib/file-queue");
-const { getStatus, getReadiness, getMiningLabStatus, getActionCapabilities, getOperatorFeedbackMemory, getAccessModel, getCloudMirrorStatus } = require("./lib/status");
+const { getStatus, getReadiness, getMiningLabStatus, getActionCapabilities, getOperatorFeedbackMemory, getAccessModel, getCloudMirrorStatus, setTunnelState } = require("./lib/status");
 const { readConversationLog, normalizeConversationEntry, appendConversationEntry, appendExternalRagItem, readOperatorQueue } = require("./lib/conversation-store");
 const { buildFlatRagHouse, writeFlatRagHouse } = require("./lib/rag-house");
 const { runPowerShell } = require("./lib/powershell");
@@ -80,7 +111,23 @@ const deps = {
   "__dirname": __dirname,
 };
 
+// Authoritative gate for the trading API. Page-level gating (routes/pages.js)
+// stops the HTML from loading, but the data endpoints must be guarded too so a
+// non-entitled account (e.g. Deep Dreamer/founder without trade access) cannot
+// reach /api/trading/* directly. Runs before routes/trading. Admins and the
+// local bypass pass through (see auth-middleware.requireEntitlement).
+const { requireEntitlement } = require("./lib/auth-middleware");
+function tradeApiGuard(req, res, url) {
+  if (!url.pathname.startsWith("/api/trading/")) return false; // not ours → continue
+  if (requireEntitlement(req, res, "trade")) return false;     // allowed → fall through
+  return true;                                                  // blocked → 403/302 already sent
+}
+
 const routes = [
+  tradeApiGuard,                        // gate /api/trading/* by "trade" entitlement
+  require("./routes/auth"),             // Patreon OAuth + session
+  require("./routes/pages"),            // Protected pages with server-side role checking (no flicker)
+  require("./routes/profiles"),         // User profiles + role configuration (CSF-backed)
   require("./routes/status"),
   require("./routes/system-overview"),
   require("./routes/ui"),
@@ -96,6 +143,7 @@ const routes = [
   require("./routes/keystone"),
   require("./routes/image"),
   require("./routes/web-images"),
+  require("./routes/youtube"),
   require("./routes/three-doors-image-pool"),
   require("./routes/three-doors-convergence"),
   require("./routes/convergence-dispatch"),
@@ -110,15 +158,50 @@ const routes = [
   require("./routes/agent-performance"),
   require("./routes/leaderboard"),
   require("./routes/agent-status"),
+  require("./routes/providers"),
+  require("./routes/library"),
   require("./routes/self-edit"),
   require("./routes/creator"),
   require("./routes/creator-entries"),
-  require("./routes/surfaces"),
+  require("./routes/creator-calibration"),
+  require("./routes/research"), // open-video learning flywheel status
+
+  require("./routes/pdfs"), // PDF document listing for Knowledge Center
   require("./routes/features"),
+  require("./routes/admin-flags"),     // Admin feature flags + per-page nav visibility
   require("./routes/personal-cube"),
   require("./routes/pr-review"),
   require("./routes/auto-merge"),
+  require("./routes/creators"),        // creator profiles + intake form
+  require("./routes/surfaces"),        // static file catch-all — MUST stay last (returns true for any path)
 ];
+
+// ── Session middleware (Patreon OAuth) ──
+const session = require("express-session");
+const sessionSecret = process.env.SESSION_SECRET || "lantern-local-dev-secret-change-in-prod";
+const sessionMiddleware = session({
+  secret: sessionSecret,
+  resave: false,
+  saveUninitialized: false,
+  // Behind Railway's TLS-terminating proxy, honor X-Forwarded-Proto so a
+  // `secure` session cookie is actually set (otherwise login never persists).
+  proxy: true,
+  cookie: {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+  },
+});
+
+// Wrap session middleware to work with Node's http module
+function withSession(req, res, handler) {
+  return new Promise((resolve) => {
+    sessionMiddleware(req, res, () => {
+      resolve(handler(req, res));
+    });
+  });
+}
 
 async function route(req, res) {
   const url = new URL(req.url, `http://${req.headers.host}`);
@@ -139,13 +222,21 @@ async function route(req, res) {
   }
 
   for (const handler of routes) {
-    const handled = await handler(req, res, url, deps);
-    if (handled) return;
+    try {
+      const handled = await handler(req, res, url, deps);
+      if (handled) return;
+    } catch (e) {
+      console.error(`Route handler error for ${url.pathname}:`, e.message);
+      if (!res.headersSent) {
+        sendJson(res, { error: e.message }, 500);
+      }
+      return;
+    }
   }
 }
 
 const server = http.createServer((req, res) => {
-  route(req, res).catch((error) => {
+  withSession(req, res, () => route(req, res)).catch((error) => {
     if (res.headersSent) {
       console.error("Route error after response sent:", error.message);
       return;
@@ -288,22 +379,50 @@ if (tradingDisabled) {
 let cloudflaredProcess = null;
 const enableCloudflare = process.env.LANTERN_CLOUDFLARE_TUNNEL !== "false";
 if (enableCloudflare) {
+  setTunnelState({ enabled: true, status: "starting", startedAt: new Date().toISOString() });
   // Use tunnel run without explicit name to let cloudflared use ~/.cloudflared/config.yml
   cloudflaredProcess = spawn("cloudflared", ["tunnel", "run"], {
     stdio: "inherit",
     cwd: repoRoot,
     env: { ...process.env },
   });
+  let _tunnelFailed = false;
   cloudflaredProcess.on("error", (err) => {
+    _tunnelFailed = true;
     console.error(`[Cloudflare Tunnel] Failed to start: ${err.message}`);
     console.log("[Cloudflare Tunnel] Install with: choco install cloudflare-warp");
+    setTunnelState({ status: "error", lastError: err.message, exitedAt: new Date().toISOString() });
   });
   cloudflaredProcess.on("exit", (code) => {
-    console.log(`[Cloudflare Tunnel] exited with code ${code}`);
+    _tunnelFailed = true;
+    setTunnelState({ status: "exited", exitCode: code, exitedAt: new Date().toISOString() });
+    if (code && code !== 0) {
+      // Non-zero exit: public access is down but the local server keeps running.
+      // The most common cause is a stale/unauthorized tunnel credential
+      // ("Unauthorized: Tunnel not found", see #672) — surface the fix instead of
+      // a bare exit code so it is self-explanatory.
+      console.warn(
+        `[Cloudflare Tunnel] exited with code ${code} — public access (https://lantern-os.net) ` +
+        `unavailable; the server continues locally on this port.\n` +
+        `[Cloudflare Tunnel] If you see "Unauthorized: Tunnel not found", the credential is ` +
+        `stale/revoked — recreate the tunnel:\n` +
+        `[Cloudflare Tunnel]   cloudflared tunnel login && cloudflared tunnel create lantern-os\n` +
+        `[Cloudflare Tunnel] then point ~/.cloudflared/config.yml at the new tunnel id.`
+      );
+    } else {
+      console.log(`[Cloudflare Tunnel] exited cleanly (code ${code}).`);
+    }
   });
+  // Brief delay to let cloudflared handshake; only set running if no error/exit fired first
+  setTimeout(() => {
+    if (!_tunnelFailed && cloudflaredProcess && !cloudflaredProcess.killed) {
+      setTunnelState({ status: "running" });
+    }
+  }, 3000);
   console.log(`[Cloudflare Tunnel] Starting (reading from ~/.cloudflared/config.yml)...`);
 } else {
-  console.log("[Cloudflare Tunnel] Disabled (set LANTERN_CLOUDFLARE_TUNNEL=true to enable)");
+  setTunnelState({ enabled: false, status: "disabled" });
+  console.log("[Cloudflare Tunnel] Disabled via LANTERN_CLOUDFLARE_TUNNEL=false (it is enabled by default; unset the var to re-enable).");
 }
 
 // Graceful shutdown
@@ -466,6 +585,28 @@ server.listen(port, host, () => {
     console.log("[PR Watcher] disabled — set PR_WATCHER_ENABLED=1 on ONE fleet host to enable");
   }
   refreshAllPcsf(repoRoot);
+
+  // ── CSF Research Tesseract — auto-pack on startup ──────────────────────────
+  // Runs in background; skips if archive is less than 24 hours old.
+  (() => {
+    const { execFile } = require("child_process");
+    const fs = require("fs");
+    const path = require("path");
+    const manifest = path.join(repoRoot, "data", "tesseract", "manifest.json");
+    const script   = path.join(repoRoot, "scripts", "csf_research_tesseract.py");
+    let stale = true;
+    try {
+      const m = fs.statSync(manifest);
+      stale = Date.now() - m.mtimeMs > 24 * 60 * 60 * 1000;
+    } catch { /* doesn't exist yet */ }
+    if (!stale) { console.log("[Tesseract] Archive fresh — skipping auto-pack"); return; }
+    console.log("[Tesseract] Packing research archive in background…");
+    execFile("python", [script, "pack"], { cwd: repoRoot, timeout: 300_000 }, (err, stdout) => {
+      if (err) { console.error("[Tesseract] Pack failed:", err.message); return; }
+      const last = stdout.trim().split("\n").pop();
+      console.log("[Tesseract]", last);
+    });
+  })();
   // Ollama cold-start probe
   const ollamaBase = process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434";
   const ollamaModel = process.env.OLLAMA_MODEL || "qwen2.5-coder";

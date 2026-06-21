@@ -886,6 +886,7 @@ class ConvergenceLoop:
             "dropped_at": dropped_at,
         }
         result["drift"] = self._detect_drift(result)
+        self._emit_agi_benchmark(result)
         return result
 
     def _phase_to_dict(self, r: PhaseResult) -> Dict[str, Any]:
@@ -1257,6 +1258,25 @@ class ConvergenceLoop:
             evidence["receipt"] = str(receipt_path)
         except Exception as exc:
             return PhaseResult(19, "record_evidence", "fail", [str(exc)])
+        try:
+            pass_count = sum(1 for r in self.results if r.status == "pass")
+            total = len(self.results)
+            confidence = round(pass_count / total, 3) if total else 0.0
+            work_path = self.repo_root / "data" / "convergence-autonomous-work.jsonl"
+            work_path.parent.mkdir(parents=True, exist_ok=True)
+            work_record = json.dumps({
+                "timestamp": _now(),
+                "receipt": str(receipt_path),
+                "phases_passed": pass_count,
+                "phases_total": total,
+                "confidence": confidence,
+                "meets_threshold": confidence >= 0.85,
+                "phase_summary": [{"name": r.name, "status": r.status} for r in self.results],
+            })
+            with open(work_path, "a", encoding="utf-8") as wf:
+                wf.write(work_record + "\n")
+        except Exception:
+            pass
         # TD-003 / PR-003: prune stale released slots while we have disk access
         try:
             slots = SlotManager()
@@ -1269,6 +1289,36 @@ class ConvergenceLoop:
     def _phase_promote_or_hold(self) -> PhaseResult:
         ready = all(r.status == "pass" for r in self.results)
         return PhaseResult(20, "promote_or_hold", "pass" if ready else "hold", evidence={"ready": ready})
+
+    def _emit_agi_benchmark(self, run_result: Dict[str, Any]) -> None:
+        def _score(phase_name: str) -> float:
+            for r in self.results:
+                if r.name == phase_name:
+                    return 1.0 if r.status == "pass" else 0.0
+            return 0.5
+        observe  = round((_score("check_external_grounding") + _score("check_externally_anchored")) / 2, 3)
+        research = round((_score("read_manifests") + _score("check_asi_benchmarks")) / 2, 3)
+        reason   = round((_score("state_objective") + _score("classify_boundary") + _score("update_bayesian_beliefs")) / 3, 3)
+        act      = round((_score("fix_failures") + _score("identify_sources")) / 2, 3)
+        verify   = round((_score("run_validation") + _score("run_validation_ring") + _score("re_run_validation")) / 3, 3)
+        converge = round((_score("record_evidence") + _score("promote_or_hold")) / 2, 3)
+        overall  = round((observe + research + reason + act + verify + converge) / 6, 3)
+        try:
+            bench_path = self.repo_root / "data" / "agi-benchmark.jsonl"
+            bench_path.parent.mkdir(parents=True, exist_ok=True)
+            record = json.dumps({
+                "timestamp": _now(),
+                "dimensions": {
+                    "observe": observe, "research": research, "reason": reason,
+                    "act": act, "verify": verify, "converge": converge, "overall_sigma0": overall,
+                },
+                "meets_target": overall >= 0.85,
+                "convergence_score": run_result.get("convergence_score"),
+            })
+            with open(bench_path, "a", encoding="utf-8") as f:
+                f.write(record + "\n")
+        except Exception:
+            pass
 
 
 class TesseractEngine:

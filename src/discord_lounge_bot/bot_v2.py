@@ -31,6 +31,12 @@ except Exception as exc:
     print(f"[FATAL] Missing dependency 'discord.py': {exc}")
     sys.exit(1)
 
+try:
+    from account_link import resolve_web_role
+except ImportError:
+    def resolve_web_role(discord_id, repo_root=None):  # type: ignore[misc]
+        return None
+
 # -- Load .env and .env.local (canonical env first, then local overrides) --
 for _env_candidate in [
     Path(__file__).resolve().parents[2] / ".env",
@@ -825,6 +831,87 @@ async def cmd_subscribe(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
+@tree.command(name="sync-roles", description="Sync your Patreon subscriber role to Discord (#697)")
+async def cmd_sync_roles(interaction: discord.Interaction):
+    """Resolve the linked Patreon web role and grant the matching Discord server role."""
+    discord_id = str(interaction.user.id)
+    web_role = resolve_web_role(discord_id)
+    if not web_role:
+        await interaction.response.send_message(
+            "No linked Patreon account found.\n\n"
+            "To link: sign into the web app at the Patreon OAuth page, then visit **Profile → Link Discord** "
+            "and enter your Discord user ID (`" + discord_id + "`). Then run `/sync-roles` again.",
+            ephemeral=True,
+        )
+        return
+
+    # Map web role → Discord server role name
+    _WEB_TO_DISCORD: dict[str, str] = {
+        "founder":      "founder",
+        "deep_dreamer": "Deep Dreamer",
+        "pilot":        "Synthesasia Guild",
+        "supporter":    "supporter",
+    }
+    target_role_name = _WEB_TO_DISCORD.get(web_role, web_role)
+
+    guild = interaction.guild
+    if guild is None:
+        await interaction.response.send_message("This command must be run in a server.", ephemeral=True)
+        return
+
+    server_role = discord.utils.find(lambda r: r.name.lower() == target_role_name.lower(), guild.roles)
+    if server_role is None:
+        await interaction.response.send_message(
+            f"Your web role is **{web_role}** but the Discord role `{target_role_name}` doesn't exist on this server. "
+            "Ask an admin to create it.",
+            ephemeral=True,
+        )
+        return
+
+    member = guild.get_member(interaction.user.id) or await guild.fetch_member(interaction.user.id)
+    if server_role in member.roles:
+        await interaction.response.send_message(
+            f"✓ You already have **{server_role.name}** — nothing to sync.", ephemeral=True
+        )
+        return
+
+    try:
+        await member.add_roles(server_role, reason="Patreon identity sync via /sync-roles (#697)")
+        await interaction.response.send_message(
+            f"✓ Role **{server_role.name}** granted based on your linked Patreon account (`{web_role}`).",
+            ephemeral=True,
+        )
+        print(f"[identity-sync] Granted {server_role.name} to {interaction.user} (web_role={web_role})")
+    except discord.Forbidden:
+        await interaction.response.send_message(
+            "I don't have permission to manage roles. Ask a server admin to grant the bot `Manage Roles`.",
+            ephemeral=True,
+        )
+
+
+async def _auto_sync_role(member: discord.Member) -> None:
+    """Called from on_member_join — grant role if a link already exists."""
+    discord_id = str(member.id)
+    web_role = resolve_web_role(discord_id)
+    if not web_role:
+        return
+    _WEB_TO_DISCORD: dict[str, str] = {
+        "founder":      "founder",
+        "deep_dreamer": "Deep Dreamer",
+        "pilot":        "Synthesasia Guild",
+        "supporter":    "supporter",
+    }
+    target_role_name = _WEB_TO_DISCORD.get(web_role, web_role)
+    guild = member.guild
+    server_role = discord.utils.find(lambda r: r.name.lower() == target_role_name.lower(), guild.roles)
+    if server_role and server_role not in member.roles:
+        try:
+            await member.add_roles(server_role, reason="Auto-sync Patreon role on join (#697)")
+            print(f"[identity-sync] Auto-granted {server_role.name} to {member} on join (web_role={web_role})")
+        except discord.Forbidden:
+            pass
+
+
 @tree.command(name="dream", description="Record a dream to your private notebook")
 @app_commands.describe(text="What did you see?")
 @require_tier(ROLE_SUPPORTER)
@@ -1131,7 +1218,8 @@ async def on_app_command_error(interaction: discord.Interaction, error: app_comm
 
 @client.event
 async def on_member_join(member: discord.Member):
-    """Welcome new members with tier info."""
+    """Welcome new members; auto-grant role if Patreon link already exists (#697)."""
+    await _auto_sync_role(member)
     try:
         await member.send(
             f"Welcome to Lantern OS, {member.display_name}!\n\n"
