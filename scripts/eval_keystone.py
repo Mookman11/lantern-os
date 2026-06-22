@@ -101,6 +101,11 @@ def main():
     ap.add_argument("--num-predict", type=int, default=48)
     ap.add_argument("--timeout", type=float, default=180)
     ap.add_argument("--ts", default=str(int(time.time())), help="run timestamp (override for determinism)")
+    # rollover stage gate (issue #895)
+    ap.add_argument("--stage", type=int, choices=[0, 1, 2, 3], default=None,
+                    help="rollover stage being evaluated (0=Shadow, 1=Assist, 2=Default, 3=Independent)")
+    ap.add_argument("--gate-bar", type=float, default=None,
+                    help="minimum accuracy required to pass this stage gate (0.0–1.0)")
     # in-process loop engine (E1/E2)
     ap.add_argument("--engine", choices=["http", "loop"], default="http",
                     help="http=Ollama API (default); loop=in-process Sigma0LoopLM (E1/E2)")
@@ -147,13 +152,22 @@ def main():
         cprint(f"{r['id']:>2}  {'OK ' if ok else 'x  '} {dt:>5.1f}s  {r['expected'][:18]!r} -> {reply[:50]!r}")
 
     n = len(rows)
+    accuracy = round(n_ok / n, 3) if n else 0.0
+    gate_passed = None
+    if a.stage is not None and a.gate_bar is not None:
+        gate_passed = accuracy >= a.gate_bar
+
     summary = {
         # reconciled schema — "benchmark" key shared across all eval scripts (#776)
         "benchmark": "keystone",
         "ts": a.ts, "label": a.label, "model": a.model, "base": a.base,
         "engine": a.engine, "mode": (a.mode if a.engine == "loop" else None),
-        "n": n, "accuracy": round(n_ok / n, 3) if n else 0.0,
-        "pass@1": round(n_ok / n, 3) if n else 0.0,  # alias for cross-benchmark summary
+        # rollover stage tracking (#895)
+        "stage": a.stage,
+        "gate_bar": a.gate_bar,
+        "gate_passed": gate_passed,
+        "n": n, "accuracy": accuracy,
+        "pass@1": accuracy,  # alias for cross-benchmark summary
         "avg_latency_s": round(total_dt / n, 2) if n else 0.0,
         "tok_per_s": round(approx_tokens / total_dt, 1) if total_dt else 0.0,
         # E1: realized latent depth; E2: did the loop contract?
@@ -166,8 +180,14 @@ def main():
             f.write(json.dumps(d, ensure_ascii=False) + "\n")
     with open(os.path.join(ROOT, "data", "eval", "leaderboard.jsonl"), "a", encoding="utf-8") as f:
         f.write(json.dumps(summary, ensure_ascii=False) + "\n")
-    print(f"\n{a.label}: accuracy={summary['accuracy']*100:.0f}%  "
-          f"avg_latency={summary['avg_latency_s']}s  ~{summary['tok_per_s']} tok/s  (n={n})", flush=True)
+    stage_str = f"  stage={a.stage}" if a.stage is not None else ""
+    print(f"\n{a.label}: accuracy={accuracy*100:.0f}%  "
+          f"avg_latency={summary['avg_latency_s']}s  ~{summary['tok_per_s']} tok/s  (n={n}){stage_str}", flush=True)
+    if a.stage is not None and a.gate_bar is not None:
+        stage_names = {0: "Shadow", 1: "Assist", 2: "Default", 3: "Independent"}
+        verdict = "GATE PASSED" if gate_passed else "GATE FAILED"
+        print(f"Stage {a.stage} ({stage_names.get(a.stage, '?')}) rollover gate: "
+              f"{accuracy*100:.0f}% vs bar {a.gate_bar*100:.0f}%  → {verdict}", flush=True)
 
 
 if __name__ == "__main__":
