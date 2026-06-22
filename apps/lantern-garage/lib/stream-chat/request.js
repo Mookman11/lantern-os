@@ -42,7 +42,19 @@ async function parseStreamChatRequest(req, url, deps = {}) {
 
   try {
     const rawBody = await collectRequestBody(req);
-    const body = JSON.parse(rawBody || "{}");
+    // Strip UTF-8 BOM (PowerShell Out-File -Encoding utf8 prepends ﻿)
+    const stripped = rawBody.startsWith("﻿") ? rawBody.slice(1) : rawBody;
+    if (!stripped.trim()) {
+      parsed.parseError = "empty_body";
+      return parsed;
+    }
+    let body;
+    try {
+      body = JSON.parse(stripped);
+    } catch {
+      parsed.parseError = "malformed_json";
+      return parsed;
+    }
     parsed.mcpFlag = !!body.mcp;
     parsed.message = String(body.message || "").slice(0, 4000).trim();
     parsed.user = normalizeDreamerUser(body.user || "dreamer");
@@ -53,7 +65,7 @@ async function parseStreamChatRequest(req, url, deps = {}) {
     parsed.surface = String(body.surface || "").trim().toLowerCase();
     parsed.sessionId = String(body.sessionId || "").trim().slice(0, 64) || null;
   } catch {
-    // Keep safe defaults for malformed JSON or body read failures.
+    parsed.parseError = "body_read_error";
   }
 
   return parsed;

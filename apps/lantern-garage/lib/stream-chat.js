@@ -307,6 +307,17 @@ async function handleStreamChat(req, url, res) {
     normalizeDreamerUser,
     collectRequestBody,
   });
+  if (parsed.parseError) {
+    const detail = parsed.parseError === "empty_body"
+      ? "empty or missing request body"
+      : parsed.parseError === "malformed_json"
+        ? "malformed JSON in request body"
+        : "failed to read request body";
+    res.writeHead(400, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
+    res.end(JSON.stringify({ error: "bad_request", detail }));
+    return;
+  }
+
   let { message, user, requestedAgent, requestedProvider, history, mcpFlag, routeIntent } = parsed;
 
   // Surface mode: dream-chat (default) or three-doors.
