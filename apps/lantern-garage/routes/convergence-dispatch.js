@@ -846,5 +846,109 @@ module.exports = async (req, res, url, deps) => {
     return true;
   }
 
+  // GET /api/rollover/dashboard — Keystone rollover metrics (#898)
+  // Reads leaderboard.jsonl, shadow-runs.jsonl, convergence records, and
+  // autowork log to produce a single JSON snapshot of the rollover state.
+  if (pathname === "/api/rollover/dashboard" && req.method === "GET") {
+    try {
+      const fs = require("fs");
+      const REPO_ROOT = path.resolve(__dirname, "../../..");
+      const STAGE_NAMES = { 0: "Shadow", 1: "Assist", 2: "Default", 3: "Independent" };
+
+      function readJsonl(filePath) {
+        if (!fs.existsSync(filePath)) return [];
+        return fs.readFileSync(filePath, "utf-8")
+          .split("\n").filter(Boolean)
+          .map((l) => { try { return JSON.parse(l); } catch (_) { return null; } })
+          .filter(Boolean);
+      }
+
+      const leaderboard = readJsonl(path.join(REPO_ROOT, "data", "eval", "leaderboard.jsonl"));
+      const shadows     = readJsonl(path.join(REPO_ROOT, "data", "rollover", "shadow-runs.jsonl"));
+      const crRecords   = readJsonl(path.join(REPO_ROOT, "data", "convergence", "records.jsonl"));
+      const autowork    = readJsonl(path.join(REPO_ROOT, "data", "convergence-autonomous-work.jsonl"));
+
+      // Latest stage-tagged eval row
+      const stagedRows = leaderboard.filter((r) => r.stage != null);
+      const latestStaged = stagedRows[stagedRows.length - 1] || null;
+      const evalAccuracy = latestStaged ? latestStaged.accuracy : null;
+      const evalStage = latestStaged ? latestStaged.stage : null;
+
+      // Shadow runs
+      const shadowTotal = shadows.length;
+      const shadowProposed = shadows.filter((s) => s.keystone_proposed).length;
+      const shadowCorrect  = shadows.filter((s) => s.keystone_patch_correct === true).length;
+
+      // Claude fallback events from convergence records
+      const fallbacks = crRecords.filter(
+        (r) => r.result && typeof r.result === "object" && r.result.type === "claude_fallback"
+      );
+      const fallbackTotal  = fallbacks.length;
+      const nowTs = Date.now();
+      const fallbacks24h   = fallbacks.filter((r) => {
+        try { return (nowTs - new Date(r.timestamp).getTime()) < 86400000; } catch (_) { return false; }
+      }).length;
+
+      // Keystone share (autowork runs)
+      const last30 = autowork.slice(-30);
+      const keystoneLast30 = last30.filter(
+        (r) => r.ok && !(r.commitSha || "").includes("[unverified]")
+      ).length;
+      const keystoneShare30d = last30.length > 0 ? keystoneLast30 / last30.length : null;
+
+      // Stage gate summary (static bars from ROLLOVER.md)
+      const GATE_BARS = {
+        0: { "S0-A": 0.40, "S0-B": 10,  "S0-C": true },
+        1: { "S1-A": 0.50, "S1-B": 5,   "S1-D": true },
+        2: { "S2-A": 0.60, "S2-B": 0.60 },
+        3: { "S3-A": 0.65, "S3-C": 0.80 },
+      };
+      const GATE_CURRENT = {
+        "S0-A": evalAccuracy, "S0-B": shadowTotal, "S0-C": true,
+        "S1-A": evalAccuracy, "S1-B": null, "S1-D": true,
+        "S2-A": evalAccuracy, "S2-B": keystoneShare30d,
+        "S3-A": evalAccuracy, "S3-C": keystoneShare30d,
+      };
+      const gates = {};
+      for (const [stageN, stageGates] of Object.entries(GATE_BARS)) {
+        gates[stageN] = {};
+        for (const [gid, bar] of Object.entries(stageGates)) {
+          const cur = GATE_CURRENT[gid];
+          const passed = cur === null ? false
+            : typeof bar === "boolean" ? Boolean(cur) === bar
+            : Number(cur) >= Number(bar);
+          gates[stageN][gid] = { bar, current: cur, passed };
+        }
+      }
+
+      // Infer current stage (highest with all gates passing)
+      let currentStage = 0;
+      for (let s = 3; s >= 0; s--) {
+        const sg = gates[String(s)];
+        if (sg && Object.values(sg).every((g) => g.passed)) { currentStage = s; break; }
+      }
+
+      sendJson(res, {
+        current_stage: currentStage,
+        stage_name: STAGE_NAMES[currentStage] || "Unknown",
+        eval: {
+          latest_label: latestStaged ? latestStaged.label : null,
+          accuracy: evalAccuracy,
+          stage: evalStage,
+          gate_passed: latestStaged ? latestStaged.gate_passed : null,
+          gate_bar: latestStaged ? latestStaged.gate_bar : null,
+          total_rows: leaderboard.length,
+        },
+        shadow_runs: { total: shadowTotal, proposed: shadowProposed, correct: shadowCorrect },
+        claude_fallbacks: { total: fallbackTotal, last_24h: fallbacks24h },
+        keystone_share: { last_30_runs: last30.length, keystone_count: keystoneLast30, share: keystoneShare30d },
+        gates,
+      }, 200);
+    } catch (err) {
+      sendJson(res, { error: err.message }, 500);
+    }
+    return true;
+  }
+
   return false;
 };
