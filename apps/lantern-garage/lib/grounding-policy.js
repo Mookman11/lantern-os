@@ -5,10 +5,30 @@
 // dilate (think more → ground harder); a frozen/degenerate signal collapses D toward
 // D_MIN (act / go look now). groundingPolicy(D) turns D into how much EXTERNAL
 // grounding to buy (web breadth, corroboration floor, deep mode).
+//
+// #1012 — mandatory periodic grounding tick: the "calm while wrong" / boiling-frog
+// regime (arXiv:2603.08455, cert §4) shows internal proximity monitors stay silent
+// during gradual drift. Solution: perform a mandatory external grounding pass on a
+// wall-clock cadence regardless of how low collapse-proximity reads. Default 5 min;
+// set GROUNDING_TICK_INTERVAL_MS to override. The tick is recorded per-process so
+// every warm request contributes; a cold restart resets (acceptable: first reply
+// after restart always grounds). Use shouldForceGrounding() before expensive checks
+// and recordGroundingTick() after a real grounding pass completes.
 
 const D_MIN = 0.1;
 const D_MAX = 5.0;
 const D_DEFAULT = 1.0;
+
+const GROUNDING_TICK_MS = parseInt(process.env.GROUNDING_TICK_INTERVAL_MS, 10) || 5 * 60 * 1000;
+let _lastGroundingTs = 0;
+
+function shouldForceGrounding() {
+  return Date.now() - _lastGroundingTs >= GROUNDING_TICK_MS;
+}
+
+function recordGroundingTick() {
+  _lastGroundingTs = Date.now();
+}
 
 const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 
@@ -26,8 +46,13 @@ function dilation(uncertainty, costPressure = 0, confidence = 0.5, collapseProxi
 }
 
 // Mirror of grounding_policy(): D → external-grounding budget.
-function groundingPolicy(D, { baseMaxResults = 5, baseMinSources = 2 } = {}) {
+// forcedByTimer: when true (shouldForceGrounding() fired), always fetchExternal at
+// base budget even if D would otherwise suppress it — the mandatory tick override.
+function groundingPolicy(D, { baseMaxResults = 5, baseMinSources = 2, forcedByTimer = false } = {}) {
   D = clamp(D, D_MIN, D_MAX);
+  if (forcedByTimer && D <= 1.0) {
+    return { fetchExternal: true, maxResults: baseMaxResults, minSources: baseMinSources, deepMode: false, forcedByTimer: true };
+  }
   if (D <= 1.0) {
     return { fetchExternal: D > 0.5, maxResults: baseMaxResults, minSources: baseMinSources, deepMode: false };
   }
@@ -55,4 +80,4 @@ function chatDilation(message, { confidence = 0.5, collapseProximity = 0 } = {})
   return dilation(clamp(u, 0, 1), 0, confidence, collapseProximity);
 }
 
-module.exports = { dilation, groundingPolicy, chatDilation, D_MIN, D_MAX, D_DEFAULT };
+module.exports = { dilation, groundingPolicy, chatDilation, shouldForceGrounding, recordGroundingTick, D_MIN, D_MAX, D_DEFAULT };

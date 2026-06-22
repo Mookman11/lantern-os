@@ -29,7 +29,7 @@ const { route: converganceRoute, buildBehaviorPreamble } = require("./converganc
 const { THREE_DOORS_PREAMBLE } = require("./convergance-os/profiles");
 const { generateDoorSceneImage } = require("./image-generation");
 const { webSearchMcp, formatGroundingContext, needsGrounding, extractSearchQuery } = require("./web-search-client");
-const { chatDilation, groundingPolicy } = require("./grounding-policy");
+const { chatDilation, groundingPolicy, shouldForceGrounding, recordGroundingTick } = require("./grounding-policy");
 const { generatePlan, generatePatch } = require("./self-edit-engine");
 const { selectProvider, recordProviderSuccess: recordProviderSuccessRouter, recordProviderFailure: recordProviderFailureRouter } = require("./provider-router");
 const { detectTaskType } = require("./task-detector");
@@ -809,18 +809,25 @@ async function handleStreamChat(req, url, res) {
   // stays at the base. (convergence_io.dilation ↔ grounding-policy.js)
   let groundingContext = "";
   const groundingD = chatDilation(message);
-  const gpol = groundingPolicy(groundingD);
-  if (!isKeystoneDebug && (needsGrounding(message) || groundingD >= 1.5)) {
+  const forcedByTimer = shouldForceGrounding();
+  const gpol = groundingPolicy(groundingD, { forcedByTimer });
+  if (!isKeystoneDebug && (needsGrounding(message) || groundingD >= 1.5 || gpol.forcedByTimer)) {
     const searchQuery = extractSearchQuery(message);
     if (searchQuery) {
       try {
         const searchResult = await withTimeout(webSearchMcp(searchQuery, gpol.maxResults), GROUNDING_TIMEOUT_MS, { success: false });
         if (searchResult.success && searchResult.results) {
           groundingContext = formatGroundingContext(searchResult.results, searchQuery);
+          if (gpol.forcedByTimer) {
+            recordGroundingTick();
+            console.log("[grounding-policy] mandatory tick fired — external grounding performed");
+          }
         }
       } catch (e) {
         console.error("[web-search] Grounding failed (non-fatal):", e.message);
       }
+    } else if (gpol.forcedByTimer) {
+      recordGroundingTick();
     }
   }
 
