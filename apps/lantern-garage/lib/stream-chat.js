@@ -438,8 +438,13 @@ async function handleStreamChat(req, url, res) {
       sendToken(`🔧 Keystone Kernel Mode\n\n`);
       sendToken(`Issue: ${issue}\n\n`);
 
-      // Get the selected provider for LLM calls
-      const provider = requestedProvider || selectProvider(message, history);
+      // #894: use the "coding" task chain (ollama/Keystone first, Claude fallback)
+      // and await the async selectProvider — the old code passed `history` (array)
+      // as taskType and forgot the await, producing a Promise as the provider string.
+      const { provider: keystoneProvider, model: keystoneModel } =
+        requestedProvider
+          ? { provider: requestedProvider, model: null }
+          : await selectProvider(message, "coding");
       let llmFn;
 
       try {
@@ -452,8 +457,8 @@ async function handleStreamChat(req, url, res) {
           const response = await unifiedStreamSSE({
             systemPrompt,
             messages,
-            provider,
-            model: null, // Let unified-agent pick the best model
+            provider: keystoneProvider,
+            model: keystoneModel,
             user,
           });
 
@@ -473,7 +478,8 @@ async function handleStreamChat(req, url, res) {
 
               sendDone("keystone", {
                 agent: "Keystone",
-                provider,
+                provider: keystoneProvider,
+                model: keystoneModel,
                 status: "success",
                 filesChanged: result.applied.length,
                 testsRun: !!result.tests,
@@ -481,13 +487,13 @@ async function handleStreamChat(req, url, res) {
             } else {
               sendToken(`\n❌ Keystone failed: ${result.error}\n`);
               sendToken(`Phase: ${result.phase}\n`);
-              sendDone("keystone", { agent: "Keystone", provider, status: "failed", error: result.error });
+              sendDone("keystone", { agent: "Keystone", provider: keystoneProvider, status: "failed", error: result.error });
             }
             res.end();
           })
           .catch((err) => {
             sendToken(`\n❌ Error: ${err.message}\n`);
-            sendDone("keystone", { agent: "Keystone", provider, status: "error", error: err.message });
+            sendDone("keystone", { agent: "Keystone", provider: keystoneProvider, status: "error", error: err.message });
             res.end();
           });
       } catch (e) {

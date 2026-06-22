@@ -204,12 +204,30 @@ module.exports = async (req, res, url, deps) => {
           return;
         }
 
-        // Step 4: Run tests from the plan. Empty test set = UNVERIFIED, not "passed".
+        // Step 4: Run tests. Plan-specified tests take priority; fall back to the
+        // safe default suite derived from changed file types (#896 — gating bug fix:
+        // [].every() is vacuously true, so we must never skip verification entirely).
         const plannedTests = Array.isArray(plan.testsToRun) ? plan.testsToRun : [];
-        const testResults = runTests(workRoot, plannedTests, { env: worktreeTestEnv(REPO_ROOT) });
-        const testsRan = plannedTests.length;
-        const allTestsOk = testResults.every((r) => r.ok);
-        const testsVerified = testsRan > 0 && allTestsOk;
+        const PYTEST_SAFE =
+          "python -m pytest tests/ -q --tb=short " +
+          "--ignore=tests/test_anti_entropy_memory.py " +
+          "--ignore=tests/test_audit_chain.py " +
+          "--ignore=tests/test_discord_bot.py " +
+          "--ignore=tests/test_discord_voice_gate.py";
+        const JS_SUITE = "npm test --prefix apps/lantern-garage";
+        const effectiveTests = plannedTests.length > 0 ? plannedTests : (() => {
+          const hasPy = changedFiles.some((f) => f.endsWith(".py"));
+          const hasJs = changedFiles.some((f) => /\.(c|m)?js$/.test(f));
+          if (hasPy) return [PYTEST_SAFE];
+          if (hasJs) return [JS_SUITE];
+          return []; // truly no applicable tests (e.g. docs-only)
+        })();
+        const testResults = runTests(workRoot, effectiveTests, { env: worktreeTestEnv(REPO_ROOT) });
+        const testsRan = effectiveTests.length;
+        // #896: never treat a zero-tests run as "passed" — require explicit allowUnverified
+        const allTestsOk = testsRan > 0 && testResults.every((r) => r.ok);
+        const testsVerified = allTestsOk;
+        const testsInconclusive = testsRan === 0;
 
         if (testsRan > 0 && !allTestsOk) {
           // Rollback on test failure — stage nothing
@@ -526,14 +544,34 @@ module.exports = async (req, res, url, deps) => {
         step("apply", "done", { stats, changedFiles });
 
         // ── 6. tests (verification gate for commit/push) ─────────────────
-        const tests = Array.isArray(plan.testsToRun) ? plan.testsToRun : [];
-        step("tests", "start", { commands: tests });
-        const testResults = runTests(workRoot, tests, { env: worktreeTestEnv(REPO_ROOT) });
-        const testsPassed = testResults.every((r) => r.ok);
-        receipt.testsPassed = tests.length === 0 ? null : testsPassed;
-        step("tests", "done", { testResults, passed: testsPassed, ran: tests.length });
+        // #896 fix: [].every() is vacuously true — never treat zero-test runs as
+        // "passed". Derive a fallback suite from the changed file types so that
+        // a weak kernel that produces a docs-only plan can't bypass the gate.
+        const plannedTestCmds = Array.isArray(plan.testsToRun) ? plan.testsToRun : [];
+        const STREAM_PYTEST_SAFE =
+          "python -m pytest tests/ -q --tb=short " +
+          "--ignore=tests/test_anti_entropy_memory.py " +
+          "--ignore=tests/test_audit_chain.py " +
+          "--ignore=tests/test_discord_bot.py " +
+          "--ignore=tests/test_discord_voice_gate.py";
+        const STREAM_JS_SUITE = "npm test --prefix apps/lantern-garage";
+        const effectiveTestCmds = plannedTestCmds.length > 0 ? plannedTestCmds : (() => {
+          const hasPy = changedFiles.some((f) => f.endsWith(".py"));
+          const hasJs = changedFiles.some((f) => /\.(c|m)?js$/.test(f));
+          if (hasPy) return [STREAM_PYTEST_SAFE];
+          if (hasJs) return [STREAM_JS_SUITE];
+          return [];
+        })();
+        step("tests", "start", { commands: effectiveTestCmds });
+        const testResults = runTests(workRoot, effectiveTestCmds, { env: worktreeTestEnv(REPO_ROOT) });
+        const testsRanCount = effectiveTestCmds.length;
+        // Never vacuously-true: testsPassed is only true when at least one test ran and all passed
+        const testsPassed = testsRanCount > 0 && testResults.every((r) => r.ok);
+        const testsInconclusive = testsRanCount === 0;
+        receipt.testsPassed = testsInconclusive ? null : testsPassed;
+        step("tests", "done", { testResults, passed: testsPassed, ran: testsRanCount, inconclusive: testsInconclusive });
 
-        if (tests.length > 0 && !testsPassed) {
+        if (testsRanCount > 0 && !testsPassed) {
           // restore working tree — never leave broken changes
           await new Promise((resolve) =>
             execFile("git", ["checkout", "--", "."], { cwd: workRoot, timeout: 10000, windowsHide: true }, () => resolve()));
@@ -558,7 +596,8 @@ module.exports = async (req, res, url, deps) => {
         }
         step("commit", "start");
         gitAddFiles(workRoot, changedFiles); // stage ONLY patched files — never git add -A
-        const verified = tests.length > 0 && testsPassed;
+        // #896: verified = tests actually ran AND passed; inconclusive ≠ verified
+        const verified = testsPassed;
         const commitTitle = `${verified ? "" : "[unverified] "}fix: ${issueDetails.title} (fixes #${issueNumber})`;
         gitCommit(workRoot, commitTitle);
         receipt.committed = true;
@@ -595,14 +634,15 @@ module.exports = async (req, res, url, deps) => {
             `Codebase research: ${scopeFiles.length} relevant files found`,
             `Web grounding: ${webEvidence.length} external sources checked`,
             `Plan generated with ${plan.actions?.length || 0} actions`,
-            `Tests: ${testsPassed ? 'PASSED' : 'SKIPPED'}`,
+            `Tests: ${testsInconclusive ? 'INCONCLUSIVE (no applicable test found)' : testsPassed ? 'PASSED' : 'FAILED'}`,
             `Patch applied: ${stats?.filesModified || 0} files modified`,
             `Observable: Full SSE stream of all steps`
           ],
           confidence: {
             codebaseResearch: scopeFiles.length > 0 ? 0.85 : 0.5,
             webGrounded: webEvidence.length > 0 ? 0.8 : 0.4,
-            testsPassed: testsPassed !== false ? 0.9 : 0.3,
+            // #896: inconclusive (no applicable test) scores 0.5, not 0.9
+            testsPassed: testsInconclusive ? 0.5 : testsPassed ? 0.9 : 0.3,
             observable: 1.0, // Full SSE stream
             grounded: Math.max(
               scopeFiles.length > 0 ? 0.8 : 0.5,
@@ -611,7 +651,7 @@ module.exports = async (req, res, url, deps) => {
             overall: Math.min(
               (scopeFiles.length > 0 ? 0.85 : 0.5) * 0.4 +
               (webEvidence.length > 0 ? 0.8 : 0.4) * 0.4 +
-              (testsPassed !== false ? 0.9 : 0.3) * 0.2,
+              (testsInconclusive ? 0.5 : testsPassed ? 0.9 : 0.3) * 0.2,
               0.95  // Cap at 95% confidence (always room for error)
             )
           },
@@ -619,8 +659,8 @@ module.exports = async (req, res, url, deps) => {
             issue: `github.com/alex-place/lantern-os/issues/${issueNumber}`,
             pr: prUrl,
             codebaseAnalysis: `Searched ${scopeFiles.length} relevant files`,
-            testsRun: tests.length,
-            testsPassed: testsPassed ? 'all' : 'none'
+            testsRun: testsRanCount,
+            testsPassed: testsInconclusive ? 'inconclusive' : testsPassed ? 'all' : 'none'
           }
         };
         step("convergence", "done", { record: convergenceRecord });
