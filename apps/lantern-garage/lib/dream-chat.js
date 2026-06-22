@@ -1131,9 +1131,10 @@ async function dreamChatReply(message, recentDreams, requestedAgent = "", reques
 // ── Σ₀ Self-Correcting Verify Pass ──────────────────────────────────
 // Three grounding sources: (1) codebase grep, (2) web search via MCP,
 // (3) Gemini grounding API. Low-confidence claims trigger a revision pass.
-// Appends convergence records. Runs when SIGMA0_VERIFY=true.
+// Appends convergence records. Default ON when ANTHROPIC_API_KEY is set;
+// opt-out via SIGMA0_VERIFY=false (#997: default-grounded, not opt-in).
 async function verifyResponse(draft, userMessage, agentName) {
-  if (process.env.SIGMA0_VERIFY !== "true") return { verified: draft, records: [], corrected: false };
+  if (process.env.SIGMA0_VERIFY === "false") return { verified: draft, records: [], corrected: false };
 
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
   if (!anthropicKey) return { verified: draft, records: [], corrected: false };

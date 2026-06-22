@@ -1084,11 +1084,11 @@ async function handleStreamChat(req, url, res) {
     return msg;
   }
 
-  // ── Σ₀ self-correcting verification pass (#662) ──────────────────────────
-  // Enabled by SIGMA0_VERIFY=true in env. Runs a second fast LLM call after
-  // the draft is complete; extracts factual claims and logs them.
+  // ── Σ₀ self-correcting verification pass (#662, #997) ────────────────────
+  // Default ON when ANTHROPIC_API_KEY is set; opt-out via SIGMA0_VERIFY=false.
+  // Runs a second fast LLM call after the draft; extracts + logs factual claims.
   // Falls back silently on timeout or error — never blocks the response.
-  const SIGMA0_VERIFY = process.env.SIGMA0_VERIFY === "true";
+  const SIGMA0_VERIFY = process.env.SIGMA0_VERIFY !== "false";
   const VERIFY_TIMEOUT_MS = 8000;
 
   async function verifyResponse(draft, userMsg) {
@@ -1598,7 +1598,7 @@ async function handleStreamChat(req, url, res) {
       let { cleanText: geminiClean, suggestions: geminiDoors } = doorsOrFallback(fullReply, isKeystoneDebug || !isRpMode);
       // Σ₀ verify pass
       let geminiSigma0 = null;
-      if (process.env.SIGMA0_VERIFY === "true") {
+      if (process.env.SIGMA0_VERIFY !== "false") {
         try {
           const vr = await verifyResponse(geminiClean, message, doneAgentName);
           if (vr.corrected) {
@@ -1706,7 +1706,7 @@ async function handleStreamChat(req, url, res) {
       let { cleanText: anthropicClean, suggestions: anthropicDoors } = doorsOrFallback(fullReply, isKeystoneDebug || !isRpMode);
       // Σ₀ verify pass — ground claims against codebase, web, Gemini
       let anthropicSigma0 = null;
-      if (process.env.SIGMA0_VERIFY === "true") {
+      if (process.env.SIGMA0_VERIFY !== "false") {
         try {
           const vr = await verifyResponse(anthropicClean, message, doneAgentName);
           if (vr.corrected) {
