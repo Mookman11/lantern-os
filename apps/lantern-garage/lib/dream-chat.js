@@ -618,32 +618,6 @@ async function dreamChatReply(message, recentDreams, requestedAgent = "", reques
   }
 
   const lower = text.toLowerCase();
-  let doorContext = "";
-  for (const key of Object.keys(DREAM_DOORS)) {
-    if (
-      lower.includes(key) ||
-      (key === "founder" && lower.includes("wish")) ||
-      (key === "xp" && (lower.includes("windows") || lower.includes("gage"))) ||
-      (key === "fog" && lower.includes("garden")) ||
-      (key === "sigil" && lower.includes("city"))
-    ) {
-      const door = DREAM_DOORS[key];
-      doorContext = `The dreamer mentioned ${door.name}. ${door.phrase}`;
-      break;
-    }
-  }
-
-  const recentContext = recentDreams
-    .slice(0, 3)
-    .map((d, i) => `Recent entry ${i + 1}: ${String(d.text || "").slice(0, 120)}${d.tags ? ` [tags: ${d.tags.join(", ")}]` : ""}`)
-    .join("\n");
-
-  const noRecords = !recentContext;
-  const honesty = noRecords ? "IMPORTANT: There are no saved dream entries yet. If the dreamer asks about previous dreams, say honestly that you don't have any records yet — never fabricate or guess dream content.\n" : "";
-
-  // CSF symbolic memory — relevance-filtered, ~500-1500 chars, includes door history
-  let csfContext = "";
-  try { csfContext = formatCSFContextForPrompt(text); } catch { /* non-fatal */ }
 
   // ── Web Search Grounding ───────────────────────────────────────────
   let groundingContext = "";
@@ -732,7 +706,7 @@ async function dreamChatReply(message, recentDreams, requestedAgent = "", reques
     }
   }
 
-  const userPrompt = `Dreamer says: "${text}"\n${doorContext ? doorContext + "\n" : ""}${honesty}${recentContext ? "Context:\n" + recentContext + "\n\n" : ""}${csfContext ? "Symbolic memory:\n" + csfContext + "\n\n" : ""}${tradingContext ? "Trading data:\n" + tradingContext + "\n\n" : ""}${groundingContext ? groundingContext + "\n\n" : ""}Respond as your persona. Keep it brief (2-4 sentences). ${tradingContext ? "Give practical, literal advice grounded in the trading data above." : "Never diagnose or command."}`;
+  const userPrompt = `${groundingContext ? groundingContext + "\n\n" : ""}${tradingContext ? "Trading data:\n" + tradingContext + "\n\n" : ""}${text}`;
 
   let rp = String(requestedProvider || "").toLowerCase().trim();
 
