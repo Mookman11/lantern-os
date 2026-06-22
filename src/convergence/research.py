@@ -454,7 +454,7 @@ class ResearchLoop:
         reasoner: Optional[Reasoner] = None,
         data_dir: Path = DEFAULT_DATA_DIR,
         min_sources: int = 2,
-        similarity_threshold: float = 0.45,
+        similarity_threshold: float = 0.20,
     ):
         self.searcher: Searcher = searcher or web_search
         self.reasoner: Reasoner = reasoner or heuristic_reasoner
@@ -516,7 +516,8 @@ class ResearchLoop:
             tokens = _tokenize(claim["text"])
             placed = False
             for cl in clusters:
-                if _overlap(tokens, cl["tokens"]) >= self.similarity_threshold:
+                # Require ≥2 shared content tokens to prevent single-word false clusters.
+                if len(tokens & cl["tokens"]) >= 2 and _overlap(tokens, cl["tokens"]) >= self.similarity_threshold:
                     cl["memory_ids"].add(claim["memory_id"])
                     if len(claim["text"]) > len(cl["text"]):
                         cl["text"] = claim["text"]

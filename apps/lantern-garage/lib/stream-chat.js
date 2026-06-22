@@ -1613,7 +1613,8 @@ async function handleStreamChat(req, url, res) {
         sendFail(err.message);
         return;
       }
-      // Auto mode: swallow error silently, let next provider try
+      // #967: log before falling through so degraded-local cause is visible in server log
+      console.error(`[provider:gemini] cloud call failed (non-fatal): ${err.message}`);
     }
     } // end model chain loop
   }
@@ -1720,7 +1721,9 @@ async function handleStreamChat(req, url, res) {
         await streamLocalFallback(err.message);
         return;
       }
-      // Auto mode: swallow error silently, let next provider try
+      // #967: log before falling through so degraded-local cause is visible in server log
+      const anthropicStatus = err.message.match(/anthropic_status_(\d+)/)?.[1] || "";
+      console.error(`[provider:anthropic] cloud call failed (non-fatal)${anthropicStatus ? ` HTTP ${anthropicStatus}` : ""}: ${err.message}`);
     }
   }
 
@@ -1800,7 +1803,9 @@ async function handleStreamChat(req, url, res) {
         sendFail(err.message);
         return;
       }
-      // Auto mode: swallow error silently, let next provider try
+      // #967: log before falling through so degraded-local cause is visible in server log
+      const openaiStatus = err.message.match(/openai_status_(\d+)/)?.[1] || "";
+      console.error(`[provider:openai] cloud call failed (non-fatal)${openaiStatus ? ` HTTP ${openaiStatus}` : ""}: ${err.message}`);
     }
   }
 
@@ -1854,7 +1859,8 @@ async function handleStreamChat(req, url, res) {
         sendFail(err.message);
         return;
       }
-      // Auto mode: swallow error silently, let next provider try
+      // #967: log before falling through so degraded-local cause is visible in server log
+      console.error(`[provider:grok] cloud call failed (non-fatal): ${err.message}`);
     }
   }
 
