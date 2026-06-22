@@ -30,6 +30,7 @@ const { THREE_DOORS_PREAMBLE } = require("./convergance-os/profiles");
 const { generateDoorSceneImage } = require("./image-generation");
 const { webSearchMcp, formatGroundingContext, needsGrounding, extractSearchQuery } = require("./web-search-client");
 const { chatDilation, groundingPolicy, shouldForceGrounding, recordGroundingTick } = require("./grounding-policy");
+const { observe: collapseObserve } = require("./collapse-canary");
 const { generatePlan, generatePatch } = require("./self-edit-engine");
 const { selectProvider, recordProviderSuccess: recordProviderSuccessRouter, recordProviderFailure: recordProviderFailureRouter } = require("./provider-router");
 const { detectTaskType } = require("./task-detector");
@@ -969,6 +970,20 @@ async function handleStreamChat(req, url, res) {
     // Σ₀ verify: fire-and-forget — logs claims to convergence/records.jsonl
     if (SIGMA0_VERIFY && fullReply && message) {
       verifyResponse(fullReply, message).catch(() => {});
+    }
+    // Σ₀ collapse canary (#1010): n-gram echo + self-repeat → sigma0_proximity.
+    // Fires best-effort; never blocks the response.
+    if (fullReply && fullReply.length >= 50) {
+      try {
+        const canary = collapseObserve(fullReply, {
+          agent: agent.id || agent.name || "keystone",
+          provider: extra.provider || source || "unknown",
+          surface: surfaceMode,
+        });
+        if (canary.canary_fired) {
+          signature.canary = { proximity: canary.proximity, echo: canary.echo };
+        }
+      } catch { /* never block */ }
     }
     return sse.sendDone(res, source, { ...extra, ...signature, routeLabel: finalRouteLabel });
   };
