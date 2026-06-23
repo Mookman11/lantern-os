@@ -15,6 +15,37 @@ const REPO_ROOT = path.resolve(__dirname, "../../..");
 const JOBS_LOG = path.join(REPO_ROOT, "data", "self-improvement", "training-jobs.jsonl");
 const GPU_PCSF = path.join(REPO_ROOT, "data", "pcsf", "gpu-training.pcsf.json");
 
+// Windows User environment sync — reads GPU API keys from User scope into process.env
+const GPU_KEY_ALLOWLIST = [
+  "HF_TOKEN", "HF_TRAINING_REPO",
+  "KAGGLE_API_TOKEN", "KAGGLE_USERNAME", "KAGGLE_KEY",
+  "LIGHTNING_USER_ID", "LIGHTNING_API_KEY",
+  "MODAL_TOKEN_ID", "MODAL_TOKEN_SECRET",
+  "VAST_AI_API_KEY", "RUNPOD_API_KEY", "PAPERSPACE_API_KEY",
+];
+
+function _readWindowsUserEnv(key) {
+  try {
+    const val = execFileSync("powershell", [
+      "-NonInteractive", "-Command",
+      `[System.Environment]::GetEnvironmentVariable('${key}', 'User')`,
+    ], { timeout: 5_000, encoding: "utf8" }).trim();
+    return val || "";
+  } catch { return ""; }
+}
+
+let _keysSynced = false;
+function _syncUserEnvKeys() {
+  if (_keysSynced) return;
+  _keysSynced = true;
+  for (const k of GPU_KEY_ALLOWLIST) {
+    if (!process.env[k]) {
+      const val = _readWindowsUserEnv(k);
+      if (val) process.env[k] = val;
+    }
+  }
+}
+
 function isoNow() { return new Date().toISOString(); }
 
 function ensureDir(p) { fs.mkdirSync(path.dirname(p), { recursive: true }); }
@@ -108,6 +139,9 @@ async function packAndUploadCheckpoint(checkpointDir, hfRepoId) {
 // ---------------------------------------------------------------------------
 
 async function dispatchTrainingJob(provider, checkpointUri, steps = 600) {
+  // Sync GPU API keys from Windows User environment scope
+  _syncUserEnvKeys();
+
   const creds = _checkCredentials(provider);
   if (creds.error) return creds;
 
@@ -548,6 +582,7 @@ async function _dispatchLightning(checkpointUri, steps) {
     const lightningArgs = ["--steps", String(steps), "--hf-repo", hfRepo];
     if (checkpointUri) lightningArgs.push("--checkpoint-uri", checkpointUri);
     result = _runLightningScript("dispatch", lightningArgs);
+
   } catch (err) {
     return { error: "lightning_dispatch_failed", detail: err.message };
   }
