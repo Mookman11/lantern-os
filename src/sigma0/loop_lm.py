@@ -86,11 +86,19 @@ class Sigma0LoopLM:
     @classmethod
     def load(cls, base="ByteDance/Ouro-1.4B", adapter: str | None = None, dtype="float16"):
         torch, AutoModelForCausalLM, AutoTokenizer = _lazy()
+        from transformers import AutoConfig
         tok = AutoTokenizer.from_pretrained(base, trust_remote_code=True)
         if tok.pad_token is None:
             tok.pad_token = tok.eos_token
+        # Ouro's remote-code OuroConfig never sets pad_token_id, and recent
+        # transformers (5.x) no longer defaults that attribute onto custom
+        # PretrainedConfig subclasses — OuroModel.__init__ reads
+        # config.pad_token_id directly and raises AttributeError without this.
+        config = AutoConfig.from_pretrained(base, trust_remote_code=True)
+        if not hasattr(config, "pad_token_id") or config.pad_token_id is None:
+            config.pad_token_id = tok.pad_token_id
         model = AutoModelForCausalLM.from_pretrained(
-            base, trust_remote_code=True, dtype=getattr(torch, dtype), device_map="auto",
+            base, config=config, trust_remote_code=True, dtype=getattr(torch, dtype), device_map="auto",
             low_cpu_mem_usage=True)  # avoid the double state-dict materialization that
             # triggers 'OSError 1455: paging file too small' on RAM-starved boxes (#781)
         if adapter:
