@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.7.54] - 2026-06-23
+- fix(training): ROPE_INIT_FUNCTIONS['default'] monkey-patch for transformers>=4.53 (OuroRotaryEmbedding KeyError on Kaggle)
+- fix(training): pin transformers>=4.40,<4.53 in Kaggle script as belt-and-suspenders
+- fix(training): Paperspace API URL corrected to api.paperspace.com
+- fix(training): Lightning dispatch — full remote script path, skip start() when already running, TRAIN_SCRIPT clone repo + correct script name
+- fix(training): skip --checkpoint-uri flag when empty (argparse crash)
+
+## [1.7.53] - 2026-06-23
+- fix(training): patch OuroConfig missing pad_token_id on Kaggle Python 3.12 — fixes AttributeError in modeling_ouro.py
+- fix(training): skip LFS objects on Kaggle git clone (GIT_LFS_SKIP_SMUDGE=1)
+- fix(training): Kaggle kernel slug — title spaces map to hyphens, URL regex handles both /code/user/slug and /user/slug
+- feat(orchestration): normie copy pass + full convergence API wiring (calibration panel, self-tests panel)
+
 ## [1.7.52] - 2026-06-22
 - feat(wip): land working-tree files from session (consequence-gate, goal-engine, gpu-training route, mandala-clock, action-tiers, self-improvement data, convergence work records, experiment scripts)
 

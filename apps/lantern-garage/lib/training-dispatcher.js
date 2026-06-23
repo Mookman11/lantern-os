@@ -280,7 +280,7 @@ async function _dispatchPaperspace(checkpointUri, steps) {
 
   let responseData;
   try {
-    const res = await fetch("https://api.paperspace.io/v1/notebooks", {
+    const res = await fetch("https://api.paperspace.com/v1/notebooks", {
       method: "POST",
       headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -461,17 +461,33 @@ resume_args = ["--resume_from", "/kaggle/working/checkpoint"]
 
 print("=== Ouro QLoRA training — ${steps} steps ===")
 
-# Install dependencies
+# Install dependencies — pin transformers <4.53 (ROPE_INIT_FUNCTIONS changed in 4.53+)
 subprocess.run([sys.executable, "-m", "pip", "install", "-q",
-    "transformers>=4.40", "peft>=0.10", "bitsandbytes>=0.43",
+    "transformers>=4.40,<4.53", "peft>=0.10", "bitsandbytes>=0.43",
     "datasets", "accelerate", "scipy", "huggingface_hub", "zstandard"],
     check=True)
 
-# Clone repo (training script + data)
+# Monkey-patch: restore 'default' rope type in case transformers>=4.53 was pre-installed
+# OuroRotaryEmbedding looks up ROPE_INIT_FUNCTIONS['default'] at model init time.
+try:
+    from transformers.modeling_rope_utils import ROPE_INIT_FUNCTIONS
+    if 'default' not in ROPE_INIT_FUNCTIONS:
+        from transformers.modeling_rope_utils import _compute_default_rope_parameters
+        ROPE_INIT_FUNCTIONS['default'] = _compute_default_rope_parameters
+        print("patched: ROPE_INIT_FUNCTIONS['default'] restored")
+except Exception as _e:
+    print(f"rope patch skipped: {_e}")
+
+# Clone repo (training script + data).
+# GIT_LFS_SKIP_SMUDGE=1 skips downloading LFS objects (*.png, *.pdf, *.zip) —
+# the repo LFS budget is exceeded; we only need the Python script + JSONL data,
+# neither of which is tracked by LFS.
 REPO = "/kaggle/working/lantern-os"
 if not os.path.exists(REPO):
+    clone_env = {**os.environ, "GIT_LFS_SKIP_SMUDGE": "1"}
     subprocess.run(["git", "clone", "--depth", "1",
-        "https://github.com/alex-place/lantern-os", REPO], check=True)
+        "https://github.com/alex-place/lantern-os", REPO],
+        env=clone_env, check=True)
 
 os.chdir(REPO)
 sys.path.insert(0, os.path.join(REPO, "src"))
@@ -563,15 +579,10 @@ async function _dispatchLightning(checkpointUri, steps) {
   const hfRepo = process.env.HF_TRAINING_REPO || loadGpuPcsf()?.checkpoint_repo_default || "ouro-checkpoints";
   let result;
   try {
-    const args = [
-      "--steps", String(steps),
-      "--hf-repo", hfRepo,
-    ];
-    // Only include checkpoint-uri if it has a value (avoid empty arg parsing issues)
-    if (checkpointUri && checkpointUri.trim()) {
-      args.push("--checkpoint-uri", checkpointUri);
-    }
-    result = _runLightningScript("dispatch", args);
+    const lightningArgs = ["--steps", String(steps), "--hf-repo", hfRepo];
+    if (checkpointUri) lightningArgs.push("--checkpoint-uri", checkpointUri);
+    result = _runLightningScript("dispatch", lightningArgs);
+
   } catch (err) {
     return { error: "lightning_dispatch_failed", detail: err.message };
   }
@@ -658,7 +669,7 @@ async function _pollPaperspace(jobId) {
 
   let data;
   try {
-    const res = await fetch(`https://api.paperspace.io/v1/notebooks/${jobId}`, {
+    const res = await fetch(`https://api.paperspace.com/v1/notebooks/${jobId}`, {
       headers: { "Authorization": `Bearer ${process.env.PAPERSPACE_API_KEY}` },
     });
     if (!res.ok) return { error: "paperspace_poll_failed", httpStatus: res.status };
