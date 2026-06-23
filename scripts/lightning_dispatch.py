@@ -19,6 +19,7 @@ import argparse
 import json
 import os
 import sys
+import tempfile
 
 
 def _sdk():
@@ -106,7 +107,7 @@ def cmd_dispatch(args):
 
     script_content = TRAIN_SCRIPT.format(
         hf_repo=hf_repo, checkpoint_file=checkpoint_file, steps=steps)
-    script_path = "/tmp/ouro_train_lightning.py"
+    script_path = os.path.join(tempfile.gettempdir(), "ouro_train_lightning.py")
     with open(script_path, "w") as f:
         f.write(script_content)
 
