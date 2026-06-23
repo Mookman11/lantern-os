@@ -88,7 +88,8 @@ function _buildEvidence(r) {
 
 // Single write point: job log + convergence record in one call.
 async function logJob(record) {
-  await logJob(record);
+  ensureDir(JOBS_LOG);
+  await appendJsonlQueued(JOBS_LOG, record);
   logConvergenceRecord(record).catch(() => {});
 }
 
@@ -104,6 +105,23 @@ function _buildConfidence(r) {
   }
   if (r.type === "training_dispatch") return 0.6; // dispatched but not yet confirmed running
   return 0.5;
+}
+
+// Records a failed dispatch attempt to the jobs log so it shows up in "Recent runs" —
+// without this, only successful/manual_required dispatches were ever persisted, so a
+// failed kaggle/lightning attempt left no trace once the live progress badge cleared.
+async function _logDispatchFailure(provider, errorRecord, steps) {
+  const record = {
+    type: "training_dispatch",
+    provider,
+    status: "failed",
+    steps,
+    error: errorRecord.error,
+    detail: errorRecord.detail,
+    dispatchedAt: isoNow(),
+  };
+  await logJob(record);
+  return errorRecord;
 }
 
 function ensureDir(p) { fs.mkdirSync(path.dirname(p), { recursive: true }); }
@@ -298,7 +316,7 @@ async function _dispatchKaggle(checkpointUri, steps) {
       { encoding: "utf8", timeout: 60_000, env });
   } catch (err) {
     fs.rmSync(tmpDir, { recursive: true, force: true });
-    return { error: "kaggle_push_failed", detail: err.message + (err.stderr || "") };
+    return _logDispatchFailure("kaggle", { error: "kaggle_push_failed", detail: err.message + (err.stderr || "") }, steps);
   }
   fs.rmSync(tmpDir, { recursive: true, force: true });
 
@@ -652,8 +670,8 @@ function _runLightningScript(subcommand, extraArgs = []) {
     ...process.env,
     LIGHTNING_USER_ID:        process.env.LIGHTNING_USER_ID        || "",
     LIGHTNING_API_KEY:        process.env.LIGHTNING_API_KEY        || "",
-    LIGHTNING_STUDIO_USER:    process.env.LIGHTNING_STUDIO_USER    || "alexplace7",
-    LIGHTNING_STUDIO_TEAMSPACE: process.env.LIGHTNING_STUDIO_TEAMSPACE || "custom-ml-model-development-project",
+    LIGHTNING_STUDIO_ORG:     process.env.LIGHTNING_STUDIO_ORG     || "lantern",
+    LIGHTNING_STUDIO_TEAMSPACE: process.env.LIGHTNING_STUDIO_TEAMSPACE || "api-credential-management-project",
     HF_TRAINING_REPO:         process.env.HF_TRAINING_REPO         || "ouro-checkpoints",
   };
   const raw = execFileSync("python", [script, subcommand, ...extraArgs],
@@ -671,9 +689,9 @@ async function _dispatchLightning(checkpointUri, steps) {
     result = _runLightningScript("dispatch", lightningArgs);
 
   } catch (err) {
-    return { error: "lightning_dispatch_failed", detail: err.message };
+    return _logDispatchFailure("lightning", { error: "lightning_dispatch_failed", detail: err.message }, steps);
   }
-  if (result.error) return { error: result.error, provider: "lightning", detail: result };
+  if (result.error) return _logDispatchFailure("lightning", { error: result.error, provider: "lightning", detail: result }, steps);
   const hoursEstimated = Math.ceil(steps / (cfg?.steps_per_hour_estimate || 180));
   const record = {
     type: "training_dispatch",
