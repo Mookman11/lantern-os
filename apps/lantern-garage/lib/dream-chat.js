@@ -325,6 +325,12 @@ function selectAgent(message) {
     (scores[p.id] > scores[best.id]) ? p : best
   );
 
+  // Σ₀ default: an unmatched message (every persona still at the baseline score) must NOT
+  // fall through to the first/dream persona — route it to the grounded Σ₀ agent instead.
+  if (scores[winner.id] <= 1) {
+    const sigma0 = personas.find((p) => p.id === "keystone-sigma0") || personas.find((p) => p.id === "keystone");
+    if (sigma0) { console.log(`[selectAgent] no keyword match → Σ₀ default (${sigma0.id})`); return sigma0; }
+  }
   console.log(`[selectAgent] Scored message "${message.slice(0, 60)}..." → ${winner.id} (score: ${scores[winner.id]})`);
   return winner;
 }
@@ -612,32 +618,6 @@ async function dreamChatReply(message, recentDreams, requestedAgent = "", reques
   }
 
   const lower = text.toLowerCase();
-  let doorContext = "";
-  for (const key of Object.keys(DREAM_DOORS)) {
-    if (
-      lower.includes(key) ||
-      (key === "founder" && lower.includes("wish")) ||
-      (key === "xp" && (lower.includes("windows") || lower.includes("gage"))) ||
-      (key === "fog" && lower.includes("garden")) ||
-      (key === "sigil" && lower.includes("city"))
-    ) {
-      const door = DREAM_DOORS[key];
-      doorContext = `The dreamer mentioned ${door.name}. ${door.phrase}`;
-      break;
-    }
-  }
-
-  const recentContext = recentDreams
-    .slice(0, 3)
-    .map((d, i) => `Recent entry ${i + 1}: ${String(d.text || "").slice(0, 120)}${d.tags ? ` [tags: ${d.tags.join(", ")}]` : ""}`)
-    .join("\n");
-
-  const noRecords = !recentContext;
-  const honesty = noRecords ? "IMPORTANT: There are no saved dream entries yet. If the dreamer asks about previous dreams, say honestly that you don't have any records yet — never fabricate or guess dream content.\n" : "";
-
-  // CSF symbolic memory — relevance-filtered, ~500-1500 chars, includes door history
-  let csfContext = "";
-  try { csfContext = formatCSFContextForPrompt(text); } catch { /* non-fatal */ }
 
   // ── Web Search Grounding ───────────────────────────────────────────
   let groundingContext = "";
@@ -726,7 +706,7 @@ async function dreamChatReply(message, recentDreams, requestedAgent = "", reques
     }
   }
 
-  const userPrompt = `Dreamer says: "${text}"\n${doorContext ? doorContext + "\n" : ""}${honesty}${recentContext ? "Context:\n" + recentContext + "\n\n" : ""}${csfContext ? "Symbolic memory:\n" + csfContext + "\n\n" : ""}${tradingContext ? "Trading data:\n" + tradingContext + "\n\n" : ""}${groundingContext ? groundingContext + "\n\n" : ""}Respond as your persona. Keep it brief (2-4 sentences). ${tradingContext ? "Give practical, literal advice grounded in the trading data above." : "Never diagnose or command."}`;
+  const userPrompt = `${groundingContext ? groundingContext + "\n\n" : ""}${tradingContext ? "Trading data:\n" + tradingContext + "\n\n" : ""}${text}`;
 
   let rp = String(requestedProvider || "").toLowerCase().trim();
 
@@ -810,7 +790,28 @@ async function dreamChatReply(message, recentDreams, requestedAgent = "", reques
   if (!rp || rp === "ollama" || rp === "local" || rp === "sigma0") {
     const isCoding = rp === "sigma0" || _isCodingRequest(text);
     const sigma0Persona = _getPersonas().find(p => p.id === "keystone-sigma0") || _DEFAULT_PERSONAS.find(p => p.id === "keystone-sigma0");
-    const ollamaSystemPrompt = isCoding && sigma0Persona ? sigma0Persona.systemPrompt : agent.systemPrompt;
+
+    // #1050: in degraded/offline mode (no cloud keys + provider not explicitly set)
+    // the tiny local model cannot follow rich persona prompts — it produces in-persona
+    // metaphor poetry instead of factual answers. Swap in a minimal direct-answer
+    // prompt so factual queries (time, tools, model identity) get usable responses.
+    const _cloudAvailable = !!(
+      process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY ||
+      process.env.GEMINI_API_KEY    || process.env.GOOGLE_API_KEY ||
+      process.env.XAI_API_KEY
+    );
+    const _offlinePrompt =
+      "You are a helpful assistant running in offline mode on a small local model.\n" +
+      "Answer questions directly and factually. If you don't know something, say so.\n" +
+      "Do not use metaphor or poetic language. Keep answers short and concrete.";
+    // #1050 fix: drop the !_cloudAvailable gate. Keys exist in env even when
+    // cloud providers are unreachable (degraded mode). We're already in the
+    // Ollama block, which means cloud auto-routing fell through — use the
+    // minimal prompt regardless of key presence so Ouro gives factual answers.
+    const _useOfflinePrompt = !rp && !isCoding;
+    const ollamaSystemPrompt = isCoding && sigma0Persona
+      ? sigma0Persona.systemPrompt
+      : (_useOfflinePrompt ? _offlinePrompt : agent.systemPrompt);
     const ollamaUserPrompt = isCoding
       ? `REQUIREMENT TO VERIFY: ${text}\n\nConfirm what files/lines you read, then respond in the <REQUIREMENT><EVIDENCE><CODE><VERIFICATION><CONFIDENCE> format.`
       : userPrompt;
@@ -879,7 +880,8 @@ async function dreamChatReply(message, recentDreams, requestedAgent = "", reques
         }
         const ollamaSuggestions = reply.doors && reply.doors.length > 0 ? reply.doors : suggestions;
         recordProviderSuccessRouter("ollama"); // Log to provider-router for performance tracking
-        return { reply: reply.content, agent: agent.name, suggestions: ollamaSuggestions, online: true, source: "ollama", webSuggestions };
+        const offlineBanner = _useOfflinePrompt ? "\n\n---\n⚠ Running offline on local model — factual accuracy may be limited." : "";
+        return { reply: reply.content + offlineBanner, agent: agent.name, suggestions: ollamaSuggestions, online: true, source: "ollama", degraded: _useOfflinePrompt, webSuggestions };
       }
     } catch (err) {
       console.error("Ollama API error:", err.message);
@@ -1128,13 +1130,40 @@ async function dreamChatReply(message, recentDreams, requestedAgent = "", reques
   };
 }
 
+// ── Grounding gate ──────────────────────────────────────────────────
+// The Σ₀ verify pass is ON by default and operator-toggleable. Precedence:
+//   1. SIGMA0_VERIFY=true / =false — explicit env override (back-compat).
+//   2. otherwise the `chat_grounding` admin flag, defaulting ON until an admin
+//      creates+disables it (same isFlagEnabledOr pattern as the Patreon gate).
+function isVerifyEnabled() {
+  const env = process.env.SIGMA0_VERIFY;
+  if (env === "true") return true;
+  if (env === "false") return false;
+  try {
+    const { isFlagEnabledOr } = require("./feature-flags");
+    return isFlagEnabledOr("chat_grounding", true);
+  } catch { return true; }
+}
+
+// Map verify-pass grounding records → grounding-calibration events. Only claims
+// that got an EXTERNAL signal (codebase/web/gemini) carry ground truth; a claim
+// with no grounding ("none") is skipped — absence of evidence is not an outcome.
+// outcome = 1 when a source confirmed the claim, 0 when it actively refuted it.
+function calibrationEventsFor(records, agentName) {
+  const key = `agent:${agentName || "lantern"}`;
+  return (records || [])
+    .filter((r) => r && r.source && r.source !== "none")
+    .map((r) => ({ key, predicted: r.confidence, outcome: r.refuted ? 0 : 1, source: r.source }));
+}
+
 // ── Σ₀ Self-Correcting Verify Pass ──────────────────────────────────
 // Three grounding sources: (1) codebase grep, (2) web search via MCP,
 // (3) Gemini grounding API. Low-confidence claims trigger a revision pass.
-// Appends convergence records. Default ON when ANTHROPIC_API_KEY is set;
-// opt-out via SIGMA0_VERIFY=false (#997: default-grounded, not opt-in).
+// Appends convergence records + feeds grounding calibration. ON by default
+// (see isVerifyEnabled); set SIGMA0_VERIFY=false or disable the chat_grounding
+// admin flag to turn off.
 async function verifyResponse(draft, userMessage, agentName) {
-  if (process.env.SIGMA0_VERIFY === "false") return { verified: draft, records: [], corrected: false };
+  if (!isVerifyEnabled()) return { verified: draft, records: [], corrected: false };
 
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
   if (!anthropicKey) return { verified: draft, records: [], corrected: false };
@@ -1142,8 +1171,11 @@ async function verifyResponse(draft, userMessage, agentName) {
   const fs = require("fs");
   const path = require("path");
   const { webSearchMcp } = require("./web-search-client");
-  const { execSync } = require("child_process");
-  const REPO_ROOT = path.resolve(__dirname, "..", "..");
+  const { execFile } = require("child_process");
+  const execFileAsync = require("util").promisify(execFile);
+  // lib/ → lantern-garage/ → apps/ → repo root (THREE levels). Records + the
+  // codebase grep must resolve against the real repo root, not apps/.
+  const REPO_ROOT = path.resolve(__dirname, "..", "..", "..");
   const RECORDS_PATH = path.join(REPO_ROOT, "data", "convergence", "records.jsonl");
 
   // ── Helper: call Claude Haiku ─────────────────────────────────────
@@ -1248,7 +1280,15 @@ async function verifyResponse(draft, userMessage, agentName) {
       try {
         const terms = c.claim.replace(/[^a-zA-Z0-9_\-. ]/g, " ").split(/\s+/).filter(t => t.length > 4).slice(0, 2).join("|");
         if (terms) {
-          const res = execSync(`git grep -l --ignore-case -E "${terms}" -- "*.js" "*.json" "*.md" 2>NUL`, { cwd: REPO_ROOT, timeout: 3000, encoding: "utf8" }).trim();
+          // Shell-free AND non-blocking: execFile (shell:false) interpolates
+          // `terms` as a regex ARG, never into a command string — no injection
+          // surface even though grounding now runs every turn (#873) — and the
+          // async form keeps the event loop free (sync exec here would block all
+          // concurrent requests for up to 3s/claim). git grep exits non-zero on
+          // no match → the promise rejects → handled by the catch.
+          const { stdout } = await execFileAsync("git", ["grep", "-l", "--ignore-case", "-E", terms, "--", "*.js", "*.json", "*.md"],
+            { cwd: REPO_ROOT, timeout: 3000, encoding: "utf8" });
+          const res = stdout.trim();
           if (res) { evidence = `codebase: ${res.split("\n").slice(0, 2).join(", ")}`; confidence = 0.85; source = "codebase-grep"; sources.push(evidence); }
         }
       } catch { /* not found */ }
@@ -1320,7 +1360,26 @@ async function verifyResponse(draft, userMessage, agentName) {
     }
   } catch { /* non-fatal */ }
 
-  return { verified, records, corrected };
+  // Feed each externally-grounded claim into the fast-layer grounding calibration
+  // (Brier/trust per agent). Defaults to the repo-root data/ store the same way
+  // /api/convergence writes it — so chat now contributes to calibration too.
+  try {
+    const { recordGrounding } = require("./grounding-calibration");
+    for (const evt of calibrationEventsFor(records, agentName)) recordGrounding(evt);
+  } catch { /* non-fatal */ }
+
+  // ── Step 5: bridge grounded records → consent-gate claim packets ──
+  // Closes the EXTERNAL REALITY RULE loop end-to-end (#919 finding #2): a
+  // grounded chat answer now drafts [claim, evidence, confidence, source]
+  // packets into the consent gate (status=draft, never auto-approved/signed).
+  // Best-effort: a packet hiccup must never corrupt the chat reply.
+  let claimDrafts = null;
+  try {
+    const { draftClaimsFromRecords } = require("./claim-draft");
+    claimDrafts = await draftClaimsFromRecords(REPO_ROOT, records, { agent: agentName });
+  } catch { /* non-fatal */ }
+
+  return { verified, records, corrected, claimDrafts };
 }
 
 // ── Initialize Token Audit ───────────────────────────────────────────
@@ -1334,5 +1393,7 @@ module.exports = {
   handleConvergenceCommand,
   dreamChatReply,
   verifyResponse,
+  isVerifyEnabled,
+  calibrationEventsFor,
   tokenAudit,
 };

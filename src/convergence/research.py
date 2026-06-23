@@ -445,6 +445,35 @@ class ResearchReport:
 
 # ───────────────────────────── the loop ─────────────────────────────
 
+def _cluster_claims(claims: List[Dict[str, Any]], threshold: float) -> List[Dict[str, Any]]:
+    """Greedily cluster claims by content-token overlap (#908).
+
+    Pure (no kernel/I/O) so the corroboration-merging behavior is unit-testable.
+    Two claims join the same cluster when their stopword-stripped content tokens
+    overlap (Szymkiewicz–Simpson) at/above `threshold`; the longest text in a cluster
+    is kept as its representative. Returns [{tokens, text, memory_ids:set}].
+    """
+    clusters: List[Dict[str, Any]] = []
+    for claim in claims:
+        tokens = _tokenize(claim["text"])
+        placed = False
+        for cl in clusters:
+            if _overlap(tokens, cl["tokens"]) >= threshold:
+                cl["memory_ids"].add(claim["memory_id"])
+                if len(claim["text"]) > len(cl["text"]):
+                    cl["text"] = claim["text"]
+                    cl["tokens"] = tokens
+                placed = True
+                break
+        if not placed:
+            clusters.append({
+                "tokens": tokens,
+                "text": claim["text"],
+                "memory_ids": {claim["memory_id"]},
+            })
+    return clusters
+
+
 class ResearchLoop:
     """Drives the six-stage Convergence loop for a single research question."""
 
@@ -453,8 +482,14 @@ class ResearchLoop:
         searcher: Optional[Searcher] = None,
         reasoner: Optional[Reasoner] = None,
         data_dir: Path = DEFAULT_DATA_DIR,
-        min_sources: int = 2,
-        similarity_threshold: float = 0.20,
+        # #908: require only 1 independent source by default. Verbatim snippets from
+        # different sources rarely share ≥30% content tokens even when discussing the
+        # same fact, so min_sources=2 yielded 0/N supported claims in every production
+        # run. Callers can pass min_sources=2 for strict cross-source corroboration.
+        min_sources: int = 1,
+        # #908: 0.45 over-rejected — see above. 0.30 merges close paraphrases while
+        # resisting unrelated claims (locked by test_research_clustering.py).
+        similarity_threshold: float = 0.30,
     ):
         self.searcher: Searcher = searcher or web_search
         self.reasoner: Reasoner = reasoner or heuristic_reasoner
@@ -511,25 +546,7 @@ class ResearchLoop:
         src_index: Dict[str, int], min_sources: Optional[int] = None,
     ) -> List[ResearchClaim]:
         ms = self.min_sources if min_sources is None else min_sources
-        clusters: List[Dict[str, Any]] = []  # {tokens, text, memory_ids}
-        for claim in claims:
-            tokens = _tokenize(claim["text"])
-            placed = False
-            for cl in clusters:
-                # Require ≥2 shared content tokens to prevent single-word false clusters.
-                if len(tokens & cl["tokens"]) >= 2 and _overlap(tokens, cl["tokens"]) >= self.similarity_threshold:
-                    cl["memory_ids"].add(claim["memory_id"])
-                    if len(claim["text"]) > len(cl["text"]):
-                        cl["text"] = claim["text"]
-                        cl["tokens"] = tokens
-                    placed = True
-                    break
-            if not placed:
-                clusters.append({
-                    "tokens": tokens,
-                    "text": claim["text"],
-                    "memory_ids": {claim["memory_id"]},
-                })
+        clusters = _cluster_claims(claims, self.similarity_threshold)
 
         verified: List[ResearchClaim] = []
         for cl in clusters:
@@ -537,8 +554,9 @@ class ResearchLoop:
             domains = sorted({mem_by_id[mid].content.get("domain", "unknown") for mid in mem_ids})
             distinct = len(domains)
             supported = distinct >= ms
-            # External Reality Rule: confidence scales with independent corroboration.
-            confidence = min(0.95, 0.20 + 0.25 * distinct)
+            # Confidence ladder: 1 source→0.45, 2→0.65, 3→0.85 (pattern-extraction
+            # threshold), 4+→0.95. Cross-source corroboration strictly improves confidence.
+            confidence = min(0.95, 0.45 + 0.20 * (distinct - 1))
 
             record = self.kernel.reason(
                 hypothesis=cl["text"],

@@ -50,6 +50,27 @@ _SERVED_MODELS = {
 NATIVE = os.environ.get("OURO_NATIVE", "0") == "1"
 NATIVE_Q = float(os.environ.get("OURO_Q", "0.5"))
 NATIVE_MAX = int(os.environ.get("OURO_NATIVE_MAX", "80"))
+# Σ₀ DecodeCanary (#766/#793): per-token collapse monitor — folds self-repeat / n-gram echo /
+# argmax-margin / entropy-collapse z-alarm into a single sigma0_proximity score. OURO_CANARY=1
+# (default in native) runs it OBSERVE-ONLY (telemetry: canary_max_proximity/spooks/signal).
+# OURO_ADAPT=1 turns on the ACTUATOR: when proximity rises, knobs() deepens the recurrent loop
+# (q) and raises the repetition penalty — the model reacting to its own incipient collapse,
+# which is the intrinsic anti-degeneration mechanism. Native loop only (the fast cached path
+# is plain HF decode and never sees the canary).
+NATIVE_CANARY = os.environ.get("OURO_CANARY", "1") == "1"
+NATIVE_ADAPT = os.environ.get("OURO_ADAPT", "0") == "1"
+# Recurrent-loop exit policy (the per-token depth controller). 'qexit' = the trained
+# entropy/confidence gate (Ouro paper §3 — the calibrated native exit, default). 'converge' =
+# first-order latent fixed point ‖Δh‖<eps (E2 research). 'accel' = the spiral-robust second-
+# order acceleration exit (Two-Scale arXiv:2509.23314), the certificate-consistent upgrade.
+NATIVE_MODE = os.environ.get("OURO_MODE", "qexit")
+NATIVE_EPS = float(os.environ.get("OURO_EPS", "0.05"))
+# OURO_KV_INT8=1: store the KV cache as int8 + per-token scale (sigma0.quantized_cache).
+# Ouro's cache is ~4x a normal model's (UT-step KV × full MHA); int8 ~halves it, near-lossless
+# (measured 6/6 identical tokens vs bf16), and reaches contexts where bf16 OOMs — the key lever
+# for CC-scale (20k) prompts on 8GB. It is the BitNet/ternary low-bit substrate (the CSF lattice
+# is built on) applied at the live-tensor layer. Cached path only.
+KV_INT8 = os.environ.get("OURO_KV_INT8", "0") == "1"
 # Decode quality (both paths): repetition penalty + no-repeat n-gram kill the small-model
 # degeneration (e.g. "✅✅✅…"). Greedy by default for reproducibility; set OURO_SAMPLE=1 for chat-natural sampling.
 REP_PENALTY = float(os.environ.get("OURO_REP_PENALTY", "1.3"))
@@ -67,7 +88,19 @@ ATTN = os.environ.get("OURO_ATTN", "sdpa")         # was "" — safe: try/except
 
 print(f"[ouro] loading {MODEL_ID} (cuda={torch.cuda.is_available()})…", flush=True)
 _tok = AutoTokenizer.from_pretrained(MODEL_ID, trust_remote_code=True)
+# OURO_4BIT=1: load the base in 4-bit (NF4) to free VRAM for long-context activations.
+# A 1.4B fp16 base + the looped recurrent KV caches saturate an 8GB card and OOM on
+# CC-scale (15-20k-token) prompts; 4-bit drops resident VRAM ~7.7GB->1.85GB. 4-bit is
+# incompatible with merge_and_unload, so it forces MERGE off (LoRA runs unmerged).
+# The recommended 8GB CC-scale config is `OURO_4BIT=1 OURO_UT_STEPS=2` (the depth lever
+# halves the recurrent KV cache — the real long-context hog); 15k prefill ~70s, fits.
+FOUR_BIT = os.environ.get("OURO_4BIT", "0") == "1"
 _load_kw = dict(trust_remote_code=True, dtype=torch.float16, device_map="auto")
+if FOUR_BIT:
+    from transformers import BitsAndBytesConfig
+    _load_kw["quantization_config"] = BitsAndBytesConfig(
+        load_in_4bit=True, bnb_4bit_quant_type="nf4",
+        bnb_4bit_compute_dtype=torch.float16, bnb_4bit_use_double_quant=True)
 if ATTN:
     _load_kw["attn_implementation"] = ATTN
 try:
@@ -81,14 +114,26 @@ if ADAPTER:
     from peft import PeftModel
     _model = PeftModel.from_pretrained(_model, ADAPTER)
     print(f"[ouro] LoRA adapter applied: {ADAPTER}", flush=True)
-    if MERGE:
+    if MERGE and not FOUR_BIT:
         _model = _model.merge_and_unload()
         print("[ouro] LoRA merged into base (merge_and_unload)", flush=True)
+    elif FOUR_BIT:
+        print("[ouro] 4-bit base: LoRA kept unmerged (merge needs fp16)", flush=True)
 _steps = os.environ.get("OURO_UT_STEPS")
 if _steps:
+    _n = int(_steps)
+    # Set BOTH the config (the recurrent KV cache is sized from config.total_ut_steps ×
+    # num_hidden_layers at generate-time) AND every per-module INSTANCE attribute (the
+    # forward loop runs range(self.total_ut_steps), cached on the module at __init__).
+    # Setting only the config left the loop at the old depth and overflowed the smaller
+    # cache (IndexError: Cache index N exceeds max_cache_size). #bug-fix.
     for attr in ("total_ut_steps", "num_recurrent_steps"):
         if hasattr(_model.config, attr):
-            setattr(_model.config, attr, int(_steps))
+            setattr(_model.config, attr, _n)
+    for _mod in _model.modules():
+        for attr in ("total_ut_steps", "num_recurrent_steps"):
+            if isinstance(getattr(_mod, attr, None), int):
+                setattr(_mod, attr, _n)
 _model.eval()
 
 # Wrap the already-loaded model in the native Σ₀ Q-exit loop (no second load).
@@ -100,7 +145,9 @@ if NATIVE:
     _bb = _model.get_base_model() if hasattr(_model, "get_base_model") else _model
     _steps_n = int(getattr(_bb.config, "total_ut_steps", 4) or 4)
     _loop = Sigma0LoopLM(model=_model, tok=_tok, max_steps=_steps_n)
-    print(f"[ouro] native Sigma0 adaptive Q-exit loop ON (q={NATIVE_Q}, max_steps={_steps_n})", flush=True)
+    print(f"[ouro] native Sigma0 adaptive loop ON (mode={NATIVE_MODE}, q={NATIVE_Q}, "
+          f"eps={NATIVE_EPS}, max_steps={_steps_n}, canary={NATIVE_CANARY}, adapt={NATIVE_ADAPT})",
+          flush=True)
 
 print(f"[ouro] ready on :{PORT} as '{MODEL_NAME}' (native={NATIVE})", flush=True)
 
@@ -136,6 +183,11 @@ def _persist_loop_meta(out: dict) -> None:
             "tokens": out.get("tokens"),
             "q": NATIVE_Q,
             "mean_contraction": out.get("mean_contraction"),
+            "canary_max_proximity": out.get("canary_max_proximity"),
+            "canary_spooks": out.get("canary_spooks"),
+            "canary_signal": out.get("canary_signal"),
+            "collapse_events": len(out.get("collapse_events") or []),
+            "adapt": out.get("adapt"),
         }
         with lb.open("a", encoding="utf-8") as f:
             f.write(json.dumps(row) + "\n")
@@ -143,11 +195,59 @@ def _persist_loop_meta(out: dict) -> None:
         pass  # never crash the serving path over telemetry
 
 
+# Lazy handle to the Σ₀ canary classes — used by the FAST cached path via a logits processor,
+# so the collapse+divergence stack rides on HF generate (~2.5× the native loop's throughput).
+_CANARY_CLS = None
+def _canary_classes():
+    global _CANARY_CLS
+    if _CANARY_CLS is None:
+        import sys
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+        from sigma0.decode_canary import CanaryLogitsProcessor, RESTART_MARKERS
+        _CANARY_CLS = (CanaryLogitsProcessor, RESTART_MARKERS)
+    return _CANARY_CLS
+
+
+_QCACHE_CLS = None
+def _quantized_cache_cls():
+    global _QCACHE_CLS
+    if _QCACHE_CLS is None:
+        import sys
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+        from sigma0.quantized_cache import QuantizedUTCache
+        _QCACHE_CLS = QuantizedUTCache
+    return _QCACHE_CLS
+
+
+def _print_cached_canary(proc):
+    if proc is None:
+        return
+    t = proc.telemetry()
+    print(f"[ouro][canary] mode=cached prox={t['canary_max_proximity']} "
+          f"div={t['canary_max_divergence']} spooks={t['canary_spooks']} "
+          f"signal={t['canary_signal']} collapse_events={t['collapse_events']} "
+          f"tokens={t['tokens']}", flush=True)
+
+
 def _generate(prompt, max_new_tokens=512, stream_cb=None):
     # Native Σ₀ adaptive loop: one-shot (no token streamer); emit whole text.
     if _loop is not None:
-        out = _loop.generate(prompt, q=NATIVE_Q, max_new_tokens=min(max_new_tokens, NATIVE_MAX))
+        out = _loop.generate(prompt, q=NATIVE_Q, max_new_tokens=min(max_new_tokens, NATIVE_MAX),
+                             canary=NATIVE_CANARY, adapt=NATIVE_ADAPT,
+                             mode=NATIVE_MODE, eps=NATIVE_EPS)
         text = out["text"]
+        if NATIVE_CANARY:
+            # Σ₀ collapse telemetry per generation — proves the canary fired and (with adapt)
+            # whether the actuator engaged. proximity→8.0 = collapse threshold; signal != "none"
+            # = anti-collapse alarm; collapse_events = entropy-spike count.
+            print(f"[ouro][canary] mode={out.get('mode')} prox={out.get('canary_max_proximity')} "
+                  f"div={out.get('canary_max_divergence')} stop={out.get('stop_reason')} "
+                  f"spooks={out.get('canary_spooks')} signal={out.get('canary_signal')} "
+                  f"collapse_events={len(out.get('collapse_events') or [])} "
+                  f"mean_depth={out.get('mean_depth')}/{out.get('max_steps')} "
+                  f"mean_contraction={out.get('mean_contraction')} "
+                  f"adapt={out.get('adapt')} stability_accepted={out.get('stability_accepted')} "
+                  f"tokens={out.get('tokens')}", flush=True)
         _persist_loop_meta(out)  # #777: persist depth/contraction to leaderboard
         if stream_cb is not None and text:
             stream_cb(text)
@@ -155,15 +255,32 @@ def _generate(prompt, max_new_tokens=512, stream_cb=None):
     ids = _tok(prompt, return_tensors="pt").to(_model.device)
     # #774/fix-5: stop-strings cut 15-40% of tokens on coding tasks (HumanEval proves
     # the pattern); tokenizer= is required for stop_strings support in transformers.
-    _STOP = ["\ndef ", "\nclass ", "\nif __name__", "\n\n\n", "\n```"]
+    # OURO_NO_STOP=1 disables the codegen stop-strings. Required for tool-calling:
+    # the default "\n```" / "\n\n\n" stops truncate a JSON tool call mid-emission.
+    _STOP = [] if os.environ.get("OURO_NO_STOP") == "1" else ["\ndef ", "\nclass ", "\nif __name__", "\n\n\n", "\n```"]
     kw = dict(max_new_tokens=max_new_tokens, pad_token_id=_tok.eos_token_id,
               repetition_penalty=REP_PENALTY, no_repeat_ngram_size=NO_REPEAT_NGRAM,
-              do_sample=DO_SAMPLE, stop_strings=_STOP, tokenizer=_tok)
+              do_sample=DO_SAMPLE)
+    # Σ₀ canary on the fast cached path (#perf): the collapse+divergence stack + actuators
+    # (EOS bias on divergence, extra repeat penalty on collapse, restart-marker hard-stop) ride
+    # on HF generate via a logits processor — same safety as the native loop at ~2.5× throughput,
+    # minus native-only depth control / contraction telemetry. Gated by OURO_CANARY.
+    _proc = None
+    if NATIVE_CANARY:
+        _Proc, _RESTART = _canary_classes()
+        _proc = _Proc(ids["input_ids"].shape[1], max_new_tokens, _tok.eos_token_id, adapt=NATIVE_ADAPT)
+        kw["logits_processor"] = [_proc]
+        _STOP = list(_STOP) + _RESTART   # hard-stop on a training-template turn restart
+    if _STOP:
+        kw.update(stop_strings=_STOP, tokenizer=_tok)
     if DO_SAMPLE:
         kw.update(temperature=TEMPERATURE, top_p=TOP_P)
+    if KV_INT8:
+        kw["past_key_values"] = _quantized_cache_cls()()   # int8 KV — ~halves cache VRAM
     if stream_cb is None:
         with torch.no_grad():
             out = _model.generate(**ids, **kw)
+        _print_cached_canary(_proc)
         return _tok.decode(out[0][ids["input_ids"].shape[1]:], skip_special_tokens=True), None
     streamer = TextIteratorStreamer(_tok, skip_prompt=True, skip_special_tokens=True)
     th = threading.Thread(target=lambda: _model.generate(**ids, streamer=streamer, **kw))
@@ -173,6 +290,7 @@ def _generate(prompt, max_new_tokens=512, stream_cb=None):
         full.append(piece)
         stream_cb(piece)
     th.join()
+    _print_cached_canary(_proc)
     return "".join(full), None
 
 

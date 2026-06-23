@@ -41,20 +41,13 @@ async function parseStreamChatRequest(req, url, deps = {}) {
   if (typeof collectRequestBody !== "function") return parsed;
 
   try {
-    const rawBody = await collectRequestBody(req);
-    // Strip UTF-8 BOM (PowerShell Out-File -Encoding utf8 prepends ﻿)
-    const stripped = rawBody.startsWith("﻿") ? rawBody.slice(1) : rawBody;
-    if (!stripped.trim()) {
-      parsed.parseError = "empty_body";
-      return parsed;
-    }
-    let body;
-    try {
-      body = JSON.parse(stripped);
-    } catch {
-      parsed.parseError = "malformed_json";
-      return parsed;
-    }
+    let rawBody = await collectRequestBody(req);
+    // Strip a leading UTF-8 BOM (﻿). Some clients (PowerShell `Out-File -Encoding
+    // utf8`, certain editors/proxies) prepend one; JSON.parse THROWS on a leading BOM,
+    // which previously dropped the whole body to defaults — an empty message that then
+    // mis-surfaced as "all providers failed / cloud unreachable". Strip it first.
+    if (typeof rawBody === "string" && rawBody.charCodeAt(0) === 0xfeff) rawBody = rawBody.slice(1);
+    const body = JSON.parse(rawBody || "{}");
     parsed.mcpFlag = !!body.mcp;
     parsed.message = String(body.message || "").slice(0, 4000).trim();
     parsed.user = normalizeDreamerUser(body.user || "dreamer");
@@ -65,7 +58,10 @@ async function parseStreamChatRequest(req, url, deps = {}) {
     parsed.surface = String(body.surface || "").trim().toLowerCase();
     parsed.sessionId = String(body.sessionId || "").trim().slice(0, 64) || null;
   } catch {
-    parsed.parseError = "body_read_error";
+    // Body was present but unparseable (malformed JSON, bad encoding). Flag it so the
+    // handler surfaces an honest "couldn't read your message" instead of routing an
+    // empty message to the providers and blaming them. Σ₀: surface why, don't swallow.
+    parsed.bodyError = true;
   }
 
   return parsed;

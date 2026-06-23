@@ -44,6 +44,38 @@ module.exports = async (req, res, url, deps) => {
     return true;
   }
 
+  // GET /api/convergence/calibration — fast-layer trust weights (#1011): the
+  // per-grounding, Brier-calibrated trust per key + the global Brier report card.
+  if (pathname === "/api/convergence/calibration" && req.method === "GET") {
+    try {
+      const { calibration } = require("../lib/grounding-calibration");
+      sendJson(res, { ...calibration(), description: "Per-grounding calibrated trust weights (fast-layer plasticity)" }, 200);
+    } catch (e) {
+      sendJson(res, { total_events: 0, global_brier: null, keys: {}, error: e.message }, 200);
+    }
+    return true;
+  }
+
+  // POST /api/convergence/grounding — record ONE external grounding
+  // {key, predicted, outcome} and return the UPDATED trust weight. The real-time,
+  // per-loop fast-weight adjustment: append-only, reversible, no neural change.
+  if (pathname === "/api/convergence/grounding" && req.method === "POST") {
+    let body = "";
+    req.on("data", (chunk) => (body += chunk));
+    req.on("end", () => {
+      try {
+        const { recordGrounding } = require("../lib/grounding-calibration");
+        const b = JSON.parse(body.replace(/^﻿/, "") || "{}");
+        if (!b.key) { sendJson(res, { error: "key required" }, 400); return; }
+        const updated = recordGrounding({ key: b.key, predicted: b.predicted, outcome: b.outcome, source: b.source });
+        sendJson(res, { ok: true, updated }, 200);
+      } catch (e) {
+        sendJson(res, { error: e.message }, 400);
+      }
+    });
+    return true;
+  }
+
   // POST /api/convergence/route-intent — Route a message intent
   if (pathname === "/api/convergence/route-intent" && req.method === "POST") {
     let body = "";
@@ -204,30 +236,12 @@ module.exports = async (req, res, url, deps) => {
           return;
         }
 
-        // Step 4: Run tests. Plan-specified tests take priority; fall back to the
-        // safe default suite derived from changed file types (#896 — gating bug fix:
-        // [].every() is vacuously true, so we must never skip verification entirely).
+        // Step 4: Run tests from the plan. Empty test set = UNVERIFIED, not "passed".
         const plannedTests = Array.isArray(plan.testsToRun) ? plan.testsToRun : [];
-        const PYTEST_SAFE =
-          "python -m pytest tests/ -q --tb=short " +
-          "--ignore=tests/test_anti_entropy_memory.py " +
-          "--ignore=tests/test_audit_chain.py " +
-          "--ignore=tests/test_discord_bot.py " +
-          "--ignore=tests/test_discord_voice_gate.py";
-        const JS_SUITE = "npm test --prefix apps/lantern-garage";
-        const effectiveTests = plannedTests.length > 0 ? plannedTests : (() => {
-          const hasPy = changedFiles.some((f) => f.endsWith(".py"));
-          const hasJs = changedFiles.some((f) => /\.(c|m)?js$/.test(f));
-          if (hasPy) return [PYTEST_SAFE];
-          if (hasJs) return [JS_SUITE];
-          return []; // truly no applicable tests (e.g. docs-only)
-        })();
-        const testResults = runTests(workRoot, effectiveTests, { env: worktreeTestEnv(REPO_ROOT) });
-        const testsRan = effectiveTests.length;
-        // #896: never treat a zero-tests run as "passed" — require explicit allowUnverified
-        const allTestsOk = testsRan > 0 && testResults.every((r) => r.ok);
-        const testsVerified = allTestsOk;
-        const testsInconclusive = testsRan === 0;
+        const testResults = runTests(workRoot, plannedTests, { env: worktreeTestEnv(REPO_ROOT) });
+        const testsRan = plannedTests.length;
+        const allTestsOk = testResults.every((r) => r.ok);
+        const testsVerified = testsRan > 0 && allTestsOk;
 
         if (testsRan > 0 && !allTestsOk) {
           // Rollback on test failure — stage nothing
@@ -243,7 +257,11 @@ module.exports = async (req, res, url, deps) => {
 
         // Step 5: Commit — stage ONLY the files the patch changed (never git add -A)
         gitAddFiles(workRoot, changedFiles);
-        const commitTitle = `${testsVerified ? "" : "[unverified] "}fix: ${issueDetails.title} (fixes #${issueNumber})`;
+        // #933: don't bake a "[unverified]" marker into the commit/PR title (it
+        // double-stacks with the issue's own conventional prefix). Strip any
+        // existing prefix and record verification state in the body/receipt instead.
+        const cleanTitle228 = String(issueDetails.title || "").replace(/^(fix|feat|chore|docs|refactor|test|perf|ci|style|build)(\([^)]*\))?:\s*/i, "");
+        const commitTitle = `fix: ${cleanTitle228} (fixes #${issueNumber})`;
         gitCommit(workRoot, commitTitle);
 
         // Capture the commit SHA for the response/UI
@@ -254,6 +272,21 @@ module.exports = async (req, res, url, deps) => {
 
         // Step 6: Push
         gitPush(workRoot, branchName);
+
+        // harvest emitter (#911): log verified coding successes offline
+        if (testsVerified) {
+          try {
+            require("../lib/harvest-emitter").emitCodingSuccess({
+              fn: null,
+              instruction: String(issueDetails.title || "").slice(0, 500),
+              code: diffText || "",
+              asserts: [],
+              source: "autowork",
+              verified: true,
+              meta: { issue: issueNumber, branch: branchName, changedFiles },
+            });
+          } catch (_e) { /* best effort */ }
+        }
 
         // Step 7: Open PR — flag unverified when no tests actually ran
         const prBody = `Fixes #${issueNumber}\n\n${issueDetails.body}\n\n---\n` +
@@ -306,6 +339,17 @@ module.exports = async (req, res, url, deps) => {
       });
       const send = (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
       const step = (phase, status, extra = {}) => send("step", { phase, status, ...extra });
+
+      // SSE heartbeat — the plan/patch steps make LLM calls that emit NO bytes for
+      // 30-60s. Idle stream-proxies (the Cloudflare tunnel on lantern-os.net, any
+      // reverse proxy) sever silent connections, which the browser surfaces as a raw
+      // "network error" mid-run (it froze the UI at "Generate plan"). A periodic
+      // comment line keeps the connection warm without disturbing the event parser
+      // (clients ignore lines starting with ":"). Cleared in `finally`.
+      const heartbeat = setInterval(() => {
+        try { res.write(`: keepalive ${Date.now()}\n\n`); } catch (_e) { /* socket gone */ }
+      }, 15000);
+      heartbeat.unref && heartbeat.unref();
 
       const path = require("path");
       const { execFile } = require("child_process");
@@ -544,34 +588,33 @@ module.exports = async (req, res, url, deps) => {
         step("apply", "done", { stats, changedFiles });
 
         // ── 6. tests (verification gate for commit/push) ─────────────────
-        // #896 fix: [].every() is vacuously true — never treat zero-test runs as
-        // "passed". Derive a fallback suite from the changed file types so that
-        // a weak kernel that produces a docs-only plan can't bypass the gate.
-        const plannedTestCmds = Array.isArray(plan.testsToRun) ? plan.testsToRun : [];
-        const STREAM_PYTEST_SAFE =
-          "python -m pytest tests/ -q --tb=short " +
-          "--ignore=tests/test_anti_entropy_memory.py " +
-          "--ignore=tests/test_audit_chain.py " +
-          "--ignore=tests/test_discord_bot.py " +
-          "--ignore=tests/test_discord_voice_gate.py";
-        const STREAM_JS_SUITE = "npm test --prefix apps/lantern-garage";
-        const effectiveTestCmds = plannedTestCmds.length > 0 ? plannedTestCmds : (() => {
-          const hasPy = changedFiles.some((f) => f.endsWith(".py"));
-          const hasJs = changedFiles.some((f) => /\.(c|m)?js$/.test(f));
-          if (hasPy) return [STREAM_PYTEST_SAFE];
-          if (hasJs) return [STREAM_JS_SUITE];
-          return [];
-        })();
-        step("tests", "start", { commands: effectiveTestCmds });
-        const testResults = runTests(workRoot, effectiveTestCmds, { env: worktreeTestEnv(REPO_ROOT) });
-        const testsRanCount = effectiveTestCmds.length;
-        // Never vacuously-true: testsPassed is only true when at least one test ran and all passed
-        const testsPassed = testsRanCount > 0 && testResults.every((r) => r.ok);
-        const testsInconclusive = testsRanCount === 0;
-        receipt.testsPassed = testsInconclusive ? null : testsPassed;
-        step("tests", "done", { testResults, passed: testsPassed, ran: testsRanCount, inconclusive: testsInconclusive });
+        const tests = Array.isArray(plan.testsToRun) ? plan.testsToRun : [];
+        step("tests", "start", { commands: tests });
+        const testResults = runTests(workRoot, tests, { env: worktreeTestEnv(REPO_ROOT) });
+        const ranTests = tests.length > 0; // #933: zero tests is NOT a pass
+        const testsPassed = testResults.every((r) => r.ok);
+        receipt.testsPassed = tests.length === 0 ? null : testsPassed;
+        step("tests", "done", { testResults, passed: testsPassed, ran: tests.length });
 
-        if (testsRanCount > 0 && !testsPassed) {
+        // Σ₀ fast-layer plasticity (#1011): record this run's test gate as an external
+        // grounding event — predicted = the research-based confidence we carried into
+        // verification, outcome = the test ground truth. Recorded HERE, before the
+        // fail-return below, so both PASSES and FAILURES calibrate the loop. Frozen
+        // weights: this only appends to the replayable trust log, never the model.
+        if (ranTests) {
+          try {
+            require("../lib/grounding-calibration").recordGrounding({
+              key: "autowork:patch",
+              predicted: scopeFiles.length > 0 ? 0.8 : 0.5,
+              outcome: testsPassed ? 1 : 0,
+              source: `autowork#${issueNumber}`,
+            });
+          } catch (e) {
+            console.error("[convergence] grounding-calibration record failed (non-fatal):", e && e.message);
+          }
+        }
+
+        if (tests.length > 0 && !testsPassed) {
           // restore working tree — never leave broken changes
           await new Promise((resolve) =>
             execFile("git", ["checkout", "--", "."], { cwd: workRoot, timeout: 10000, windowsHide: true }, () => resolve()));
@@ -596,12 +639,30 @@ module.exports = async (req, res, url, deps) => {
         }
         step("commit", "start");
         gitAddFiles(workRoot, changedFiles); // stage ONLY patched files — never git add -A
-        // #896: verified = tests actually ran AND passed; inconclusive ≠ verified
-        const verified = testsPassed;
-        const commitTitle = `${verified ? "" : "[unverified] "}fix: ${issueDetails.title} (fixes #${issueNumber})`;
+        const verified = tests.length > 0 && testsPassed;
+        // #933: strip the issue's own conventional prefix and keep the verification
+        // state out of the title (recorded in receipt + PR body instead).
+        const cleanTitle = String(issueDetails.title || "").replace(/^(fix|feat|chore|docs|refactor|test|perf|ci|style|build)(\([^)]*\))?:\s*/i, "");
+        const commitTitle = `fix: ${cleanTitle} (fixes #${issueNumber})`;
         gitCommit(workRoot, commitTitle);
         receipt.committed = true;
         step("commit", "done", { title: commitTitle, changedFiles, verified });
+
+        // ── harvest emitter (#911): log verified coding successes offline ─
+        // Fire-and-forget — never blocks the live path, never triggers training.
+        if (verified) {
+          try {
+            require("../lib/harvest-emitter").emitCodingSuccess({
+              fn: null,
+              instruction: String(issueDetails.title || "").slice(0, 500),
+              code: diffText,
+              asserts: [],
+              source: "autowork",
+              verified: true,
+              meta: { issue: issueNumber, branch: branchName, changedFiles },
+            });
+          } catch (_e) { /* best effort */ }
+        }
 
         // ── 8. push + PR (opt-in) ────────────────────────────────────────
         if (!autoPush) {
@@ -616,12 +677,20 @@ module.exports = async (req, res, url, deps) => {
         step("push", "done");
 
         step("pr", "start");
-        const prUrl = openDraftPr(workRoot, branchName, commitTitle, `Fixes #${issueNumber}\n\n${issueDetails.body}`);
+        // #933: surface verification state in the PR body rather than the title.
+        const verifyLine = `_verified: ${verified}_ (tests ${ranTests ? (testsPassed ? "passed" : "failed") : "not run"})`;
+        const prUrl = openDraftPr(workRoot, branchName, commitTitle, `Fixes #${issueNumber}\n\n${verifyLine}\n\n${issueDetails.body}`);
         receipt.prUrl = prUrl;
         step("pr", "done", { prUrl });
 
         // ── 9. convergence (Σ₀: record hypothesis + evidence + confidence) ─
         step("convergence", "start");
+        // Consult the fast-layer calibrated trust for this loop (#1011): the empirical,
+        // Brier-calibrated reliability of "autowork:patch" accumulated across prior runs.
+        // A frozen-weights adaptation — it shifts every interval as outcomes land, with
+        // no neural change. 0.5 prior until grounded.
+        let calibratedTrust = 0.5;
+        try { calibratedTrust = require("../lib/grounding-calibration").trust("autowork:patch"); } catch (_) {}
         const convergenceRecord = {
           timestamp: new Date().toISOString(),
           issue: issueNumber,
@@ -634,15 +703,14 @@ module.exports = async (req, res, url, deps) => {
             `Codebase research: ${scopeFiles.length} relevant files found`,
             `Web grounding: ${webEvidence.length} external sources checked`,
             `Plan generated with ${plan.actions?.length || 0} actions`,
-            `Tests: ${testsInconclusive ? 'INCONCLUSIVE (no applicable test found)' : testsPassed ? 'PASSED' : 'FAILED'}`,
-            `Patch applied: ${stats?.filesModified || 0} files modified`,
+            ranTests ? (testsPassed ? `Tests: PASSED (${tests.length})` : `Tests: FAILED (${tests.length})`) : 'Tests: none run',
+            `Patch applied: ${changedFiles.length} files modified`,
             `Observable: Full SSE stream of all steps`
           ],
           confidence: {
             codebaseResearch: scopeFiles.length > 0 ? 0.85 : 0.5,
             webGrounded: webEvidence.length > 0 ? 0.8 : 0.4,
-            // #896: inconclusive (no applicable test) scores 0.5, not 0.9
-            testsPassed: testsInconclusive ? 0.5 : testsPassed ? 0.9 : 0.3,
+            testsPassed: ranTests ? (testsPassed ? 0.9 : 0.3) : 0.0,
             observable: 1.0, // Full SSE stream
             grounded: Math.max(
               scopeFiles.length > 0 ? 0.8 : 0.5,
@@ -651,16 +719,19 @@ module.exports = async (req, res, url, deps) => {
             overall: Math.min(
               (scopeFiles.length > 0 ? 0.85 : 0.5) * 0.4 +
               (webEvidence.length > 0 ? 0.8 : 0.4) * 0.4 +
-              (testsInconclusive ? 0.5 : testsPassed ? 0.9 : 0.3) * 0.2,
+              (ranTests ? (testsPassed ? 0.9 : 0.3) : 0.0) * 0.2,
               0.95  // Cap at 95% confidence (always room for error)
-            )
+            ),
+            // #1011 fast-layer plasticity: the loop's Brier-calibrated reliability,
+            // consulted (not retrained) each run; 0.5 until grounded by real outcomes.
+            calibratedTrust,
           },
           sources: {
             issue: `github.com/alex-place/lantern-os/issues/${issueNumber}`,
             pr: prUrl,
             codebaseAnalysis: `Searched ${scopeFiles.length} relevant files`,
-            testsRun: testsRanCount,
-            testsPassed: testsInconclusive ? 'inconclusive' : testsPassed ? 'all' : 'none'
+            testsRun: tests.length,
+            testsPassed: ranTests ? (testsPassed ? 'all' : 'none') : 'n/a'
           }
         };
         step("convergence", "done", { record: convergenceRecord });
@@ -685,7 +756,7 @@ module.exports = async (req, res, url, deps) => {
             observe: issueDetails ? 0.9 : 0.5,                       // issue fetched (+ web sweep)
             research: c.codebaseResearch,                            // codebase + web grounding
             reason: (plan.actions?.length || 0) > 0 ? 0.85 : 0.5,    // plan generated
-            act: (stats?.filesModified || 0) > 0 ? 0.85 : 0.5,       // patch applied + committed
+            act: changedFiles.length > 0 ? 0.85 : 0.5,               // patch applied + committed (#933)
             verify: c.testsPassed,                                   // tests actually ran/passed
             converge: c.overall                                      // confidence record + PR
           },
@@ -718,6 +789,7 @@ module.exports = async (req, res, url, deps) => {
         send("done", { ok: false, ...receipt, stoppedAt: receipt.stoppedAt || "exception" });
         res.end();
       } finally {
+        clearInterval(heartbeat);
         // Always tear down the worktree — the branch (and any push) survives.
         if (cleanupWorktree) { try { cleanupWorktree(); } catch (_e) { /* best effort */ } }
       }
@@ -843,110 +915,6 @@ module.exports = async (req, res, url, deps) => {
       cacheSize: stats.totalCachedRoutes,
       healthy: stats.totalCachedRoutes > 0
     }, 200);
-    return true;
-  }
-
-  // GET /api/rollover/dashboard — Keystone rollover metrics (#898)
-  // Reads leaderboard.jsonl, shadow-runs.jsonl, convergence records, and
-  // autowork log to produce a single JSON snapshot of the rollover state.
-  if (pathname === "/api/rollover/dashboard" && req.method === "GET") {
-    try {
-      const fs = require("fs");
-      const REPO_ROOT = path.resolve(__dirname, "../../..");
-      const STAGE_NAMES = { 0: "Shadow", 1: "Assist", 2: "Default", 3: "Independent" };
-
-      function readJsonl(filePath) {
-        if (!fs.existsSync(filePath)) return [];
-        return fs.readFileSync(filePath, "utf-8")
-          .split("\n").filter(Boolean)
-          .map((l) => { try { return JSON.parse(l); } catch (_) { return null; } })
-          .filter(Boolean);
-      }
-
-      const leaderboard = readJsonl(path.join(REPO_ROOT, "data", "eval", "leaderboard.jsonl"));
-      const shadows     = readJsonl(path.join(REPO_ROOT, "data", "rollover", "shadow-runs.jsonl"));
-      const crRecords   = readJsonl(path.join(REPO_ROOT, "data", "convergence", "records.jsonl"));
-      const autowork    = readJsonl(path.join(REPO_ROOT, "data", "convergence-autonomous-work.jsonl"));
-
-      // Latest stage-tagged eval row
-      const stagedRows = leaderboard.filter((r) => r.stage != null);
-      const latestStaged = stagedRows[stagedRows.length - 1] || null;
-      const evalAccuracy = latestStaged ? latestStaged.accuracy : null;
-      const evalStage = latestStaged ? latestStaged.stage : null;
-
-      // Shadow runs
-      const shadowTotal = shadows.length;
-      const shadowProposed = shadows.filter((s) => s.keystone_proposed).length;
-      const shadowCorrect  = shadows.filter((s) => s.keystone_patch_correct === true).length;
-
-      // Claude fallback events from convergence records
-      const fallbacks = crRecords.filter(
-        (r) => r.result && typeof r.result === "object" && r.result.type === "claude_fallback"
-      );
-      const fallbackTotal  = fallbacks.length;
-      const nowTs = Date.now();
-      const fallbacks24h   = fallbacks.filter((r) => {
-        try { return (nowTs - new Date(r.timestamp).getTime()) < 86400000; } catch (_) { return false; }
-      }).length;
-
-      // Keystone share (autowork runs)
-      const last30 = autowork.slice(-30);
-      const keystoneLast30 = last30.filter(
-        (r) => r.ok && !(r.commitSha || "").includes("[unverified]")
-      ).length;
-      const keystoneShare30d = last30.length > 0 ? keystoneLast30 / last30.length : null;
-
-      // Stage gate summary (static bars from ROLLOVER.md)
-      const GATE_BARS = {
-        0: { "S0-A": 0.40, "S0-B": 10,  "S0-C": true },
-        1: { "S1-A": 0.50, "S1-B": 5,   "S1-D": true },
-        2: { "S2-A": 0.60, "S2-B": 0.60 },
-        3: { "S3-A": 0.65, "S3-C": 0.80 },
-      };
-      const GATE_CURRENT = {
-        "S0-A": evalAccuracy, "S0-B": shadowTotal, "S0-C": true,
-        "S1-A": evalAccuracy, "S1-B": null, "S1-D": true,
-        "S2-A": evalAccuracy, "S2-B": keystoneShare30d,
-        "S3-A": evalAccuracy, "S3-C": keystoneShare30d,
-      };
-      const gates = {};
-      for (const [stageN, stageGates] of Object.entries(GATE_BARS)) {
-        gates[stageN] = {};
-        for (const [gid, bar] of Object.entries(stageGates)) {
-          const cur = GATE_CURRENT[gid];
-          const passed = cur === null ? false
-            : typeof bar === "boolean" ? Boolean(cur) === bar
-            : Number(cur) >= Number(bar);
-          gates[stageN][gid] = { bar, current: cur, passed };
-        }
-      }
-
-      // Infer current stage (highest with all gates passing)
-      let currentStage = 0;
-      for (let s = 3; s >= 0; s--) {
-        const sg = gates[String(s)];
-        if (sg && Object.values(sg).every((g) => g.passed)) { currentStage = s; break; }
-      }
-
-      sendJson(res, {
-        current_stage: currentStage,
-        stage_name: STAGE_NAMES[currentStage] || "Unknown",
-        eval: {
-          latest_label: latestStaged ? latestStaged.label : null,
-          accuracy: evalAccuracy,
-          stage: evalStage,
-          gate_passed: latestStaged ? latestStaged.gate_passed : null,
-          gate_bar: latestStaged ? latestStaged.gate_bar : null,
-          total_rows: leaderboard.length,
-        },
-        shadow_runs: { total: shadowTotal, proposed: shadowProposed, correct: shadowCorrect },
-        claude_fallbacks: { total: fallbackTotal, last_24h: fallbacks24h },
-        keystone_share: { last_30_runs: last30.length, keystone_count: keystoneLast30, share: keystoneShare30d },
-        gates,
-      }, 200);
-    } catch (err) {
-      sendJson(res, { error: err.message }, 500);
-    }
     return true;
   }
 

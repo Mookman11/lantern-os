@@ -1,4 +1,10 @@
-﻿# AGENTS.md — Lantern OS
+---
+author: Alex Place
+created: 2026-05-26
+updated: 2026-06-20
+---
+
+# AGENTS.md — Keystone OS
 
 A focused guide for AI coding agents. **Read this before touching anything.**
 
@@ -53,11 +59,11 @@ Claude is expensive. Use it for design decisions and complex debugging. Delegate
 | PCSF file updates | Any agent | JSON edits, no logic |
 | CSF ingestion docs | Any agent | Markdown, no code |
 | `requirements.txt` edits | Any agent | One-line changes |
-| Coding work (autowork) | **[lantern-sigma0-coder](docs/LANTERN-SIGMA0-CODER.md)** | Local Σ₀ LoRA fine-tuned on this repo's Claude sessions; $0, private, leaderboard-routed |
+| Coding work (autowork) | **[Σ₀ Ouro Coder](docs/SIGMA0-OURO-CODER.md)** | Local looped Ouro-1.4B + Σ₀ QLoRA; $0, private, drop-in served on `:11434` |
 
 **Claude is for:** Orchestrator bugs, stream architecture, provider chain logic, system prompt design, security review.
 
-**Local coding model:** [`lantern-sigma0-coder`](docs/LANTERN-SIGMA0-CODER.md) is the project's own coding agent — a LoRA fine-tuned on past Claude sessions, served via Ollama, preferred by the performance leaderboard, and continually retrained (`scripts/continual-train.ps1`). It backs autowork and the Keystone desk as the local-first coder.
+**Local coding model:** the [Σ₀ Ouro Coder](docs/SIGMA0-OURO-CODER.md) is the project's own coding agent — a looped **Ouro-1.4B** model with a Σ₀ QLoRA fine-tune on past Claude sessions, served drop-in via `scripts/ouro_serve.py` (no Ollama binary) and continually retrained ([SIGMA0-CONTINUAL-TRAINING.md](docs/SIGMA0-CONTINUAL-TRAINING.md)). It backs autowork and the Keystone desk as the local-first coder. (The earlier Qwen-based `lantern-sigma0-coder` is deprecated.)
 
 ### 4. Don't re-read files you've already read
 
@@ -195,7 +201,7 @@ Never claim a skill or fleet slot is active unless confirmed by implementation o
 
 ### Theory
 
-From the Σ₀ Collapse Certificate: ungrounded self-referential systems collapse or diverge unless they receive *persistent external grounding*. In Lantern OS:
+From the Σ₀ Collapse Certificate: ungrounded self-referential systems collapse or diverge unless they receive *persistent external grounding*. In Keystone OS:
 
 - **Quantum dust** = observations, measurements, user input, convergence signals
 - **Doors** = routing pathways between agents, memory layers, and external observations
@@ -370,6 +376,21 @@ A clean workspace prevents context fragmentation and merge rot.
 - **Never reuse an old branch.** Always create a new branch from latest `master`.
 - **Branch naming:** `<type>/<short-description>` (e.g., `feat/convergence-io-tier`, `fix/mcp-dotenv`).
 - **Valid types:** `feat`, `fix`, `docs`, `chore`, `test`, `refactor`.
+
+### Commit discipline — no uncommitted code (Critical)
+**Uncommitted code is not accepted.** Any code you author in a session must land on a branch
+and be pushed to a PR before the task is considered done. Never leave agent-authored changes
+sitting in the working tree, and never `git stash` or commit to `master` to "park" work.
+
+- Finish a task by committing your changes to a `claude/*` (or your lane's) branch and opening a PR.
+- This working tree is frequently dirty from automation churn (`data/`, caches, regenerated
+  assets) — so commit **only the files you changed** (`git add <paths>`), never `git add -A`. That
+  risks sweeping in unrelated churn or PII. When the tree is too noisy to isolate your change,
+  work in a fresh worktree off `origin/master`
+  (`git worktree add -b <lane>/<desc> ../wt origin/master`) and apply just your files there.
+- A local **Stop hook** (`scripts/hooks/stop-warn-uncommitted.sh`, wired via `.claude/settings.json`)
+  nudges you at end-of-turn when tracked code files are left uncommitted. It is a reminder, not a gate
+  (the tree's ambient churn makes a hard block impractical).
 
 ### Before starting work
 ```bash

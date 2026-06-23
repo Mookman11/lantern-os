@@ -1609,8 +1609,10 @@ class TesseractEngine:
         return ctx
 
     def _convergence_rag(self, ctx: ConvergenceContext) -> ConvergenceContext:
-        # ── MemOS semantic retrieval (primary) ───────────────────────────────
-        # Uses MemOS MemCube to semantically search dream journal memories.
+        # ── MemOS retrieval (primary) ─────────────────────────────────────────
+        # Uses MemOS MemCube for memory retrieval. The MemOS layer may use real
+        # embeddings internally; the CSFEmbedder/CSFCooccurrenceVectorizer used
+        # elsewhere is a co-occurrence counter only (NOT semantic) — see #937.
         # Falls back to flat-rag-house if MemOS not installed.
         try:
             from convergence_io.memos_bridge import get_cube  # type: ignore
@@ -1624,8 +1626,15 @@ class TesseractEngine:
             if mem_context:
                 ctx.lore_hints = [mem_context]
                 return ctx
-        except Exception as _memos_err:
-            pass  # fall through to flat-rag-house
+        except Exception as memos_err:
+            # MemOS unavailable/failed — degrade to flat-rag-house, but record it.
+            # A silent fallback hides a broken primary retrieval path (Verify gap).
+            self._log({
+                "event": "convergence_rag_memos_fallback",
+                "reason": type(memos_err).__name__,
+                "detail": str(memos_err)[:200],
+                "timestamp": _now(),
+            })
 
         # ── Flat RAG house fallback ──────────────────────────────────────────
         rag_path = self.data_dir / "rag-house" / "flat-rag-house-latest.json"

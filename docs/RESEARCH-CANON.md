@@ -11,6 +11,10 @@ Curated references organized by component. Not a bookmark dump. Living document 
   - Establishes the design space for agentic systems; informs Kernel architecture
   - Key insight: agents need deliberation loops, not monolithic models
   - Relevant: six-stage loop design, state machine pattern
+- **The Overfitted Brain: Dreams evolved to assist generalization** (Hoel 2020, [arXiv:2007.09560](https://arxiv.org/abs/2007.09560))
+  - Dreams = noise injection (dropout + domain randomization) to combat overfitting → generalization
+  - Grounds the North Star rule: *no separate dream engine; dreaming = high-exploration reasoning + mandatory verification*
+  - The biological twin of Σ₀⁻¹ excitation; overfitting = the σ=0 / 42-state collapse — see [research note](research/2026-06-21-overfitted-brain-dreams-generalization.md)
 
 ### Implementation References
 - **AIOS: A Generalist Agent Operating System** 
@@ -63,6 +67,10 @@ Curated references organized by component. Not a bookmark dump. Living document 
   - Knowledge graphs as memory substrate
   - Persistent, queryable, updateable
   - Directly applicable to code understanding
+- **In-Context Learning can Perform Continual Learning Like Humans** ([arXiv:2509.22764](https://arxiv.org/abs/2509.22764))
+  - In-context continual learning (ICCL): retain + accumulate across sequential tasks with **zero parameter updates**, purely via context-window scheduling — and it *outperforms* gradient-based CL (SGD, Experience Replay, EWC) on the benchmarks
+  - Published grounding for the North Star *"persistent learning, NOT weight modification — improve via retrieval/reasoning, not retraining"* (this section's "Never retrain. Accumulate.")
+  - Actionable: the **spacing effect** (distributed/interleaved exposure > massed, with an inter-task "sweet spot") → space repeated memory re-surfacing in the Convergence Core rather than dumping it at once; linear-attention models (Mamba, RWKV-7) show the most human-like retention (ACT-R / HRS-MD)
 
 ### Implementation References
 - **Mem0: The Memory Layer for Large Language Models** (https://mem0.ai)

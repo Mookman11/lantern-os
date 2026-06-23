@@ -1,3 +1,9 @@
+---
+author: Alex Place
+created: 2026-06-19
+updated: 2026-06-20
+---
+
 # Wiring the rest of the agent — the Convergence Core is coded but doesn't run end-to-end
 
 > ## 📖 In plain English (start here)
@@ -143,6 +149,8 @@ The napkin draft feared "several half-built cars." On disk it's milder: **one ru
 Phase 1 of [`convergence-core-mapping.md`](../convergence-core-mapping.md) (the objects) **and** much of Phases 2–4 (orchestrator, verify, pattern extraction) are already landed in Python. Re-scored against §1–§5, the real next steps are about **running** what's written:
 
 > **Status (updated 2026-06-19):** steps **1, 2, 4 landed** in `25101abf` (concrete `RepoStatTool`, `kalshi-suggest` emit, the `convergence_close_loop.py` Converge pass). Step **3 (the Verify trigger) now landed** via `kalshi-convergence-outcomes.js` — the kalshi slice runs **Reason → Verify → Converge end-to-end** (see §4). **Remaining:** step 5 (grounding gate + Σ₀ canary on the live loop) and step 6 (hygiene), plus scheduling the close-loop pass.
+>
+> **Refined 2026-06-21 against the external frontier:** the open steps (5, 6, scheduling) are re-grounded — and re-prioritised — against 2025–26 research in [`2026-06-21-convergence-plan-refinement.md`](2026-06-21-convergence-plan-refinement.md): step-wise calibrated verifier gate (PRMs / evidence accumulation), a live Σ₀ canary that adds the entropy-contraction / drift / tail-erosion triad and respects the "boiling-frog" blind spot, a **calibrated outcome-graded confidence (Brier)** to replace the frozen 0.7/0.3 heuristic (now the highest-leverage step), and relevance-gated pattern retrieval.
 
 1. **Implement one concrete `Tool`** wrapping a real route/MCP tool — gives `Kernel.act()` a body (the `ToolResult` name-shadowing bug in §1 is already fixed). *(Act)*
 2. **Make a reasoner with a *resolvable outcome* emit** — `kalshi-suggest` carries a real conviction score; emit a record on entry, alongside the existing dream-chat emit. *(Reason)*

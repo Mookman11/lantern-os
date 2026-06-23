@@ -2,18 +2,14 @@ const https = require("https");
 const http = require("http");
 const path = require("path");
 
-// On Windows, Node's bundled CA store sometimes can't verify cloud-provider certs
-// ("unable to verify the first certificate"). Without this, every cloud request
-// throws, the auto cascade swallows the error, and the chat silently degrades to the
-// weak local Ollama model — the "calm while wrong" failure in #740. Mirror the
-// self-edit-engine / routes/providers workaround, but scope it to Windows (or an
-// explicit opt-in) so TLS verification is not disabled on other platforms. Set
-// LANTERN_INSECURE_TLS=0 to force-disable, =1 to force-enable anywhere.
-const INSECURE_TLS = process.env.LANTERN_INSECURE_TLS === "1" ||
-  (process.platform === "win32" && process.env.LANTERN_INSECURE_TLS !== "0");
-const llmAgent = INSECURE_TLS ? new https.Agent({ rejectUnauthorized: false }) : undefined;
+// TLS-verification gate centralized in lib/insecure-tls.js (shared by self-edit-engine
+// + routes/providers so the gate can't drift). Without it on Windows, cloud requests
+// throw, the auto cascade swallows the error, and chat silently degrades to the weak
+// local model — the "calm while wrong" failure in #740. Insecure only on Windows or
+// LANTERN_INSECURE_TLS=1; LANTERN_INSECURE_TLS=0 forces it off. #869
+const { llmAgent } = require("./insecure-tls");
 
-const { AGENT_PERSONAS, DREAM_DOORS, selectAgent, parseBangCommand, verifyResponse } = require("./dream-chat");
+const { AGENT_PERSONAS, DREAM_DOORS, selectAgent, parseBangCommand, verifyResponse, isVerifyEnabled } = require("./dream-chat");
 const { modelFor } = require("./provider-models");
 const { readRecentDreams, normalizeDreamerUser } = require("./dreamer-store");
 const { appendConversationEntry } = require("./conversation-store");
@@ -23,16 +19,19 @@ const { emitConvergenceRecord } = require("./convergence-records");
 const { unifiedAgentStreamSSE } = require("./unified-agent");
 const sse = require("./stream-chat/sse");
 const { parseStreamChatRequest } = require("./stream-chat/request");
+const { scoreReplyCollapse, antiCollapseSignal } = require("./collapse-canary");
 const { assembleSessionContext } = require("./session-summary-store");
 const { formatCSFContextForPrompt, saveDoorChoice } = require("./csf-memory");
 const { route: converganceRoute, buildBehaviorPreamble } = require("./convergance-os/model-router");
 const { THREE_DOORS_PREAMBLE } = require("./convergance-os/profiles");
 const { generateDoorSceneImage } = require("./image-generation");
 const { webSearchMcp, formatGroundingContext, needsGrounding, extractSearchQuery } = require("./web-search-client");
-const { chatDilation, groundingPolicy, shouldForceGrounding, recordGroundingTick } = require("./grounding-policy");
-const { observe: collapseObserve } = require("./collapse-canary");
+const { chatDilation, groundingPolicy, isGroundingDue, GROUNDING_TICK_MS } = require("./grounding-policy");
+// #1012 boiling-frog defense: ms epoch of the last mandatory external-grounding tick.
+// Module-level so the cadence spans requests for this server process.
+let _lastGroundingTickMs = 0;
 const { generatePlan, generatePatch } = require("./self-edit-engine");
-const { selectProvider, recordProviderSuccess: recordProviderSuccessRouter, recordProviderFailure: recordProviderFailureRouter } = require("./provider-router");
+const { selectProvider, selectKernelProvider, recordProviderSuccess: recordProviderSuccessRouter, recordProviderFailure: recordProviderFailureRouter } = require("./provider-router");
 const { detectTaskType } = require("./task-detector");
 const { classifyIntent } = require("./intent-router");
 const serving = require("./serving-modes");
@@ -81,7 +80,7 @@ function logTruncationMetric(originalChars, truncatedChars, truncationType) {
       compressionRatio: truncatedChars / originalChars
     };
     const { appendJsonlQueued } = require("./file-queue");
-    appendJsonlQueued(metricsPath, metric).catch(() => {});
+    appendJsonlQueued(metricsPath, metric, { rotate: true }).catch(() => {}); // #872 per-message hot path
   } catch (e) {
     // Best-effort logging; never block on metric failure
   }
@@ -142,7 +141,19 @@ function extractDoors(text) {
   return { cleanText, doors };
 }
 
+// Cut a local model's output at the first instruction-template echo or new-turn
+// marker it appends AFTER it has already answered (### Response:, <|im_end|>,
+// "\n\nUser:", …). These are turn/template boundaries, never legitimate answer
+// content; cloud models don't emit them, so this is a no-op for Claude/Gemini/GPT.
+// The #1 reliability fix for served local models that ramble past their answer.
+function stripModelArtifacts(text) {
+  if (!text || typeof text !== "string") return text;
+  const m = text.match(/\n*#{2,}\s*(?:response|instruction)\b|<\|(?:im_end|im_start|endoftext|eot_id)\|>|\n\n+\s*(?:user|human|assistant|question|system)\s*:/i);
+  return (m && m.index > 0) ? text.slice(0, m.index).trimEnd() : text;
+}
+
 function doorsOrFallback(text, skipDoors = false) {
+  text = stripModelArtifacts(text);
   if (skipDoors) return { cleanText: text.trim(), suggestions: [] };
   const { cleanText, doors } = extractDoors(text);
   // Always return exactly 3 suggestions. Pad with fallbacks if model gave fewer than 3.
@@ -302,23 +313,135 @@ function analyzeConvergenceResult(result) {
   return findings;
 }
 
+// ── Native Anthropic tool-use: stream ONE assistant turn ──────────────────────
+// Streams a single /v1/messages turn with `tools`, forwarding text deltas live via
+// onToken and accumulating any native tool_use blocks (input_json_delta → JSON).
+// Resolves { assistantContent, toolUses, stopReason } so the caller can run the
+// requested tools and append a tool_result turn for the next iteration. This is the
+// cloud-model analog of the local model's free-text <tool_call> path — same registry,
+// same executor (lib/tool-runner), reliable native protocol instead of text parsing.
+function anthropicToolTurn({ anthropicKey, model, system, messages, tools, maxTokens, onToken }) {
+  return new Promise((resolve, reject) => {
+    const payload = JSON.stringify({ model, max_tokens: maxTokens, stream: true, system, messages, tools });
+    const req = https.request({
+      agent: llmAgent,
+      hostname: "api.anthropic.com",
+      path: "/v1/messages",
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": anthropicKey,
+        "anthropic-version": "2023-06-01",
+        "Content-Length": Buffer.byteLength(payload),
+      },
+    }, (upstream) => {
+      if (upstream.statusCode !== 200) {
+        upstream.resume();
+        reject(new Error(`anthropic_status_${upstream.statusCode}`));
+        return;
+      }
+      const blocks = [];      // index → { type:"text", text } | { type:"tool_use", id, name, jsonbuf }
+      let stopReason = null;
+      let buf = "";
+      upstream.on("data", (chunk) => {
+        buf += chunk.toString();
+        const lines = buf.split("\n");
+        buf = lines.pop();
+        for (const line of lines) {
+          if (!line.startsWith("data:")) continue;
+          const raw = line.slice(5).trim();
+          if (!raw || raw === "[DONE]") continue;
+          let evt; try { evt = JSON.parse(raw); } catch { continue; }
+          if (evt.type === "content_block_start") {
+            const cb = evt.content_block || {};
+            blocks[evt.index] = cb.type === "tool_use"
+              ? { type: "tool_use", id: cb.id, name: cb.name, jsonbuf: "" }
+              : { type: "text", text: "" };
+          } else if (evt.type === "content_block_delta") {
+            const b = blocks[evt.index];
+            if (evt.delta?.type === "text_delta") {
+              if (b) b.text += evt.delta.text;
+              if (onToken && evt.delta.text) onToken(evt.delta.text);
+            } else if (evt.delta?.type === "input_json_delta" && b) {
+              b.jsonbuf += evt.delta.partial_json || "";
+            }
+          } else if (evt.type === "message_delta" && evt.delta?.stop_reason) {
+            stopReason = evt.delta.stop_reason;
+          }
+        }
+      });
+      upstream.on("end", () => {
+        const assistantContent = [];
+        const toolUses = [];
+        for (const b of blocks) {
+          if (!b) continue;
+          if (b.type === "text") {
+            if (b.text) assistantContent.push({ type: "text", text: b.text });
+          } else {
+            let input = {};
+            try { input = b.jsonbuf ? JSON.parse(b.jsonbuf) : {}; } catch { input = {}; }
+            assistantContent.push({ type: "tool_use", id: b.id, name: b.name, input });
+            toolUses.push({ id: b.id, name: b.name, input });
+          }
+        }
+        resolve({ assistantContent, toolUses, stopReason });
+      });
+      upstream.on("error", reject);
+    });
+    req.on("error", reject);
+    req.setTimeout(30000, () => { req.destroy(); reject(new Error("anthropic_timeout")); });
+    req.write(payload);
+    req.end();
+  });
+}
+
+// ── Σ₀ convergence brain: order the providers for THIS turn ───────────────────
+// The brain (provider-router.selectProvider, surfaced as `hintProvider`) decides who
+// LEADS; an explicit request pins to one; otherwise the brain's pick leads and a
+// stable backstop chain follows. Filtered to providers that actually have a key
+// (ollama/local is always reachable). This is the single ranked list the dispatch
+// loop walks — it replaces the hardcoded gemini→anthropic→openai→xai→ollama order.
+const _PROVIDER_ALIASES = {
+  claude: "anthropic", "claude-sonnet": "anthropic", anthropic: "anthropic",
+  google: "gemini", gemini: "gemini", openai: "openai", gpt: "openai",
+  grok: "xai", xai: "xai", ollama: "ollama", local: "ollama",
+};
+function _dispatchHasKey(p) {
+  const e = process.env;
+  switch (p) {
+    case "anthropic": return !!e.ANTHROPIC_API_KEY;
+    case "gemini": return !!(e.GEMINI_API_KEY || e.GOOGLE_API_KEY);
+    case "openai": return !!e.OPENAI_API_KEY;
+    case "xai": return !!e.XAI_API_KEY;
+    case "ollama": return true;
+    default: return false;
+  }
+}
+function buildBrainOrder({ requestedProvider, hintProvider }) {
+  const DISPATCH = ["anthropic", "gemini", "openai", "xai", "ollama"];
+  const norm = (p) => {
+    const s = String(p || "").toLowerCase();
+    if (s.startsWith("gemini-")) return "gemini";   // gemini-2.5-pro etc.
+    return _PROVIDER_ALIASES[s] || null;
+  };
+  if (requestedProvider) {
+    const n = norm(requestedProvider);
+    return n && DISPATCH.includes(n) ? [n] : [];   // explicit request pins to one
+  }
+  const seen = new Set();
+  const order = [];
+  const push = (p) => { const n = norm(p); if (n && DISPATCH.includes(n) && !seen.has(n)) { seen.add(n); order.push(n); } };
+  push(hintProvider);                  // the brain's pick leads
+  for (const p of DISPATCH) push(p);   // stable backstop chain after it
+  return order.filter(_dispatchHasKey);
+}
+
 async function handleStreamChat(req, url, res) {
   const { collectRequestBody } = require("./http-utils");
   const parsed = await parseStreamChatRequest(req, url, {
     normalizeDreamerUser,
     collectRequestBody,
   });
-  if (parsed.parseError) {
-    const detail = parsed.parseError === "empty_body"
-      ? "empty or missing request body"
-      : parsed.parseError === "malformed_json"
-        ? "malformed JSON in request body"
-        : "failed to read request body";
-    res.writeHead(400, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
-    res.end(JSON.stringify({ error: "bad_request", detail }));
-    return;
-  }
-
   let { message, user, requestedAgent, requestedProvider, history, mcpFlag, routeIntent } = parsed;
 
   // Surface mode: dream-chat (default) or three-doors.
@@ -450,66 +573,86 @@ async function handleStreamChat(req, url, res) {
       sendToken(`🔧 Keystone Kernel Mode\n\n`);
       sendToken(`Issue: ${issue}\n\n`);
 
-      // #894: use the "coding" task chain (ollama/Keystone first, Claude fallback)
-      // and await the async selectProvider — the old code passed `history` (array)
-      // as taskType and forgot the await, producing a Promise as the provider string.
-      const { provider: keystoneProvider, model: keystoneModel } =
-        requestedProvider
-          ? { provider: requestedProvider, model: null }
-          : await selectProvider(message, "coding");
+      // Kernel path uses its own provider chain (#894): Keystone/Ouro first, Claude
+      // explicit last-resort — never inherits chat selectProvider's defaults. (Also
+      // fixes the prior bug where the async selectProvider was used un-awaited.)
+      const { provider, model: kernelModel, mode: rolloverMode } = await selectKernelProvider(requestedProvider);
       let llmFn;
 
       try {
-        // Call keystoneRun with the appropriate LLM provider
-        keystoneRun(issue, repoRoot, async (opts) => {
-          // Unified LLM call using the selected provider
-          const systemPrompt = opts.system || KEYSTONE_SYSTEM_PROMPT;
-          const messages = opts.messages || [{ role: "user", content: opts.input || "" }];
+        // #897: actually escalate through the kernel chain on failure (Keystone/Ouro
+        // → … → Claude) — not just RECORD the intent — and record each escalation +
+        // the final landed-by as convergence events. In shadow mode it's Claude-only.
+        const {
+          kernelEscalationChain, runKernelWithEscalation, recordEscalation, recordLanded,
+        } = require("./keystone-escalation");
+        const runId = `kernel-${Date.now()}`;
+        const providers = rolloverMode === "default"
+          ? kernelEscalationChain()
+          : [{ provider, model: kernelModel || "claude-opus-4-8" }];
 
-          const response = await unifiedStreamSSE({
-            systemPrompt,
-            messages,
-            provider: keystoneProvider,
-            model: keystoneModel,
-            user,
-          });
-
-          return response;
-        }, { verbose: true, maxFiles: 10 })
-          .then((result) => {
-            if (result.status === "success") {
-              sendToken(`\n✅ Keystone execution complete\n\n`);
-              sendToken(`**Plan:**\n${result.plan}\n\n`);
-              sendToken(`**Files changed:**\n${result.applied.map((f) => `  - ${f.path}`).join("\n")}\n\n`);
-
-              if (result.tests && result.tests.success) {
-                sendToken(`✓ Tests passed\n\n`);
-              } else if (result.tests) {
-                sendToken(`⚠️ Tests output:\n${result.tests.output}\n\n`);
-              }
-
-              sendDone("keystone", {
-                agent: "Keystone",
-                provider: keystoneProvider,
-                model: keystoneModel,
-                status: "success",
-                filesChanged: result.applied.length,
-                testsRun: !!result.tests,
+        const { result, providerUsed, escalations } = await runKernelWithEscalation({
+          providers,
+          runOne: async (prov, mdl, i) => {
+            if (i > 0) sendToken(`\n↪ Escalating to ${prov}/${mdl}…\n`);
+            return keystoneRun(issue, repoRoot, async (opts) => {
+              const systemPrompt = opts.system || KEYSTONE_SYSTEM_PROMPT;
+              const messages = opts.messages || [{ role: "user", content: opts.input || "" }];
+              return unifiedStreamSSE({ systemPrompt, messages, provider: prov, model: mdl || null, user });
+            }, { verbose: true, maxFiles: 10 });
+          },
+          onEscalate: async (rec) => {
+            try {
+              await recordEscalation({
+                issue, failedProvider: rec.failedProvider, failedModel: rec.failedModel,
+                escalatedTo: rec.escalatedTo, runId, attempt: rec.attempt, error: rec.error, repoRoot,
               });
-            } else {
-              sendToken(`\n❌ Keystone failed: ${result.error}\n`);
-              sendToken(`Phase: ${result.phase}\n`);
-              sendDone("keystone", { agent: "Keystone", provider: keystoneProvider, status: "failed", error: result.error });
-            }
-            res.end();
-          })
-          .catch((err) => {
-            sendToken(`\n❌ Error: ${err.message}\n`);
-            sendDone("keystone", { agent: "Keystone", provider: keystoneProvider, status: "error", error: err.message });
-            res.end();
+            } catch (_e) { /* recording must never break the stream */ }
+          },
+        });
+
+        if (result && (result.status === "success" || result.status === "applied_unverified")) {
+          const used = providerUsed || { provider, model: kernelModel };
+          sendToken(`\n✅ Keystone execution complete (landed by ${used.provider}/${used.model})\n\n`);
+          sendToken(`**Plan:**\n${result.plan}\n\n`);
+          if (Array.isArray(result.applied)) {
+            sendToken(`**Files changed:**\n${result.applied.map((f) => `  - ${f.path}`).join("\n")}\n\n`);
+          }
+          if (result.tests && result.tests.success) sendToken(`✓ Tests passed\n\n`);
+          else if (result.tests) sendToken(`⚠️ Tests output:\n${result.tests.output}\n\n`);
+          try {
+            await recordLanded({
+              issue, provider: used.provider, model: used.model, runId,
+              verified: !!(result.tests && result.tests.success), repoRoot,
+            });
+          } catch (_e) { /* best effort */ }
+          sendDone("keystone", {
+            agent: "Keystone", provider: used.provider, model: used.model, rolloverMode,
+            status: "success", filesChanged: Array.isArray(result.applied) ? result.applied.length : 0,
+            testsRun: !!result.tests, escalations: escalations.length,
           });
+        } else {
+          sendToken(`\n❌ Keystone failed after ${escalations.length + 1} attempt(s): ${result ? result.error : "unknown"}\n`);
+          if (result && result.phase) sendToken(`Phase: ${result.phase}\n`);
+          sendDone("keystone", {
+            agent: "Keystone", provider, model: kernelModel, rolloverMode,
+            status: "failed", error: result ? result.error : "unknown", escalations: escalations.length,
+          });
+        }
+        res.end();
       } catch (e) {
         sendToken(`Error: ${e.message}\n`);
+        // #897: sync-throw escalation also recorded
+        emitConvergenceRecord({
+          hypothesis: `Keystone kernel can land issue via ${provider || "unknown"}`,
+          result: `escalated-to-claude: ${e.message}`,
+          confidence: 0.0,
+          evidence_ids: [e.message],
+          reasoner: "kernel-escalation",
+          verified: true,
+          verification_notes: `Sync kernel error; mode=${rolloverMode || "unknown"}`,
+          source: `kernel/${provider || "unknown"}/${kernelModel || "default"}`,
+        }).catch(() => {});
         sendDone("keystone", { agent: "Keystone", status: "error", error: e.message });
         res.end();
       }
@@ -602,6 +745,7 @@ async function handleStreamChat(req, url, res) {
               reasoner: "convergance-council",
               verified: true,
               verification_notes: `Σ₀ council convergence over ${members.length} provider(s) [${members.map((m) => `${m.role}:${m.provider}`).join(", ")}]; synthesizer=${result.provider}/${result.model}`,
+              source: `council/${result.provider}/${result.model}`,
             });
             recordId = rec && rec.id;
           } catch (_e) { /* record emit is best-effort */ }
@@ -687,7 +831,8 @@ async function handleStreamChat(req, url, res) {
 
     // Three Doors variants: start fresh game if no history, else strip command and continue
     if (cmd.name === "three-doors" || cmd.name === "threedoors" || cmd.name === "three_doors"
-        || cmd.name === "converge" || cmd.name === "convergance") {
+        || cmd.name === "converge" || cmd.name === "convergance"
+        || cmd.name === "ask") {   // !ask falls through to the convergence-agent short-circuit below
       if (cmd.name === "converge" || cmd.name === "convergance") { /* already handled above */ }
       if (history && history.length > 0) {
         // Game already in progress — strip the bang command, keep any surrounding text
@@ -810,25 +955,32 @@ async function handleStreamChat(req, url, res) {
   // stays at the base. (convergence_io.dilation ↔ grounding-policy.js)
   let groundingContext = "";
   const groundingD = chatDilation(message);
-  const forcedByTimer = shouldForceGrounding();
-  const gpol = groundingPolicy(groundingD, { forcedByTimer });
-  if (!isKeystoneDebug && (needsGrounding(message) || groundingD >= 1.5 || gpol.forcedByTimer)) {
-    const searchQuery = extractSearchQuery(message);
+  const gpol = groundingPolicy(groundingD);
+  // #1012 boiling-frog defense: a hard time cadence forces an external re-check even
+  // when proximity~0 and the message wouldn't otherwise trigger grounding. Internal
+  // monitors are provably blind to slow drift, so we ground on a timer regardless.
+  const groundingTickDue = isGroundingDue(_lastGroundingTickMs);
+  if (!isKeystoneDebug && (needsGrounding(message) || groundingD >= 1.5 || groundingTickDue)) {
+    // On a mandatory tick fall back to the message itself when no query extracts, so
+    // the cadence still reaches external reality on otherwise un-groundable turns.
+    const searchQuery = extractSearchQuery(message) || (groundingTickDue ? String(message || "").slice(0, 120).trim() : "");
     if (searchQuery) {
       try {
         const searchResult = await withTimeout(webSearchMcp(searchQuery, gpol.maxResults), GROUNDING_TIMEOUT_MS, { success: false });
         if (searchResult.success && searchResult.results) {
           groundingContext = formatGroundingContext(searchResult.results, searchQuery);
-          if (gpol.forcedByTimer) {
-            recordGroundingTick();
-            console.log("[grounding-policy] mandatory tick fired — external grounding performed");
-          }
+        }
+        if (groundingTickDue) {
+          _lastGroundingTickMs = Date.now();
+          console.warn(`[grounding-tick] mandatory external-grounding tick fired (cadence=${GROUNDING_TICK_MS}ms, ok=${!!(searchResult && searchResult.success)})`);
         }
       } catch (e) {
         console.error("[web-search] Grounding failed (non-fatal):", e.message);
       }
-    } else if (gpol.forcedByTimer) {
-      recordGroundingTick();
+    } else if (groundingTickDue) {
+      // Due but nothing to query — advance the clock + log so the cadence doesn't retry every turn.
+      _lastGroundingTickMs = Date.now();
+      console.warn(`[grounding-tick] due but no query extracted; cadence reset (cadence=${GROUNDING_TICK_MS}ms)`);
     }
   }
 
@@ -927,7 +1079,7 @@ async function handleStreamChat(req, url, res) {
   // cloud providers are unavailable) a correct, concrete answer to "what is this?" so new
   // users get an orientation instead of improvised dream-journal filler. The journal block
   // is explicitly labelled background so the model does not narrate it as if it were the app.
-  const ROUTER_PROMPT = `You are Keystone, the engineering desk agent for Keystone OS — a local-first, private journaling and reasoning app (journal, chat, and trading tools) that runs on the user's own machine with no account required. Answer directly and technically — no roleplay, no dream personas, no door suggestions. Be concise for simple asks, but COMPREHENSIVE for substantive, factual, or research questions: give full context and reasoning, structure longer answers with short headings and bullet lists, and cite sources as clickable Markdown links [descriptive title](https://url). Your replies render as rich Markdown in this chat UI: \`![alt](https://image-url)\` displays the image inline, a plain YouTube link (https://youtube.com/watch?v=… or https://youtu.be/…) embeds as a player, and \`[text](https://url)\` becomes a link that opens in a new tab — so you absolutely CAN show images and embed videos; never tell the user you "can't embed", "can't display images", or "lack web/embedding capability" (that is false). When an image or video genuinely helps, include it — but use ONLY real, working URLs you actually know (e.g. Wikimedia Commons upload URLs, well-known sources); never invent, guess, or fabricate a media URL — if unsure, link the source page instead. If the user asks "what is this?", "what can you do?", or anything about the app itself, give a plain one- or two-sentence description of Keystone OS; do NOT describe the journal entries below as if they were the app, and do NOT use mystical or "dream" language. IMPORTANT: Your very first token must be substantive content — never output only your name, "Keystone,", "Keystone, engineering desk.", or any greeting. Go straight to the answer. If the user asks for roleplay, Keystone, or the Three Doors game, tell them to open the Explore tab (/three-doors-game.html).\n\n${_realtimeCtx}\n\nBackground (the user's recent journal entries — do not treat as the subject unless they ask about their journal):\n${dreamContext}${csfBlock}${groundingContext ? "\n\n" + groundingContext : ""}`;
+  const ROUTER_PROMPT = `You are Keystone Σ₀ — the grounded reasoning and engineering agent for Keystone OS, a local-first private journaling and reasoning app that runs on the user's own machine with no account required. You run the convergence loop (Observe → Remember → Reason → Act → Verify → Converge), and external reality beats internal consistency: ground every important claim in evidence, give an honest confidence, and say "I don't know" rather than improvise. Answer directly, technically, and concretely. NO roleplay, NO dream personas, NO "doors", NO mystical or poetic language — you are a precise technical agent, not a dream narrator, even though the background below happens to be a dream journal. For code, give complete, correct, copy-paste-ready implementations grounded in real files/APIs and state exactly how to verify (test command or expected output). Be concise for simple asks, but COMPREHENSIVE for substantive, factual, or research questions: give full context and reasoning, structure longer answers with short headings and bullet lists, and cite sources as clickable Markdown links [descriptive title](https://url). Your replies render as rich Markdown in this chat UI: \`![alt](https://image-url)\` displays the image inline, a plain YouTube link (https://youtube.com/watch?v=… or https://youtu.be/…) embeds as a player, and \`[text](https://url)\` becomes a link that opens in a new tab — so you absolutely CAN show images and embed videos; never tell the user you "can't embed", "can't display images", or "lack web/embedding capability" (that is false). When an image or video genuinely helps, include it — but use ONLY real, working URLs you actually know (e.g. Wikimedia Commons upload URLs, well-known sources); never invent, guess, or fabricate a media URL — if unsure, link the source page instead. If the user asks "what is this?", "what can you do?", or anything about the app itself, give a plain one- or two-sentence description of Keystone OS; do NOT describe the journal entries below as if they were the app, and do NOT use mystical or "dream" language. IMPORTANT: Your very first token must be substantive content — never output only your name, "Keystone,", "Keystone, engineering desk.", or any greeting. Go straight to the answer. If the user asks for roleplay, Keystone, or the Three Doors game, tell them to open the Explore tab (/three-doors-game.html).\n\n${_realtimeCtx}\n\nBackground (the user's recent journal entries — context ONLY; do NOT narrate, theme, echo, or poeticize them unless the user explicitly asks about their journal):\n${dreamContext}${csfBlock}${groundingContext ? "\n\n" + groundingContext : ""}`;
 
   const systemPrompt = isKeystoneDebug
     ? KEYSTONE_DEBUG_PROMPT
@@ -967,24 +1119,30 @@ async function handleStreamChat(req, url, res) {
       signature.degraded = true;
       finalRouteLabel = `${routeLabel} · ⚠ degraded — local model (cloud unreachable)`;
     }
-    // Σ₀ verify: fire-and-forget — logs claims to convergence/records.jsonl
+    // Σ₀ verify: fire-and-forget — full grounding via dream-chat.js::verifyResponse
     if (SIGMA0_VERIFY && fullReply && message) {
-      verifyResponse(fullReply, message).catch(() => {});
+      verifyResponse(fullReply, message, agent.id || agent.name || "keystone").catch(() => {});
     }
-    // Σ₀ collapse canary (#1010): n-gram echo + self-repeat → sigma0_proximity.
-    // Fires best-effort; never blocks the response.
-    if (fullReply && fullReply.length >= 50) {
-      try {
-        const canary = collapseObserve(fullReply, {
-          agent: agent.id || agent.name || "keystone",
-          provider: extra.provider || source || "unknown",
-          surface: surfaceMode,
-        });
-        if (canary.canary_fired) {
-          signature.canary = { proximity: canary.proximity, echo: canary.echo };
+    // ── Σ₀ collapse canary (#1010) ──────────────────────────────────────────
+    // Passive observer on the live serving path: score the completed reply for
+    // loop-collapse / phrase-echo / lexical contraction. Stamp proximity onto the
+    // done signature so the cert can't read "healthy" while output is collapsing;
+    // on a crossing, emit a logged canary signal. No behavior change when healthy.
+    try {
+      if (fullReply) {
+        const canary = scoreReplyCollapse(fullReply);
+        signature.sigma0_proximity = canary.proximity;
+        if (canary.collapsed) {
+          const sig = antiCollapseSignal(canary);
+          signature.canary = sig;
+          console.warn(
+            `[canary_collapse] proximity=${canary.proximity} action=${sig.action} ` +
+            `source=${source} provider=${signature.provider} ` +
+            `signals=${JSON.stringify(canary.signals)}`
+          );
         }
-      } catch { /* never block */ }
-    }
+      }
+    } catch { /* canary must never break a reply */ }
     return sse.sendDone(res, source, { ...extra, ...signature, routeLabel: finalRouteLabel });
   };
 
@@ -1039,7 +1197,7 @@ async function handleStreamChat(req, url, res) {
       };
       const { appendJsonlQueued } = require("./file-queue");
       const convergencePath = path.resolve(repoRoot, "data/convergence/chat-responses.jsonl");
-      await appendJsonlQueued(convergencePath, signature).catch(() => {});
+      await appendJsonlQueued(convergencePath, signature, { rotate: true }).catch(() => {}); // #872
     } catch (e) {
       // Non-blocking convergence logging
     }
@@ -1099,79 +1257,11 @@ async function handleStreamChat(req, url, res) {
     return msg;
   }
 
-  // ── Σ₀ self-correcting verification pass (#662, #997) ────────────────────
-  // Default ON when ANTHROPIC_API_KEY is set; opt-out via SIGMA0_VERIFY=false.
-  // Runs a second fast LLM call after the draft; extracts + logs factual claims.
-  // Falls back silently on timeout or error — never blocks the response.
-  const SIGMA0_VERIFY = process.env.SIGMA0_VERIFY !== "false";
-  const VERIFY_TIMEOUT_MS = 8000;
-
-  async function verifyResponse(draft, userMsg) {
-    if (!SIGMA0_VERIFY || !draft || draft.length < 40) return { verified: false };
-    const anthropicKey = process.env.ANTHROPIC_API_KEY;
-    if (!anthropicKey) return { verified: false };
-
-    const EXTRACT_PROMPT = `You are a claim extractor. Given a draft AI response, extract up to 5 specific factual claims (not opinions, not questions). Return JSON only: {"claims": [{"claim": "...", "checkable": true}]}. If none, return {"claims": []}.`;
-
-    try {
-      const body = JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 300,
-        system: EXTRACT_PROMPT,
-        messages: [{ role: "user", content: `User asked: ${userMsg.slice(0, 200)}\n\nDraft:\n${draft.slice(0, 800)}` }],
-      });
-
-      const result = await new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error("verify_timeout")), VERIFY_TIMEOUT_MS);
-        const req = https.request({
-          agent: llmAgent,
-          hostname: "api.anthropic.com",
-          path: "/v1/messages",
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-api-key": anthropicKey,
-            "anthropic-version": "2023-06-01",
-            "Content-Length": Buffer.byteLength(body),
-          },
-        }, (res2) => {
-          let d = "";
-          res2.on("data", c => { d += c; });
-          res2.on("end", () => { clearTimeout(timer); try { resolve(JSON.parse(d)); } catch { reject(new Error("parse_fail")); } });
-        });
-        req.on("error", e => { clearTimeout(timer); reject(e); });
-        req.write(body);
-        req.end();
-      });
-
-      const text = result?.content?.[0]?.text || "{}";
-      let parsed;
-      try { parsed = JSON.parse(text); } catch { return { verified: false }; }
-      const claims = parsed.claims || [];
-      const total = claims.length;
-      const checkable = claims.filter(c => c.checkable).length;
-
-      const { appendJsonlQueued } = require("./file-queue");
-      const recordsPath = path.resolve(repoRoot, "data", "convergence", "records.jsonl");
-      appendJsonlQueued(recordsPath, {
-        timestamp: new Date().toISOString(),
-        surface: "dream-chat-verify",
-        userMsg: userMsg.slice(0, 200),
-        claimsFound: total,
-        checkableClaims: checkable,
-        claims,
-      }).catch(() => {});
-
-      return {
-        verified: true,
-        total,
-        checkable,
-        badge: total > 0
-          ? `⚡ ${total} claim${total !== 1 ? "s" : ""} verified · Σ₀`
-          : "✓ No factual claims · Σ₀",
-      };
-    } catch { return { verified: false }; }
-  }
+  // ── Σ₀ verify gate (#997) ────────────────────────────────────────────────
+  // ON by default via the chat_grounding admin flag (isVerifyEnabled in dream-chat.js).
+  // Falls back silently — never blocks the reply. Uses the rich verifyResponse from
+  // dream-chat.js (codebase grep + web + Gemini grounding + calibration records).
+  const SIGMA0_VERIFY = isVerifyEnabled();
 
   const sendError = (msg) => sse.sendError(res, msg);
   const sendFail = (reason) => {
@@ -1189,6 +1279,39 @@ async function handleStreamChat(req, url, res) {
     sendError(errorText);
     sendDone("offline", { agent: doneAgentName, online: false, error: reason || "no_provider_configured", suggestions: FALLBACK_DOORS });
   };
+
+  // Honest bad-request handling: the body arrived but couldn't be parsed (malformed
+  // JSON / bad encoding), so `message` is empty for a reason that has nothing to do
+  // with providers. Say so plainly instead of falling through to "all providers
+  // failed / cloud unreachable" (which sent a debugging session down the wrong path).
+  if (parsed.bodyError && !message) {
+    sendError("I couldn't read your message — the request body was malformed or had a bad encoding (e.g. a leading UTF-8 BOM). Please resend.");
+    sendDone("offline", { agent: doneAgentName, online: false, error: "bad_request_body", suggestions: FALLBACK_DOORS });
+    return;
+  }
+
+  // ── One receive endpoint (Stage 3): deterministic work/ask intent → convergence
+  // agent ($0, no LLM), streamed HERE instead of via a separate client fetch to
+  // /api/convergence/agent. The client now POSTs every turn to /api/dream/chat/stream;
+  // the brain recognizes a work/status/ask query and answers from live repo data,
+  // emitting `actions` in the done event for the client to render as chips.
+  {
+    const _askM = message.match(/^!ask\s+(.+)/i);
+    const _WORK_INTENT = /\b(what (work|issues?|tasks?|bugs?|tickets?|pr[s']?|pull requests?)|what (needs?|needs to be) (done|fixed|closed|worked on)|what'?s? (open|pending|left|next|the status|blocking)|show (me )?(open |the )?issues?|status (of|update)|list (issues?|tasks?|open)|open issues?|any issues?|what should i (work on|fix|do)|top issues?|priority (issues?|tasks?))\b/i;
+    if (!isKeystoneDebug && surfaceMode !== "three-doors" && (_askM || (_WORK_INTENT.test(message) && !message.startsWith("!")))) {
+      try {
+        const _q = _askM ? _askM[1].trim() : message;
+        const r = await require("./convergence-agent").respond(_q);
+        const _ans = (r && r.answer) ? String(r.answer) : "(no answer)";
+        sendToken(_ans);
+        await logConversation({ recordedAt: new Date().toISOString(), surface: "dream-chat-stream", role: "lantern", text: _ans.slice(0, maxConversationTextLength) }).catch(() => {});
+        sendDone("convergence-agent", { agent: doneAgentName, online: true, cleanText: _ans, actions: Array.isArray(r && r.actions) ? r.actions : [], grounded: !!(r && r.grounded), instant: true, label: "Convergence · instant · $0" });
+        return;
+      } catch (e) {
+        console.error("[convergence-agent] short-circuit failed (non-fatal, falling through):", e.message);
+      }
+    }
+  }
 
   await logConversation({
     recordedAt: new Date().toISOString(),
@@ -1233,7 +1356,12 @@ async function handleStreamChat(req, url, res) {
       });
       return;
     }
-    // Convergence unavailable or timed out — fall through to direct LLM providers
+    // Convergence unavailable or timed out — fall through to direct LLM providers.
+    // Surface WHY (don't swallow it) so the failure is diagnosable — Σ₀ #919/#941.
+    console.error(
+      `[Convergance] unavailable (non-fatal): ${convResult.error || "no reply"}` +
+      (convResult.reply ? ` — ${String(convResult.reply).slice(0, 200)}` : "")
+    );
     sendToken("(Convergence unavailable — answering directly)\n\n");
   }
 
@@ -1257,10 +1385,10 @@ async function handleStreamChat(req, url, res) {
         const keywordTaskType = taskType;
         const applied = gate.escalate && taskType !== "coding" && taskType !== "reasoning";
         if (applied) {
-          console.log(`[router-gate] escalate -> reasoning (${gate.reason})`);
+          console.warn(`[router-gate] escalate -> reasoning (${gate.reason})`);
           taskType = "reasoning";
         } else {
-          console.log(`[router-gate] no-op for ${taskType} (${gate.reason})`);
+          console.warn(`[router-gate] no-op for ${taskType} (${gate.reason})`);
         }
         try {
           const { appendJsonlQueued } = require("./file-queue");
@@ -1276,7 +1404,7 @@ async function handleStreamChat(req, url, res) {
             score: gate.score,
             reason: gate.reason,
             features: gate.features,
-          }).catch(() => {});
+          }, { rotate: true }).catch(() => {}); // #872 per-message gate log
         } catch { /* logging is best-effort */ }
       } catch (ge) {
         console.error("[router-gate] gate error (non-fatal):", ge.message);
@@ -1285,7 +1413,7 @@ async function handleStreamChat(req, url, res) {
 
     const { provider: recommendedProvider, reason: selectionReason } = await selectProvider(message, taskType, requestedProvider);
     primaryProviderHint = { provider: recommendedProvider, taskType, reason: selectionReason };
-    console.log(`[provider-router] Selected ${recommendedProvider} for ${taskType}: ${selectionReason}`);
+    console.warn(`[provider-router] Selected ${recommendedProvider} for ${taskType}: ${selectionReason}`);
   } catch (e) {
     console.error("[provider-router] Selection error (non-fatal):", e.message);
     // Continue with default fallback if router fails
@@ -1348,6 +1476,14 @@ async function handleStreamChat(req, url, res) {
   const staticChain = OLLAMA_MODEL_CHAIN[intent] || OLLAMA_MODEL_CHAIN.default;
   let modelChain = staticChain;
   try { modelChain = await orderChainByLeaderboard(staticChain, intent); } catch { /* keep static */ }
+  // Lead with the operator-pinned served model (OLLAMA_MODEL) when set, so the chat
+  // uses the model that's actually pulled/served (e.g. ouro:latest) instead of the
+  // static chain's default first entry. Deduped so it leads exactly once. Previously
+  // OLLAMA_MODEL was documented as "always a candidate" but never actually led.
+  if (process.env.OLLAMA_MODEL) {
+    const _pinned = process.env.OLLAMA_MODEL;
+    modelChain = [_pinned, ...modelChain.filter((x) => x !== _pinned)];
+  }
 
   // ── Tier 0: cheap Knowledge Center answer before any model ($0, no LLM) ──
   // Only short-circuit informational queries with a confident KB hit. Coding,
@@ -1425,16 +1561,28 @@ async function handleStreamChat(req, url, res) {
     }
   }
 
-  const ollamaLocalFirst = (!requestedProvider || requestedProvider === "ollama" || requestedProvider === "local") && !autoPrefersAnthropic;
+  // CHAT_CLOUD_FIRST=1 makes Auto-mode chat prefer cloud providers (use the configured
+  // API keys) over the local-first Ollama ladder — for deployments where cloud
+  // quality/grounding matters more than local latency/cost. Off by default (local-first
+  // preserved). Honored only in Auto mode (an explicit ollama/local request still wins).
+  const cloudFirst = process.env.CHAT_CLOUD_FIRST === "1" && !requestedProvider;
+  const ollamaLocalFirst = (!requestedProvider || requestedProvider === "ollama" || requestedProvider === "local") && !autoPrefersAnthropic && !cloudFirst;
   if (ollamaLocalFirst && message && !isKeystoneDebug) {
     
     for (const ollamaModel of modelChain) {
       const _ollamaStart = Date.now();
       try {
+        // In tool mode, send the FC adapter ONLY the tool preamble it was trained/served
+        // with. The big Keystone router prompt dilutes it (the adapter then defaults to
+        // its Bash habit); the clean preamble matches the training distribution so it
+        // reliably emits a SAFE <tool_call>. Gated with execution so it toggles as a unit.
+        const sysForOllama = process.env.CHAT_TOOL_EXEC === "1"
+          ? require("./tool-runner").renderToolPreamble()
+          : systemPrompt;
         const payload = JSON.stringify({
           model: ollamaModel,
           stream: true,
-          messages: buildProviderMessages(systemPrompt, compacted, message),
+          messages: buildProviderMessages(sysForOllama, compacted, message),
           // FAST-mode anti-repetition decode params (issue #729). Suppresses ✅✅✅ loops.
           options: serving.applyOllamaDecodeParams({}),
         });
@@ -1471,6 +1619,45 @@ async function handleStreamChat(req, url, res) {
         });
         
         if (fullReply) {
+          // ── Tool-aware chat: the local Σ₀ FC adapter may answer with a <tool_call>.
+          // Always emit a `tool` event so the UI fills the card; OPTIONALLY execute a tool
+          // (gated by CHAT_TOOL_EXEC=1, off by default) and let the model ground a follow-up
+          // answer on the real result. runTool enforces the per-tool policy (read-only runs;
+          // shell/mutating need operator — same policy as the rest of the app).
+          try {
+            const toolRunner = require("./tool-runner");
+            const tc = toolRunner.parseToolCall(fullReply);
+            if (tc) {
+              const { isOperatorRequest } = require("./request-auth");
+              const result = process.env.CHAT_TOOL_EXEC !== "1"
+                ? { ok: false, reason: "disabled" }
+                : toolRunner.runTool(tc.name, tc.input, { operator: isOperatorRequest(req) });
+              sse.writeData(res, { type: "tool", name: tc.name, input: tc.input,
+                ok: result.ok, reason: result.reason || null, policy: result.policy || null,
+                result: result.ok ? result.result : (result.error || null) });
+              if (result.ok) {
+                const followMessages = buildProviderMessages(systemPrompt, compacted, message).concat([
+                  { role: "assistant", content: fullReply },
+                  { role: "user", content: `The ${tc.name} tool returned:\n${String(result.result).slice(0, 1500)}\n\nUsing only this result, answer my original request in plain text. Do not call another tool.` },
+                ]);
+                const followPayload = JSON.stringify({ model: ollamaModel, stream: true, messages: followMessages, options: serving.applyOllamaDecodeParams({}) });
+                const fu = new URL(ollamaBase);
+                let followText = "";
+                await new Promise((resolve) => {
+                  const r3 = http.request({ hostname: fu.hostname, port: fu.port || 11434, path: "/api/chat", method: "POST", headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(followPayload) } }, (up) => {
+                    if (up.statusCode !== 200) { up.resume(); resolve(); return; }
+                    let b = "";
+                    up.on("data", (ch) => { b += ch.toString(); const ls = b.split("\n"); b = ls.pop(); for (const ln of ls) { if (!ln.trim()) continue; try { const pj = JSON.parse(ln); if (pj.message && pj.message.content) { followText += pj.message.content; sendToken(pj.message.content); } } catch {} } });
+                    up.on("end", resolve); up.on("error", () => resolve());
+                  });
+                  r3.on("error", () => resolve());
+                  r3.setTimeout(120000, () => { r3.destroy(); resolve(); });
+                  r3.write(followPayload); r3.end();
+                });
+                if (followText.trim()) fullReply += "\n\n" + followText;
+              }
+            }
+          } catch (e) { /* tool handling is non-fatal — fall through to normal render */ }
           const { cleanText, suggestions } = doorsOrFallback(fullReply, isKeystoneDebug || !isRpMode);
           const imageEntryId = triggerImageGeneration({ cleanText, suggestions, surfaceMode, symbolMesh });
           await logConversation({
@@ -1540,9 +1727,17 @@ async function handleStreamChat(req, url, res) {
     }
   }
 
-  // Provider 1: Gemini (streaming) — cloud fallback
+  // ── Σ₀ convergence brain: ONE dispatch over the brain's ranked provider order ──
+  // Replaces the hardcoded gemini→anthropic→openai→xai→ollama cascade. selectProvider
+  // (the brain) chose `autoHintProvider`; buildBrainOrder turns it into the ranked,
+  // key-filtered order this loop walks. Each provider's streamer body is unchanged: on
+  // success it returns; on auto-mode failure it falls through to the next brain pick.
+  for (const _p of buildBrainOrder({ requestedProvider, hintProvider: autoHintProvider })) {
+    fullReply = "";   // fresh per provider — never carry a failed attempt's partial text
+
+  // Provider: Gemini (streaming)
   const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-  if (geminiKey && message && ((!requestedProvider && !autoPrefersAnthropic) || requestedProvider === "gemini" || requestedProvider === "google" || requestedProvider.startsWith("gemini-"))) {
+  if (_p === "gemini" && geminiKey) {
     // Gemini model fallback chain: primary -> fallbacks on 429/quota
     // Note: gemini-2.0-flash-lite shut down June 1 2026; gemini-3.5-flash is GA with free grounding
     const GEMINI_MODEL_CHAIN = [
@@ -1613,7 +1808,7 @@ async function handleStreamChat(req, url, res) {
       let { cleanText: geminiClean, suggestions: geminiDoors } = doorsOrFallback(fullReply, isKeystoneDebug || !isRpMode);
       // Σ₀ verify pass
       let geminiSigma0 = null;
-      if (process.env.SIGMA0_VERIFY !== "false") {
+      if (isVerifyEnabled()) {
         try {
           const vr = await verifyResponse(geminiClean, message, doneAgentName);
           if (vr.corrected) {
@@ -1646,15 +1841,14 @@ async function handleStreamChat(req, url, res) {
         sendFail(err.message);
         return;
       }
-      // #967: log before falling through so degraded-local cause is visible in server log
-      console.error(`[provider:gemini] cloud call failed (non-fatal): ${err.message}`);
+      console.warn(`[stream-chat] gemini auto-cascade failed — trying next provider (${err.message})`);
     }
     } // end model chain loop
   }
 
-  // Provider 2: Anthropic Claude (streaming)
+  // Provider: Anthropic Claude (streaming)
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
-  if (anthropicKey && message && (!requestedProvider || requestedProvider === "claude" || requestedProvider === "anthropic" || requestedProvider === "claude-sonnet")) {
+  if (_p === "anthropic" && anthropicKey) {
     try {
       let claudeModel = "claude-haiku-4-5-20251001";
       if (requestedProvider === "claude-sonnet") {
@@ -1662,6 +1856,67 @@ async function handleStreamChat(req, url, res) {
       } else {
         claudeModel = process.env.ANTHROPIC_MODEL || claudeModel;
       }
+
+      // ── Native tool-use loop (opt-in via CHAT_TOOL_EXEC=1) ───────────────────
+      // Gives Keystone real agency: the model can call repo tools (Read/Grep/Glob/LS
+      // for everyone; +Bash/PowerShell/Write/Edit for operators) and answer from the
+      // results instead of guessing. Same registry + executor as the local model's
+      // free-text path (lib/tool-runner), via the reliable native tool_use protocol.
+      // Off by default → the single-shot path below is byte-identical for normal chat.
+      if (process.env.CHAT_TOOL_EXEC === "1") {
+        try {
+          const toolRunner = require("./tool-runner");
+          const { isOperatorRequest } = require("./request-auth");
+          const operator = isOperatorRequest(req);
+          const tools = toolRunner.anthropicTools({ operator });
+          if (tools.length) {
+            const system = [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }];
+            const convo = [...compacted.map(h => ({ role: h.role, content: h.text })), { role: "user", content: message }];
+            const MAX_TOOL_ITERS = 6;
+            let toolCalls = 0;
+            for (let iter = 0; iter < MAX_TOOL_ITERS; iter++) {
+              const { assistantContent, toolUses, stopReason } = await anthropicToolTurn({
+                anthropicKey, model: claudeModel, system, messages: convo, tools,
+                maxTokens: isRpMode ? 1536 : 1024,
+                onToken: (t) => { fullReply += t; sendToken(t); },
+              });
+              if (!toolUses.length || stopReason !== "tool_use") break; // model gave its answer
+              convo.push({ role: "assistant", content: assistantContent });
+              const results = [];
+              for (const tu of toolUses) {
+                toolCalls++;
+                sse.writeData(res, { type: "tool", phase: "call", name: tu.name, input: tu.input });
+                const r = toolRunner.runTool(tu.name, tu.input, { operator });
+                const out = r.ok ? r.result : `ERROR(${r.reason || "error"}): ${r.error}`;
+                sse.writeData(res, { type: "tool", phase: "result", name: tu.name, ok: !!r.ok, preview: String(out).slice(0, 240) });
+                results.push({ type: "tool_result", tool_use_id: tu.id, content: String(out).slice(0, 6000), is_error: !r.ok });
+              }
+              convo.push({ role: "user", content: results });
+            }
+            const { cleanText, suggestions } = doorsOrFallback(fullReply, isKeystoneDebug || !isRpMode);
+            await logConversation({ recordedAt: new Date().toISOString(), surface: "dream-chat-stream", role: "lantern", text: cleanText.slice(0, maxConversationTextLength) }).catch(() => {});
+            recordProviderSuccess("anthropic");
+            recordProviderSuccessRouter("anthropic");
+            const toolReceipt = buildPcsfReceipt("anthropic", claudeModel, true);
+            sendReceipt(toolReceipt);
+            sendDone("anthropic", { agent: doneAgentName, provider: "anthropic", model: claudeModel, online: true, cleanText, suggestions, webSuggestions, receipt: toolReceipt, toolCalls });
+            return;
+          }
+        } catch (err) {
+          recordProviderFailure("anthropic", `tool_loop: ${err.message}`);
+          if (fullReply) {
+            // Already streamed partial output — finalize rather than re-streaming a
+            // fresh single-shot answer (which would duplicate/contradict on screen).
+            const { cleanText, suggestions } = doorsOrFallback(fullReply, isKeystoneDebug || !isRpMode);
+            recordProviderSuccess("anthropic");
+            sendDone("anthropic", { agent: doneAgentName, provider: "anthropic", model: claudeModel, online: true, cleanText, suggestions, webSuggestions });
+            return;
+          }
+          if (requestedProvider) { sendError(humanError(err)); await streamLocalFallback(err.message); return; }
+          // else (auto mode, nothing streamed yet): fall through to the single-shot path
+        }
+      }
+
       // Prompt caching: the system block (Keystone/RP instructions + dream/CSF
       // context) is the stable prefix reused across turns in a session. Marking
       // it with cache_control caches it for 5 min; subsequent turns read it at
@@ -1721,7 +1976,7 @@ async function handleStreamChat(req, url, res) {
       let { cleanText: anthropicClean, suggestions: anthropicDoors } = doorsOrFallback(fullReply, isKeystoneDebug || !isRpMode);
       // Σ₀ verify pass — ground claims against codebase, web, Gemini
       let anthropicSigma0 = null;
-      if (process.env.SIGMA0_VERIFY !== "false") {
+      if (isVerifyEnabled()) {
         try {
           const vr = await verifyResponse(anthropicClean, message, doneAgentName);
           if (vr.corrected) {
@@ -1754,15 +2009,13 @@ async function handleStreamChat(req, url, res) {
         await streamLocalFallback(err.message);
         return;
       }
-      // #967: log before falling through so degraded-local cause is visible in server log
-      const anthropicStatus = err.message.match(/anthropic_status_(\d+)/)?.[1] || "";
-      console.error(`[provider:anthropic] cloud call failed (non-fatal)${anthropicStatus ? ` HTTP ${anthropicStatus}` : ""}: ${err.message}`);
+      console.warn(`[stream-chat] anthropic auto-cascade failed — trying next provider (${err.message})`);
     }
   }
 
-  // Provider 3: OpenAI (streaming)
+  // Provider: OpenAI (streaming)
   const openaiKey = process.env.OPENAI_API_KEY;
-  if (openaiKey && message && (!requestedProvider || requestedProvider === "openai" || requestedProvider === "gpt")) {
+  if (_p === "openai" && openaiKey) {
     try {
       // FAST-mode anti-repetition decode params (issue #729): top_p + frequency_penalty.
       const payload = JSON.stringify(serving.applyOpenAIDecodeParams({
@@ -1836,15 +2089,13 @@ async function handleStreamChat(req, url, res) {
         sendFail(err.message);
         return;
       }
-      // #967: log before falling through so degraded-local cause is visible in server log
-      const openaiStatus = err.message.match(/openai_status_(\d+)/)?.[1] || "";
-      console.error(`[provider:openai] cloud call failed (non-fatal)${openaiStatus ? ` HTTP ${openaiStatus}` : ""}: ${err.message}`);
+      console.warn(`[stream-chat] openai auto-cascade failed — trying next provider (${err.message})`);
     }
   }
 
-  // Provider 4: Grok / xAI (streaming — OpenAI-compatible)
+  // Provider: Grok / xAI (streaming — OpenAI-compatible)
   const xaiKey = process.env.XAI_API_KEY;
-  if (xaiKey && message && (!requestedProvider || requestedProvider === "grok" || requestedProvider === "xai")) {
+  if (_p === "xai" && xaiKey) {
     try {
       const xaiModel = modelFor("xai");
       // xAI/Grok is OpenAI-compatible → FAST-mode decode params (issue #729).
@@ -1892,13 +2143,12 @@ async function handleStreamChat(req, url, res) {
         sendFail(err.message);
         return;
       }
-      // #967: log before falling through so degraded-local cause is visible in server log
-      console.error(`[provider:grok] cloud call failed (non-fatal): ${err.message}`);
+      console.warn(`[stream-chat] xai/grok auto-cascade failed — trying next provider (${err.message})`);
     }
   }
 
-  // Provider 5: Ollama (streaming) — last-resort fallback (local-first already tried above)
-  if (message && (!requestedProvider || requestedProvider === "ollama" || requestedProvider === "local")) {
+  // Provider: Ollama (streaming) — last-resort
+  if (_p === "ollama") {
     // Attempt 1: Unified Agent Connector (health-checked, provider-ranked, Python-side SSE)
     if (!requestedProvider || requestedProvider === "ollama" || requestedProvider === "local") {
       try {
@@ -1925,11 +2175,15 @@ async function handleStreamChat(req, url, res) {
             text: cleanText.slice(0, maxConversationTextLength),
           }).catch(() => {});
           recordProviderSuccess("ollama");
+          await recordConvergenceSignature("ollama", "unified-agent", cleanText, true);
           const ollamaConnectorReceipt = buildPcsfReceipt("ollama", "unified-agent", true);
           sendReceipt(ollamaConnectorReceipt);
           sendDone("ollama", { agent: doneAgentName, provider: "ollama", online: true, cleanText, suggestions, receipt: ollamaConnectorReceipt });
           return;
         }
+        // Connected but 0 bytes — ouro:latest proxy manifest without ouro_serve.py backing (#996)
+        console.warn("[stream-chat] ollama unified-connector: 0-byte reply — ouro:latest may be a proxy manifest; is ouro_serve.py running?");
+        recordProviderFailure("ollama", "unified_connector_empty_reply");
       } catch (err) {
         recordProviderFailure("ollama", `unified_connector: ${err.message}`);
         fullReply = "";
@@ -1992,7 +2246,7 @@ async function handleStreamChat(req, url, res) {
         req2.write(payload);
         req2.end();
       });
-      if (ollamaOk) {
+      if (ollamaOk && fullReply) {
         const { cleanText: ollamaClean, suggestions: ollamaDoors } = doorsOrFallback(fullReply, isKeystoneDebug || !isRpMode);
         await logConversation({
           recordedAt: new Date().toISOString(),
@@ -2001,10 +2255,22 @@ async function handleStreamChat(req, url, res) {
           text: ollamaClean.slice(0, maxConversationTextLength),
         }).catch(() => {});
         recordProviderSuccess("ollama");
+        await recordConvergenceSignature("ollama", ollamaModel, ollamaClean, true);
         const ollamaHttpReceipt = buildPcsfReceipt("ollama", ollamaModel, true);
         sendReceipt(ollamaHttpReceipt);
         sendDone("ollama", { agent: doneAgentName, provider: "ollama", online: true, cleanText: ollamaClean, suggestions: ollamaDoors, webSuggestions, receipt: ollamaHttpReceipt });
         return;
+      }
+      if (ollamaOk && !fullReply) {
+        // 200 OK but no tokens — ouro:latest proxy manifest without ouro_serve.py (#996)
+        console.warn(`[stream-chat] ollama direct-http: 200 OK but 0 bytes from ${ollamaModel} — is ouro_serve.py running?`);
+        recordProviderFailure("ollama", "direct_http_empty_reply");
+        if (requestedProvider) {
+          sendError("Local model returned empty response. Start ouro_serve.py to back the ouro:latest proxy.");
+          sendFail("ollama_empty_reply");
+          return;
+        }
+        // Auto mode: fall through to sendError below
       }
     } catch (err) {
       recordProviderFailure("ollama", err.message);
@@ -2016,6 +2282,7 @@ async function handleStreamChat(req, url, res) {
       // Auto mode: swallow error silently, let next provider try
     }
   }
+  }  // ── end Σ₀ brain dispatch loop ──
 
   // No provider available — stream local persona fallback
   const fallbackReason = anyProviderConfigured
@@ -2024,4 +2291,4 @@ async function handleStreamChat(req, url, res) {
   await streamLocalFallback(fallbackReason);
 }
 
-module.exports = { handleStreamChat, extractDoors, doorsOrFallback };
+module.exports = { handleStreamChat, extractDoors, doorsOrFallback, buildBrainOrder, stripModelArtifacts };

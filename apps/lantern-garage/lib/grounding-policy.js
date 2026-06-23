@@ -5,32 +5,32 @@
 // dilate (think more → ground harder); a frozen/degenerate signal collapses D toward
 // D_MIN (act / go look now). groundingPolicy(D) turns D into how much EXTERNAL
 // grounding to buy (web breadth, corroboration floor, deep mode).
-//
-// #1012 — mandatory periodic grounding tick: the "calm while wrong" / boiling-frog
-// regime (arXiv:2603.08455, cert §4) shows internal proximity monitors stay silent
-// during gradual drift. Solution: perform a mandatory external grounding pass on a
-// wall-clock cadence regardless of how low collapse-proximity reads. Default 5 min;
-// set GROUNDING_TICK_INTERVAL_MS to override. The tick is recorded per-process so
-// every warm request contributes; a cold restart resets (acceptable: first reply
-// after restart always grounds). Use shouldForceGrounding() before expensive checks
-// and recordGroundingTick() after a real grounding pass completes.
 
 const D_MIN = 0.1;
 const D_MAX = 5.0;
 const D_DEFAULT = 1.0;
 
-const GROUNDING_TICK_MS = parseInt(process.env.GROUNDING_TICK_INTERVAL_MS, 10) || 5 * 60 * 1000;
-let _lastGroundingTs = 0;
-
-function shouldForceGrounding() {
-  return Date.now() - _lastGroundingTs >= GROUNDING_TICK_MS;
-}
-
-function recordGroundingTick() {
-  _lastGroundingTs = Date.now();
-}
+// Boiling-frog defense (#1012): a HARD time cadence for external grounding. Cert §4's
+// "calm while wrong" regime + the 2026 Boiling Frog Threshold result (arXiv:2603.08455)
+// show internal monitors carry no extractable signal for gradual/periodic drift — so
+// proximity-triggered grounding alone is provably insufficient. We re-touch external
+// reality on a timer regardless of how low collapse-proximity is. Configurable via
+// GROUNDING_TICK_MS; set 0 to disable. Default 30 min.
+const GROUNDING_TICK_MS = (() => {
+  const v = parseInt(process.env.GROUNDING_TICK_MS, 10);
+  return Number.isFinite(v) ? v : 30 * 60 * 1000;
+})();
 
 const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
+
+// Is a mandatory grounding tick due? Pure (now/cadence injectable for tests).
+//   lastGroundedAtMs : ms epoch of the last grounding, or 0/null if never
+//   returns true when the cadence has elapsed (or grounding never happened).
+function isGroundingDue(lastGroundedAtMs, nowMs = Date.now(), cadenceMs = GROUNDING_TICK_MS) {
+  if (!cadenceMs || cadenceMs <= 0) return false; // cadence disabled
+  if (!lastGroundedAtMs) return true;             // never grounded → ground now
+  return nowMs - lastGroundedAtMs >= cadenceMs;
+}
 
 // Mirror of dilation() including the G12 collapse-proximity sign-fix:
 // near collapse (proximity→1) D deflates toward D_MIN instead of inflating.
@@ -46,13 +46,8 @@ function dilation(uncertainty, costPressure = 0, confidence = 0.5, collapseProxi
 }
 
 // Mirror of grounding_policy(): D → external-grounding budget.
-// forcedByTimer: when true (shouldForceGrounding() fired), always fetchExternal at
-// base budget even if D would otherwise suppress it — the mandatory tick override.
-function groundingPolicy(D, { baseMaxResults = 5, baseMinSources = 2, forcedByTimer = false } = {}) {
+function groundingPolicy(D, { baseMaxResults = 5, baseMinSources = 2 } = {}) {
   D = clamp(D, D_MIN, D_MAX);
-  if (forcedByTimer && D <= 1.0) {
-    return { fetchExternal: true, maxResults: baseMaxResults, minSources: baseMinSources, deepMode: false, forcedByTimer: true };
-  }
   if (D <= 1.0) {
     return { fetchExternal: D > 0.5, maxResults: baseMaxResults, minSources: baseMinSources, deepMode: false };
   }
@@ -80,4 +75,4 @@ function chatDilation(message, { confidence = 0.5, collapseProximity = 0 } = {})
   return dilation(clamp(u, 0, 1), 0, confidence, collapseProximity);
 }
 
-module.exports = { dilation, groundingPolicy, chatDilation, shouldForceGrounding, recordGroundingTick, D_MIN, D_MAX, D_DEFAULT };
+module.exports = { dilation, groundingPolicy, chatDilation, isGroundingDue, GROUNDING_TICK_MS, D_MIN, D_MAX, D_DEFAULT };

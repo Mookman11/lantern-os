@@ -74,7 +74,8 @@ class DecodeCanary:
 
     def observe(self, token_id: int, *, margin: Optional[float] = None,
                 exit_depth: Optional[int] = None, max_steps: Optional[int] = None,
-                entropy: Optional[float] = None, token_idx: Optional[int] = None) -> Dict[str, Any]:
+                entropy: Optional[float] = None, token_idx: Optional[int] = None,
+                divergence: Optional[float] = None) -> Dict[str, Any]:
         """Feed one generated token; returns {self_repeat, echo, degeneracy, nis, spook,
         proximity, signal, exit_depth, entropy, entropy_z}.
 
@@ -122,10 +123,17 @@ class DecodeCanary:
             "length": min(1.0, len(self._ids) / max(1, self.window)),
         })
         prox = self.monitor.sigma0_proximity()
+        # Σ₀ divergence (the certificate's SECOND fate — runaway / non-termination). The
+        # model-free canary cannot tell runaway-but-varied from healthy-varied output, so the
+        # caller (loop_lm, which sees the token budget) supplies it. Kept DISTINCT from collapse
+        # `proximity` per §4; `proximity_any` is the max for actuation. None ⇒ inert.
+        _div = None if divergence is None else max(0.0, min(1.0, float(divergence)))
         out = {
             "self_repeat": round(self_repeat, 4), "echo": round(echo, 4),
             "degeneracy": round(degeneracy, 4), "nis": float(ev["nis"].item()),
             "spook": bool(ev["spook"].item()), "proximity": prox["proximity"],
+            "divergence": None if _div is None else round(_div, 4),
+            "proximity_any": round(max(prox["proximity"], _div or 0.0), 4),
             "signal": self.monitor.anti_collapse_signal(), "exit_depth": exit_depth,
             "entropy": None if entropy is None else round(float(entropy), 3),
             "entropy_z": None if ent_z is None else round(float(ent_z), 2),
@@ -140,13 +148,100 @@ class DecodeCanary:
 
     # ── actuator: gate decode knobs on Σ₀ proximity ───────────────────────────
     def knobs(self, q: float, rep_penalty: float, temperature: float = 0.0,
-              proximity: Optional[float] = None) -> Dict[str, float]:
-        """Map Σ₀ proximity onto decode knobs. As the decoder nears collapse: punish
-        repetition harder, inject novelty (temperature), and exit the loop sooner (lower q)."""
+              proximity: Optional[float] = None, divergence: Optional[float] = None,
+              eps: Optional[float] = None) -> Dict[str, float]:
+        """Map Σ₀ proximity onto decode knobs. COLLAPSE (repetition) → punish repeats, inject
+        novelty, exit sooner. DIVERGENCE (runaway) → exit sooner + punish repeats too, but do
+        NOT inject novelty (temperature would feed the runaway). Distinct fates, per the
+        certificate; the EOS bias that actually halts a runaway lives in loop_lm.generate.
+
+        When `eps` (the latent-convergence exit threshold) is supplied, it also gets a DEPTH
+        response — the 'step adaptively to resolve divergence' actuator: DIVERGENCE tightens eps
+        (lower ⇒ harder to exit ⇒ the loop steps DEEPER to think the runaway out), while COLLAPSE
+        loosens it (a degenerate token needs no deep thought ⇒ exit sooner). Floored positive.
+        None ⇒ no eps knob (inert; depth-coupling off)."""
         p = self.monitor.sigma0_proximity()["proximity"] if proximity is None else float(proximity)
-        return {
-            "q": max(0.2, min(0.95, q - 0.2 * p)),       # exit sooner under collapse
-            "rep_penalty": rep_penalty + 0.7 * p,         # punish repeats harder
-            "temperature": max(0.0, temperature) + 0.7 * p,  # inject novelty
+        d = 0.0 if divergence is None else max(0.0, min(1.0, float(divergence)))
+        out = {
+            "q": max(0.2, min(0.95, q - 0.2 * p - 0.2 * d)),   # exit sooner under either fate
+            "rep_penalty": rep_penalty + 0.7 * p + 0.3 * d,     # punish repeats harder
+            "temperature": max(0.0, temperature) + 0.7 * p,     # novelty for COLLAPSE only
             "proximity": p,
+            "divergence": d,
+        }
+        if eps is not None:
+            out["eps"] = max(0.02, float(eps) * (1.0 + 0.5 * p - 0.6 * d))
+        return out
+
+
+# Default training-template turn markers — a stray one means the model finished and is
+# hallucinating a NEW turn (a restart). Pass to generate() as stop_strings to truncate there.
+RESTART_MARKERS = ["\n### Instruction:", "\n### Response:", "\n### Task:", "\n### Input:"]
+
+
+class CanaryLogitsProcessor:
+    """Run the Σ₀ DecodeCanary on the FAST cached decode path (HF `generate`) instead of the
+    slow native Python loop — same collapse+divergence stack, ~2.5× the throughput.
+
+    Per step it reads the step logits (argmax margin + softmax entropy) and the last generated
+    token (self-repeat / n-gram echo) to drive the canary, derives a length-based DIVERGENCE
+    proxy, and — when `adapt` — applies the score actuators: an EOS bias that grows with
+    divergence (pull a runaway toward stopping) and an extra repetition penalty under collapse.
+    Per-step recurrent DEPTH control + contraction telemetry are native-only (HF generate uses
+    the model's trained internal exit); detection + the score actuators are all available here.
+
+    Implements the HF LogitsProcessor protocol: __call__(input_ids, scores) -> scores."""
+
+    def __init__(self, prompt_len: int, max_new_tokens: int, eos_id: Optional[int], *,
+                 canary: Optional["DecodeCanary"] = None, adapt: bool = False,
+                 eos_bias: float = 6.0, div_start_frac: float = 0.6) -> None:
+        self.dc = canary or DecodeCanary()
+        self.prompt_len = int(prompt_len)
+        self.max_new = int(max_new_tokens)
+        self.eos_id = eos_id
+        self.adapt = bool(adapt)
+        self.eos_bias = float(eos_bias)
+        self.div_start = max(8, int(div_start_frac * self.max_new))
+        self.max_proximity = 0.0
+        self.max_divergence = 0.0
+        self.spooks = 0
+        self.signal = "none"
+        self.n = 0
+
+    def __call__(self, input_ids, scores):
+        row = scores[0].float()
+        probs = torch.softmax(row, dim=-1)
+        top2 = torch.topk(probs, 2).values
+        margin = float((top2[0] - top2[1]).item())
+        entropy = float(-(probs * (probs + 1e-10).log()).sum().item())
+        gen = input_ids[0, self.prompt_len:]
+        # length-based divergence proxy: 0 until div_start, → 1 at the token cap (runaway).
+        div = 0.0
+        if self.max_new > self.div_start:
+            div = max(0.0, min(1.0, (self.n - self.div_start) / (self.max_new - self.div_start)))
+        self.max_divergence = max(self.max_divergence, div)
+        if gen.numel() > 0:   # observe the previously-chosen token
+            obs = self.dc.observe(int(gen[-1].item()), margin=margin, entropy=entropy,
+                                  divergence=div, token_idx=self.n)
+            self.max_proximity = max(self.max_proximity, obs["proximity"])
+            self.spooks += int(obs["spook"])
+            if obs["signal"] != "none":
+                self.signal = obs["signal"]
+        self.n += 1
+        if self.adapt:
+            if self.eos_id is not None and div > 0.0:
+                scores[0, self.eos_id] = scores[0, self.eos_id] + self.eos_bias * div
+            if self.max_proximity > 0.3 and gen.numel() > 0:
+                for tid in set(gen[-8:].tolist()):   # extra repetition penalty under collapse
+                    scores[0, tid] = scores[0, tid] - 2.0 * self.max_proximity
+        return scores
+
+    def telemetry(self) -> Dict[str, Any]:
+        return {
+            "canary_max_proximity": round(self.max_proximity, 4),
+            "canary_max_divergence": round(self.max_divergence, 4),
+            "canary_spooks": self.spooks,
+            "canary_signal": self.signal,
+            "collapse_events": len(self.dc.collapse_events),
+            "tokens": self.n,
         }

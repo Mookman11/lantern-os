@@ -18,6 +18,7 @@ import pytest  # noqa: E402
 # sigma0.decode_canary imports torch at module load; CI does not install it.
 # Skip the module rather than error collection where torch is unavailable.
 pytest.importorskip("torch")
+import torch  # noqa: E402
 from sigma0.decode_canary import DecodeCanary  # noqa: E402
 
 
@@ -100,6 +101,80 @@ def test_entropy_drop_records_collapse_event():
     assert dc.collapse_events, "entropy collapse did not append a collapse_event"
     ev = dc.collapse_events[-1]
     assert ev["token"] == 12 and ev["z"] < 0, f"collapse event mis-recorded: {ev}"
+
+
+def test_divergence_inert_when_absent():
+    """Without a divergence arg the second-fate signal stays inert (None), exactly like entropy —
+    so the model-free unit path and the certificate's collapse tests are unaffected."""
+    out = DecodeCanary().observe(5)
+    assert out["divergence"] is None
+    assert out["proximity_any"] == out["proximity"], "proximity_any must reduce to collapse proximity"
+
+
+def test_divergence_surfaced_and_distinct_from_collapse():
+    """A supplied divergence (runaway) is surfaced and folded into proximity_any, but kept
+    DISTINCT from the collapse `proximity` (the certificate §4 keeps the two fates separate)."""
+    out = DecodeCanary().observe(5, divergence=0.8)        # varied token, no repetition
+    assert out["divergence"] == 0.8, "supplied divergence not surfaced"
+    assert out["proximity"] < 0.3, "a single varied token must not read as COLLAPSE"
+    assert out["proximity_any"] >= 0.8, "proximity_any must reflect the divergence fate"
+
+
+def test_knobs_respond_to_divergence_without_novelty():
+    """Divergence must pull the decoder toward STOPPING (lower q, higher rep_penalty) but must
+    NOT inject novelty (temperature) — novelty would feed a runaway."""
+    dc = DecodeCanary()
+    base = dc.knobs(q=0.5, rep_penalty=1.3, temperature=0.0, proximity=0.0, divergence=0.0)
+    diverging = dc.knobs(q=0.5, rep_penalty=1.3, temperature=0.0, proximity=0.0, divergence=1.0)
+    assert diverging["q"] < base["q"], "divergence did not lower q (exit/stop sooner)"
+    assert diverging["rep_penalty"] > base["rep_penalty"], "divergence did not raise rep_penalty"
+    assert diverging["temperature"] == base["temperature"], "divergence must NOT inject novelty"
+
+
+def test_knobs_eps_depth_coupling():
+    """The eps knob is the 'step deeper to resolve divergence' actuator: DIVERGENCE tightens eps
+    (deeper), COLLAPSE loosens it (shallower), and it stays inert + positive at the extremes."""
+    dc = DecodeCanary()
+    base = dc.knobs(q=0.5, rep_penalty=1.3, proximity=0.0, divergence=0.0, eps=0.2)
+    diverging = dc.knobs(q=0.5, rep_penalty=1.3, proximity=0.0, divergence=1.0, eps=0.2)
+    collapsing = dc.knobs(q=0.5, rep_penalty=1.3, proximity=1.0, divergence=0.0, eps=0.2)
+    assert base["eps"] == pytest.approx(0.2), "zero proximity/divergence must leave eps unchanged"
+    assert diverging["eps"] < base["eps"], "divergence must TIGHTEN eps (step deeper)"
+    assert collapsing["eps"] > base["eps"], "collapse must LOOSEN eps (exit sooner)"
+    assert diverging["eps"] >= 0.02, "eps must stay positive (floored)"
+    # eps knob is opt-in: absent when eps is not supplied
+    assert "eps" not in dc.knobs(q=0.5, rep_penalty=1.3, divergence=1.0)
+
+
+def test_canary_logits_processor_runs_and_biases_eos():
+    """The cached-path CanaryLogitsProcessor must run on HF-generate-style (input_ids, scores),
+    accumulate telemetry, and — with adapt — bias EOS UP as the length-based divergence rises."""
+    from sigma0.decode_canary import CanaryLogitsProcessor
+    V, EOS = 50, 7
+    proc = CanaryLogitsProcessor(prompt_len=2, max_new_tokens=20, eos_id=EOS,
+                                 adapt=True, div_start_frac=0.0)  # div_start floors at 8
+    last_eos = 0.0
+    for k in range(16):                       # generate 16 tokens; div ramps after step 8
+        ids = torch.arange(2 + k).unsqueeze(0)   # prompt(2) + k generated
+        out = proc(ids, torch.zeros(1, V))
+        assert out.shape == (1, V), "processor must return same-shape scores"
+        last_eos = float(out[0, EOS])
+    tel = proc.telemetry()
+    assert tel["tokens"] == 16
+    assert tel["canary_max_divergence"] > 0.0, "divergence must ramp as the run nears the cap"
+    assert last_eos > 0.0, "EOS score must be biased up once divergence is engaged"
+
+
+def test_canary_logits_processor_inert_without_adapt():
+    """Without adapt the processor only OBSERVES — it must not modify the scores."""
+    from sigma0.decode_canary import CanaryLogitsProcessor
+    proc = CanaryLogitsProcessor(prompt_len=1, max_new_tokens=20, eos_id=3, adapt=False,
+                                 div_start_frac=0.0)
+    for k in range(12):
+        scores = torch.zeros(1, 40)
+        out = proc(torch.arange(1 + k).unsqueeze(0), scores)
+        assert torch.equal(out, torch.zeros(1, 40)), "observe-only must leave scores untouched"
+    assert proc.telemetry()["tokens"] == 12
 
 
 if __name__ == "__main__":

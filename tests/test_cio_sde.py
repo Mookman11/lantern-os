@@ -180,6 +180,40 @@ def test_collapse_freezes_state():
     assert abs(norms[-1] - norms[-2]) < 1e-3
 
 
+def test_sigma_zero_freezes_sigma_positive_explores():
+    """The σ-axis directly — grounds the Σ₀-collapse ↔ ML σ=0 (zero-noise) link.
+
+    The SDE's diffusion gain g(x) IS the exploration noise σ (engine.forward_step:
+    ``dW = g · dilation · noise · √dt`` — the "noise gain (exploration)"). With the
+    drift zeroed (A=0) and the Σ₀ collapse operator OFF, this isolates the σ-axis:
+      • σ = 0  → dW ≡ 0 → the state is FROZEN (the zero-noise limit; no exploration).
+        This is the dynamical twin of the certificate's 42-state and of ML's σ=0
+        (clean-data ICL / zero weight-perturbation continual learning).
+      • σ > 0  → dW ≠ 0 → the state RANDOM-WALKS (explores / escapes the point) —
+        the motion Σ₀⁻¹ relies on, and what external grounding steers.
+    Refs (verified): ICL σ — arXiv:2306.04637, 2211.15661; continual-learning σ
+    (weight-perturbation std) — arXiv:2404.00781, 2503.01595.
+    """
+    node = LinearDynamics(torch.zeros(4, 4), B=torch.zeros(4, 2), noise=0.0)
+    m = CIO_SDE(dim=4, ctrl_dim=2, hidden=8)
+    m.graph.active = node          # zero drift ⇒ ONLY the diffusion gain σ moves x
+    m.collapse_op = None           # operators OFF: this is the σ-axis, not Σ₀
+    m.anti_collapse_op = None
+    m.pcsf.u_max = 1e-6            # control off (drift is already 0) — pure σ-axis
+    x0, s0 = _init_state(scale=0.01)
+
+    node._noise = 0.0              # σ = 0 — the zero-noise limit
+    _, _, tr0 = rollout(m, x0.clone(), s0.clone(), steps=30, base_seed=1)
+    n0 = tr0.x_norms()
+    assert abs(n0[-1] - n0[0]) < 1e-5      # frozen: the state does not move at all
+
+    node._noise = 0.5              # σ > 0 — exploration on (same noise seed)
+    _, _, tr1 = rollout(m, x0.clone(), s0.clone(), steps=30, base_seed=1)
+    n1 = tr1.x_norms()
+    assert all(v == v for v in n1)         # finite (no NaN/divergence)
+    assert n1[-1] > n0[-1] + 0.2           # explored: random-walked away from x0
+
+
 # ── Lyapunov collapse certificate ────────────────────────────────────────────
 
 def test_certificate_guaranteed_for_negative_definite():
@@ -543,3 +577,51 @@ def test_l2_anisotropy_lift():
         checked += 1
     assert checked > 100, f"too few near-isotropic cases sampled ({checked})"
     assert counterexamples == 0, f"L2 violated in {counterexamples}/{checked} cases"
+
+
+# ── Σ₀-K1 component 8: collapse certificate + NIS canary, end-to-end (#852) ──
+
+def test_collapse_certificate_and_nis_canary_on_live_trajectory():
+    """Both Σ₀ canaries fire on ONE live rollout — moving component 8 [coded]→[tested].
+
+    (1) the surprise NIS χ² canary fires during the collapse approach (the #657
+    wiring), and (2) the collapse certificate is GUARANTEED on the live per-step
+    drift Jacobian pulled from the same trajectory.
+    """
+    from src.cio_sde.engine import drift_jacobian
+
+    m = _model()
+    for p in m.graph.active.drift_net.parameters():
+        torch.nn.init.zeros_(p)
+    m.surprise_monitor = SurpriseMonitor(spook_sigmas=3.0, anti_collapse_trigger=True)
+    m.anti_collapse_op = AntiCollapseOperator(strength=0.5)
+    m.collapse_op = SemanticCollapseOperator()
+
+    x0, s0 = _init_state(scale=0.01)
+    xf, sf, tr = rollout(m, x0, s0, steps=30, base_seed=1)
+
+    # (1) NIS canary fired on the live trajectory.
+    spook_steps = [s["step"] for s in tr.steps if s.get("surprise_spook", False)]
+    assert len(spook_steps) > 0, "surprise NIS canary should fire during collapse approach"
+
+    # (2) Collapse certificate is guaranteed on the live drift Jacobian.
+    u = m.pcsf(xf, s0)
+    A = drift_jacobian(m.graph.active, xf.detach(), u.detach())
+    cert = collapse_certificate(A)
+    assert cert.guaranteed, f"collapse certificate not guaranteed on live Jacobian: {cert}"
+
+
+def test_collapse_certificate_contraction_rate_on_negdef_node():
+    """A neg-definite execution node yields a guaranteed certificate with the expected
+    contraction rate, read off a live rollout's drift Jacobian."""
+    from src.cio_sde.engine import drift_jacobian
+
+    m = _model()
+    m.graph.active = LinearDynamics(-0.8 * torch.eye(4), B=torch.zeros(4, 2))
+    x0, s0 = _init_state(scale=0.5)
+    xf, sf, tr = rollout(m, x0, s0, steps=10, base_seed=2)
+    u = m.pcsf(xf, s0)
+    A = drift_jacobian(m.graph.active, xf.detach(), u.detach())
+    cert = collapse_certificate(A)
+    assert cert.guaranteed
+    assert cert.contraction_rate == pytest.approx(0.8, abs=1e-3)

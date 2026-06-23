@@ -325,6 +325,45 @@ def github_create_repository(name: str, description: str = "", private: str = "t
         return _err(exc)
 
 
+def github_fork_repository(owner: str, repo: str, organization: str = "") -> Dict[str, Any]:
+    """Fork a repository into the authenticated user's account (or an org)."""
+    blocked = _require_write("fork_repository")
+    if blocked:
+        return blocked
+    try:
+        body: Dict[str, Any] = {}
+        if organization:
+            body["organization"] = organization
+        r = _api(f"repos/{owner}/{repo}/forks", method="POST", body=body or None)
+        return {"ok": True, "full_name": r.get("full_name"), "html_url": r.get("html_url")}
+    except Exception as exc:
+        return _err(exc)
+
+
+def github_create_release(owner: str, repo: str, tag_name: str, name: str = "",
+                          body: str = "", draft: str = "false",
+                          prerelease: str = "false", target_commitish: str = "") -> Dict[str, Any]:
+    """Create a new release (and optionally a new tag)."""
+    blocked = _require_write("create_release")
+    if blocked:
+        return blocked
+    try:
+        payload: Dict[str, Any] = {
+            "tag_name": tag_name,
+            "name": name or tag_name,
+            "body": body,
+            "draft": str(draft).lower() == "true",
+            "prerelease": str(prerelease).lower() == "true",
+        }
+        if target_commitish:
+            payload["target_commitish"] = target_commitish
+        r = _api(f"repos/{owner}/{repo}/releases", method="POST", body=payload)
+        return {"ok": True, "id": r.get("id"), "tag": r.get("tag_name"),
+                "html_url": r.get("html_url"), "upload_url": r.get("upload_url")}
+    except Exception as exc:
+        return _err(exc)
+
+
 def github_get_latest_release(owner: str, repo: str) -> Dict[str, Any]:
     """Get the latest published release of a repository."""
     try:
@@ -380,6 +419,19 @@ def github_search_issues(query: str, perPage: str = "20") -> Dict[str, Any]:
              "title": i["title"], "state": i["state"], "is_pr": "pull_request" in i,
              "html_url": i["html_url"]}
             for i in data.get("items", [])]}
+    except Exception as exc:
+        return _err(exc)
+
+
+def github_search_users(query: str, perPage: str = "20") -> Dict[str, Any]:
+    """Search GitHub users and organizations."""
+    try:
+        data = _api("search/users", query={"q": query, "per_page": perPage})
+        return {"total": data.get("total_count"), "results": [
+            {"login": u["login"], "type": u["type"],
+             "html_url": u["html_url"], "avatar_url": u.get("avatar_url")}
+            for u in data.get("items", [])
+        ]}
     except Exception as exc:
         return _err(exc)
 
@@ -464,6 +516,46 @@ def github_add_issue_comment(owner: str, repo: str, issue_number: str, body: str
         c = _api(f"repos/{owner}/{repo}/issues/{issue_number}/comments",
                  method="POST", body={"body": body})
         return {"ok": True, "id": c.get("id"), "html_url": c.get("html_url")}
+    except Exception as exc:
+        return _err(exc)
+
+
+def github_list_issue_comments(owner: str, repo: str, issue_number: str, perPage: str = "30") -> Dict[str, Any]:
+    """List comments on an issue or pull request."""
+    try:
+        data = _api(f"repos/{owner}/{repo}/issues/{issue_number}/comments",
+                    query={"per_page": perPage})
+        return {"comments": [
+            {"id": c["id"], "user": c["user"]["login"],
+             "body": (c.get("body") or "")[:_MAX_TEXT],
+             "created_at": c.get("created_at"), "html_url": c.get("html_url")}
+            for c in data
+        ]}
+    except Exception as exc:
+        return _err(exc)
+
+
+def github_update_issue_comment(owner: str, repo: str, comment_id: str, body: str) -> Dict[str, Any]:
+    """Update the body of an existing issue or PR comment."""
+    blocked = _require_write("update_issue_comment")
+    if blocked:
+        return blocked
+    try:
+        c = _api(f"repos/{owner}/{repo}/issues/comments/{comment_id}",
+                 method="PATCH", body={"body": body})
+        return {"ok": True, "id": c.get("id"), "html_url": c.get("html_url")}
+    except Exception as exc:
+        return _err(exc)
+
+
+def github_delete_issue_comment(owner: str, repo: str, comment_id: str) -> Dict[str, Any]:
+    """Delete an issue or PR comment by its comment id."""
+    blocked = _require_write("delete_issue_comment")
+    if blocked:
+        return blocked
+    try:
+        _api(f"repos/{owner}/{repo}/issues/comments/{comment_id}", method="DELETE")
+        return {"ok": True, "comment_id": comment_id}
     except Exception as exc:
         return _err(exc)
 
@@ -568,6 +660,72 @@ def github_create_pull_request_review(owner: str, repo: str, pull_number: str,
         return _err(exc)
 
 
+def github_get_pull_request_files(owner: str, repo: str, pull_number: str, perPage: str = "100") -> Dict[str, Any]:
+    """List files changed in a pull request with patch stats."""
+    try:
+        data = _api(f"repos/{owner}/{repo}/pulls/{pull_number}/files",
+                    query={"per_page": perPage})
+        return {"files": [
+            {"filename": f["filename"], "status": f["status"],
+             "additions": f["additions"], "deletions": f["deletions"],
+             "patch": (f.get("patch") or "")[:4000]}
+            for f in data
+        ]}
+    except Exception as exc:
+        return _err(exc)
+
+
+def github_add_pull_request_review_comment(owner: str, repo: str, pull_number: str,
+                                           body: str, commit_id: str, path: str,
+                                           line: str = "", side: str = "RIGHT") -> Dict[str, Any]:
+    """Add an inline review comment to a specific line in a PR diff.
+
+    commit_id: the SHA of the commit to comment on.
+    path: relative path to the file.
+    line: line number in the diff (leave blank to attach to the overall diff hunk).
+    side: RIGHT (new file) or LEFT (old file).
+    """
+    blocked = _require_write("add_pull_request_review_comment")
+    if blocked:
+        return blocked
+    try:
+        payload: Dict[str, Any] = {"body": body, "commit_id": commit_id,
+                                   "path": path, "side": side}
+        if line:
+            payload["line"] = int(line)
+        c = _api(f"repos/{owner}/{repo}/pulls/{pull_number}/comments",
+                 method="POST", body=payload)
+        return {"ok": True, "id": c.get("id"), "html_url": c.get("html_url")}
+    except Exception as exc:
+        return _err(exc)
+
+
+def github_get_pull_request_status(owner: str, repo: str, pull_number: str) -> Dict[str, Any]:
+    """Get the combined CI status and check runs for a pull request's head commit."""
+    try:
+        pr = _api(f"repos/{owner}/{repo}/pulls/{pull_number}")
+        head_sha = pr.get("head", {}).get("sha", "")
+        if not head_sha:
+            return {"error": "Could not resolve head SHA"}
+        combined = _api(f"repos/{owner}/{repo}/commits/{head_sha}/status")
+        check_runs = _api(f"repos/{owner}/{repo}/commits/{head_sha}/check-runs")
+        return {
+            "head_sha": head_sha,
+            "combined_state": combined.get("state"),
+            "statuses": [
+                {"context": s["context"], "state": s["state"], "description": s.get("description")}
+                for s in combined.get("statuses", [])
+            ],
+            "check_runs": [
+                {"name": r["name"], "status": r["status"], "conclusion": r.get("conclusion"),
+                 "html_url": r.get("html_url")}
+                for r in check_runs.get("check_runs", [])
+            ],
+        }
+    except Exception as exc:
+        return _err(exc)
+
+
 # ───────────────────────── Actions ─────────────────────────
 
 def github_list_workflows(owner: str, repo: str) -> Dict[str, Any]:
@@ -637,6 +795,69 @@ def github_get_job_logs(owner: str, repo: str, job_id: str) -> Dict[str, Any]:
         return _err(exc)
 
 
+# ──────────────────────── Notifications ────────────────────
+
+def github_list_notifications(all: str = "false", participating: str = "false",
+                               perPage: str = "30") -> Dict[str, Any]:
+    """List inbox notifications. all=true includes read; participating=true filters to @-mentioned."""
+    try:
+        data = _api("notifications", query={"all": all, "participating": participating,
+                                            "per_page": perPage})
+        return {"notifications": [
+            {"id": n["id"],
+             "subject_type": n["subject"]["type"],
+             "subject_title": n["subject"]["title"],
+             "repo": n["repository"]["full_name"],
+             "reason": n.get("reason"),
+             "unread": n.get("unread"),
+             "updated_at": n.get("updated_at")}
+            for n in data
+        ]}
+    except Exception as exc:
+        return _err(exc)
+
+
+def github_get_notification_thread(thread_id: str) -> Dict[str, Any]:
+    """Get a single notification thread by its id."""
+    try:
+        n = _api(f"notifications/threads/{thread_id}")
+        return {"id": n["id"],
+                "subject_type": n["subject"]["type"],
+                "subject_title": n["subject"]["title"],
+                "subject_url": n["subject"].get("url"),
+                "repo": n["repository"]["full_name"],
+                "reason": n.get("reason"),
+                "unread": n.get("unread"),
+                "updated_at": n.get("updated_at")}
+    except Exception as exc:
+        return _err(exc)
+
+
+def github_mark_notification_read(thread_id: str) -> Dict[str, Any]:
+    """Mark a notification thread as read."""
+    blocked = _require_write("mark_notification_read")
+    if blocked:
+        return blocked
+    try:
+        _api(f"notifications/threads/{thread_id}", method="PATCH")
+        return {"ok": True, "thread_id": thread_id}
+    except Exception as exc:
+        return _err(exc)
+
+
+def github_dismiss_notification(thread_id: str) -> Dict[str, Any]:
+    """Dismiss (unsubscribe from) a notification thread so it no longer appears in the inbox."""
+    blocked = _require_write("dismiss_notification")
+    if blocked:
+        return blocked
+    try:
+        _api(f"notifications/threads/{thread_id}/subscription",
+             method="PUT", body={"ignored": True})
+        return {"ok": True, "thread_id": thread_id}
+    except Exception as exc:
+        return _err(exc)
+
+
 # ──────────────────────── Registration ─────────────────────
 
 GITHUB_TOOLS: Dict[str, Any] = {
@@ -651,18 +872,24 @@ GITHUB_TOOLS: Dict[str, Any] = {
     "github_list_commits": github_list_commits,
     "github_get_commit": github_get_commit,
     "github_create_repository": github_create_repository,
+    "github_fork_repository": github_fork_repository,
+    "github_create_release": github_create_release,
     "github_get_latest_release": github_get_latest_release,
     "github_list_releases": github_list_releases,
     # search
     "github_search_code": github_search_code,
     "github_search_repositories": github_search_repositories,
     "github_search_issues": github_search_issues,
+    "github_search_users": github_search_users,
     # issues
     "github_list_issues": github_list_issues,
     "github_get_issue": github_get_issue,
     "github_create_issue": github_create_issue,
     "github_update_issue": github_update_issue,
     "github_add_issue_comment": github_add_issue_comment,
+    "github_list_issue_comments": github_list_issue_comments,
+    "github_update_issue_comment": github_update_issue_comment,
+    "github_delete_issue_comment": github_delete_issue_comment,
     # pull requests
     "github_list_pull_requests": github_list_pull_requests,
     "github_get_pull_request": github_get_pull_request,
@@ -670,16 +897,24 @@ GITHUB_TOOLS: Dict[str, Any] = {
     "github_update_pull_request": github_update_pull_request,
     "github_merge_pull_request": github_merge_pull_request,
     "github_create_pull_request_review": github_create_pull_request_review,
+    "github_get_pull_request_files": github_get_pull_request_files,
+    "github_add_pull_request_review_comment": github_add_pull_request_review_comment,
+    "github_get_pull_request_status": github_get_pull_request_status,
     # actions
     "github_list_workflows": github_list_workflows,
     "github_list_workflow_runs": github_list_workflow_runs,
     "github_get_workflow_run": github_get_workflow_run,
     "github_run_workflow": github_run_workflow,
     "github_get_job_logs": github_get_job_logs,
+    # notifications
+    "github_list_notifications": github_list_notifications,
+    "github_get_notification_thread": github_get_notification_thread,
+    "github_mark_notification_read": github_mark_notification_read,
+    "github_dismiss_notification": github_dismiss_notification,
 }
 
 # Param names that should be typed as integers in the generated MCP schema.
-INT_PARAMS = {"issue_number", "pull_number", "run_id", "job_id", "perPage"}
+INT_PARAMS = {"issue_number", "pull_number", "run_id", "job_id", "perPage", "line", "comment_id"}
 
 
 def register(registry: Dict[str, Any]) -> List[str]:

@@ -1,202 +1,105 @@
-# Keystone Rollover — Staged Plan & Exit Criteria
+# ROLLOVER.md — staging the Keystone kernel as the primary coding agent
 
-**Issue:** [#892](https://github.com/alex-place/lantern-os/issues/892)  
-**Status:** Stage 0 — Shadow (active)  
-**Principle:** *No stage advances without a `leaderboard.jsonl` row showing the gate passed.*
+> Epic: [#892](https://github.com/alex-place/lantern-os/issues/892). This doc is the
+> staged plan and **measurable exit criteria** for moving the primary coding agent
+> from Claude (cloud) to the in-house Keystone/Ouro kernel — and for the final step
+> of dropping the Claude default. It documents behavior that already exists in code;
+> it does not propose a new subsystem.
 
----
-
-## Overview
-
-This document defines the evidence-gated plan for rolling over the primary coding
-agent from Claude (Anthropic) to Keystone chat — the in-house
-GROUND→PLAN→PATCH→VERIFY kernel (`keystoneRun` in
-`apps/lantern-garage/lib/keystone-runtime.js`) running the Keystone/Ouro model,
-with Claude demoted to an explicit, recorded fallback.
-
-The rollover is **not a hard cutover**. Keystone earns each stage by passing
-measurable gates on `data/eval/leaderboard.jsonl`. A gate that fails resets to the
-previous stage; the leaderboard row is the only admissible evidence.
+The North Star is unchanged (see [CONVERGANCE-SIGMA0-BRIEFING](CONVERGANCE-SIGMA0-BRIEFING.md)):
+one loop, models are replaceable, **nothing advances without evidence**. Rollover is
+just *which replaceable model the kernel path tries first* — gated, reversible, and
+recorded.
 
 ---
 
-## Current state (grounding)
+## 1. Stages
 
-| Component | Status |
-|---|---|
-| `keystoneRun()` kernel | [built] — model-agnostic, GROUND→PLAN→PATCH→VERIFY |
-| Ouro-1.4B local model | [built] — served via Ollama (`ouro:latest`) |
-| `eval_keystone.py` golden set | [built] — 65 prompts, 34% cold baseline (Stage 0 bar) |
-| `provider-router.js` fallback chain | [built] — `coding` chain: ollama → mistral → anthropic |
-| Stage-tagged leaderboard rows | [built] — `--stage` flag in `eval_keystone.py` |
-| Autowork gating bugs (#870, #871) | open — must close before Stage 1 |
-| Rollover dashboard (#898) | not started |
+| Stage | `KEYSTONE_ROLLOVER_MODE` | Who answers the kernel path | Claude's role | Advance requires |
+|---|---|---|---|---|
+| **0 — Shadow** | `shadow` (default/unset) | Claude only | Primary | Kernel components built + the Σ₀-K1 gates that don't need a live run (A, D, E) green |
+| **1 — Assist** | `default` | Keystone/Ouro **first**, Claude fallback | Fallback | Gate **B** PASS (accuracy > 0.34 cold floor) **and** Gate **F** PASS (bytes-per-correct not worse than baseline) at stage `assist` |
+| **2 — Default** | `default` | Keystone/Ouro first, Claude last-resort | Last-resort | Gate B/F PASS at stage `default` **and** escalation rate < Y% over N landed items (see §4) |
+| **3 — Independent** | `default` (+ key removed) | Keystone/Ouro | Opt-in only | Stage-3 exit criteria (§4) — the only point at which the `ANTHROPIC_API_KEY` default is removed |
 
----
+Stages are driven by a single env var, so a stage is a **config change, not a
+deploy**, and rolling *back* is the same one-line change.
 
-## Rollover stages
+## 2. Routing (#ROUTE)
 
-### Stage 0 — Shadow (current)
+The kernel path has its own provider selection so it never inherits the chat
+surface's Claude default — [`apps/lantern-garage/lib/provider-router.js`](../apps/lantern-garage/lib/provider-router.js)
+`selectKernelProvider()`:
 
-Keystone runs the loop on issues and proposes changes. Claude lands all PRs.
-Win/loss + cost are captured per run so Stage 1's gate can be set from evidence.
+- `KEYSTONE_ROLLOVER_MODE = "shadow"` (default when unset) → **anthropic only**
+  (`claude-opus-4-8`). Stage 0, safe: the kernel observes but does not drive.
+- `KEYSTONE_ROLLOVER_MODE = "default"` → the `kernel` provider chain:
+  `ollama:[keystone-ft, ouro:latest]` **first**, then `anthropic:[claude-opus-4-8]`
+  as last-resort fallback.
 
-**Exit criteria (all must be met to advance to Stage 1):**
+`anthropic` is only ever *usable* when `ANTHROPIC_API_KEY` is set (`hasCredentials`),
+so Stage 3 = removing that key turns Claude from "last-resort fallback" into
+"opt-in only" without touching the chain.
+
+## 3. Promotion gate (#GATE)
+
+A stage may advance only when the **live kernel** clears the relevant Σ₀-K1 gates on
+the 65-prompt golden set ([`data/eval/sigma0-prompts.jsonl`](../data/eval/sigma0-prompts.jsonl),
+Gate A — done). Two bars gate cost/quality:
 
 | Gate | Metric | Bar |
 |---|---|---|
-| S0-A | `eval_keystone.py --stage 0` accuracy | ≥ 40% (beats 34% cold baseline) |
-| S0-B | Win/loss cost ratio logged | ≥ 10 shadow runs in `data/rollover/shadow-runs.jsonl` |
-| S0-C | No false-positive verifications | autowork gating bugs #870/#871 closed |
+| **B — Continuation accuracy** | `eval_keystone.py` accuracy | must beat the **0.34** cold baseline (the ungrounded Ollama-HTTP row) |
+| **F — Bytes-per-correct** | served cost per *correct* answer | must not regress vs the baseline row |
 
-**How to run the Stage 0 gate:**
-```bash
-python scripts/eval_keystone.py --label keystone-shadow --stage 0 --gate-bar 0.40
-```
-A `gate_passed: true` row in `data/eval/leaderboard.jsonl` is required before
-Stage 1 begins.
+Mechanics:
 
----
+1. `python scripts/eval_keystone.py --label keystone-<stage> --stage <stage> --engine loop`
+   runs the golden set against the live kernel and writes a **stage-tagged** row to
+   [`data/eval/leaderboard.jsonl`](../data/eval/leaderboard.jsonl) (`rollover_stage`).
+2. `python scripts/rollover_gate.py --stage <stage>` (or `--run` to do both) reads
+   that row, evaluates Gate B + Gate F, and prints **PASS/FAIL** plus an External
+   Reality envelope `[claim, evidence, confidence, source]` — exit `0` on PASS, `1`
+   on FAIL. Wire it into CI / `make gate-rollover` to block a stage advance.
 
-### Stage 1 — Assist
+The gate's threshold logic is pure and locked by
+[`tests/test_rollover_gate.py`](../tests/test_rollover_gate.py) (0.34 boundary is not
+a pass; cost regression blocks even when accuracy passes; envelope well-formed).
 
-Keystone lands low-risk issues (`cleanup`/`p2` labels) autonomously. Claude is the
-fallback on red (failed verification). Each Claude fallback is recorded as a
-convergence event (see `convergence-records.js`).
+## 4. Stage-3 exit criteria — when the Claude default may be dropped (#FALLBACK / #DASH)
 
-**Exit criteria:**
+Removing the `ANTHROPIC_API_KEY` default is the irreversible-feeling step, so it has
+the strictest, **measurable** bar. Drop the default only when, for **N = 3
+consecutive rollover stages** at `KEYSTONE_ROLLOVER_MODE=default`:
 
-| Gate | Metric | Bar |
-|---|---|---|
-| S1-A | `eval_keystone.py --stage 1` accuracy | ≥ 50% |
-| S1-B | Keystone autonomous landings | ≥ 5 merged PRs with `[keystone-autonomous]` label |
-| S1-C | Claude fallback rate | < 40% of attempted issues |
-| S1-D | No uncaught verification failures | all `auto/` PRs have a `leaderboard.jsonl` gate row |
+1. **Quality:** Gate B PASS every stage (accuracy > 0.34 cold floor; target trending
+   toward the grounded bar in [SIGMA0-K1-KERNEL-SPEC §3](SIGMA0-K1-KERNEL-SPEC.md)).
+2. **Cost:** Gate F PASS every stage (bytes-per-correct ≤ baseline).
+3. **Autonomy:** Claude **escalation rate < Y%** (default Y = 10%) of landed work
+   items — i.e. the kernel finished the work itself ≥ 90% of the time. Escalations
+   are recorded as convergence events (#897) so this rate is computed from real data,
+   and the Keystone-vs-Claude landed-work share is the rollover dashboard (#898).
 
-**How to run the Stage 1 gate:**
-```bash
-python scripts/eval_keystone.py --label keystone-assist --stage 1 --gate-bar 0.50
-```
+Until all three hold, `anthropic` stays in the chain as fallback.
 
----
+## 5. Non-goals
 
-### Stage 2 — Default
+- **Keep `anthropic` as an opt-in fallback** even after Stage 3 — "drop the default"
+  ≠ "remove the provider". Models are replaceable; the chain stays pluggable.
+- **No new agent ecosystem.** Rollover reuses `selectKernelProvider` + the existing
+  fleet; it does not add a parallel agent stack (that would violate the convergence
+  constraint).
+- **State-ABI shim / kernel internals** (component 6, `StateABIShim`) are tracked in
+  [SIGMA0-K1-KERNEL-SPEC](SIGMA0-K1-KERNEL-SPEC.md), not here. This doc is about
+  *routing + promotion*, not the kernel's internals.
 
-Keystone is the default coding provider. Claude is fallback only, invoked when
-Keystone returns a failed verification or when the issue is explicitly tagged
-`escalate-to-claude`.
+## See also
 
-**Exit criteria:**
-
-| Gate | Metric | Bar |
-|---|---|---|
-| S2-A | `eval_keystone.py --stage 2` accuracy | ≥ 60% |
-| S2-B | Keystone share of closed issues | ≥ 60% of last 30 closed (last 30 days) |
-| S2-C | Zero regressions on golden set | no prompt that was `ok=True` flips to `ok=False` |
-| S2-D | Rollover dashboard live | `#898` closed |
-
-**How to run the Stage 2 gate:**
-```bash
-python scripts/eval_keystone.py --label keystone-default --stage 2 --gate-bar 0.60
-```
-
----
-
-### Stage 3 — Independent
-
-The `ANTHROPIC_API_KEY` default requirement is dropped. Keystone runs fully
-local-first; cloud providers (Anthropic, OpenAI) are opt-in fallbacks configured
-explicitly in `.env`.
-
-**Exit criteria:**
-
-| Gate | Metric | Bar |
-|---|---|---|
-| S3-A | `eval_keystone.py --stage 3` accuracy | ≥ 65% |
-| S3-B | Server starts cleanly without `ANTHROPIC_API_KEY` | CI green |
-| S3-C | Keystone share of closed issues | ≥ 80% of last 30 closed |
-| S3-D | `ROLLOVER.md` updated to reflect completion | this file updated |
-
-**How to run the Stage 3 gate:**
-```bash
-python scripts/eval_keystone.py --label keystone-independent --stage 3 --gate-bar 0.65
-```
-
----
-
-## Leaderboard row format
-
-`data/eval/leaderboard.jsonl` — one JSON object per line:
-
-```json
-{
-  "benchmark": "keystone",
-  "ts": "1750000000",
-  "label": "keystone-shadow",
-  "model": "ouro:latest",
-  "stage": 0,
-  "gate_bar": 0.40,
-  "gate_passed": true,
-  "n": 65,
-  "accuracy": 0.42,
-  "pass@1": 0.42,
-  "avg_latency_s": 12.4,
-  "tok_per_s": 3.1
-}
-```
-
-Fields `stage`, `gate_bar`, and `gate_passed` are set by `--stage` / `--gate-bar`
-flags. Rows without a `stage` field are pre-rollover benchmark runs.
-
----
-
-## Shadow run log format
-
-`data/rollover/shadow-runs.jsonl` — one JSON object per completed shadow issue:
-
-```json
-{
-  "ts": "2026-06-21T00:00:00Z",
-  "issue_number": 901,
-  "keystone_proposed": true,
-  "claude_landed": true,
-  "keystone_patch_correct": null,
-  "cost_keystone_usd": 0.00,
-  "cost_claude_usd": 0.04,
-  "notes": "Keystone proposed correct diff; Claude applied it"
-}
-```
-
-`keystone_patch_correct` is `null` until manually graded (or graded by the eval
-harness). Once 10 rows exist and S0-A passes, Stage 1 can open.
-
----
-
-## Fallback / escalation recording
-
-All Claude fallback invocations MUST be recorded as convergence events. See
-`apps/lantern-garage/lib/convergence-records.js` — emit a record with:
-
-```json
-{
-  "type": "claude_fallback",
-  "trigger": "verification_failed | explicit_escalate | stage_gate_failed",
-  "issue_number": 901,
-  "keystone_stage": 1,
-  "evidence": "...error from verification...",
-  "confidence": 1.0
-}
-```
-
-This implements #897 and feeds the rollover dashboard (#898).
-
----
-
-## Related
-
-- [SIGMA0-K1-KERNEL-SPEC.md](SIGMA0-K1-KERNEL-SPEC.md) — kernel spec, gates A–F
-- [CONVERGANCE-SIGMA0-BRIEFING.md](CONVERGANCE-SIGMA0-BRIEFING.md) — North Star
-- [autowork-worktree.js](../apps/lantern-garage/lib/autowork-worktree.js) — issue isolation
-- [keystone-runtime.js](../apps/lantern-garage/lib/keystone-runtime.js) — GROUND→PLAN→PATCH→VERIFY loop
-- [provider-router.js](../apps/lantern-garage/lib/provider-router.js) — provider fallback chain
-- Sub-issues: #894 #895 #896 #897 #898 #899
+- Epic [#892](https://github.com/alex-place/lantern-os/issues/892) ·
+  routing [#894](https://github.com/alex-place/lantern-os/issues/894) ·
+  gate harness [#895](https://github.com/alex-place/lantern-os/issues/895) ·
+  fleet gating [#896](https://github.com/alex-place/lantern-os/issues/896) ·
+  fallback-as-convergence [#897](https://github.com/alex-place/lantern-os/issues/897) ·
+  dashboard [#898](https://github.com/alex-place/lantern-os/issues/898)
+- [SIGMA0-K1-KERNEL-SPEC.md](SIGMA0-K1-KERNEL-SPEC.md) — kernel gates A–F, components
+- [CONVERGANCE-SIGMA0-BRIEFING.md](CONVERGANCE-SIGMA0-BRIEFING.md) — the North Star

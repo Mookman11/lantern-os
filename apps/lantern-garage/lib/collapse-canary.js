@@ -1,110 +1,135 @@
-"use strict";
-// collapse-canary.js — live chat n-gram repetition monitor (#1010).
+// Σ₀ collapse canary for the live chat serving path (#1010).
 //
-// The Σ₀ decode canary (src/sigma0/decode_canary.py) operates on token-id logits
-// and can't be wired directly into the Node.js SSE path. This module is the JS
-// chat-level equivalent: it tracks self-repeat / n-gram echo in the streamed reply
-// text, computes sigma0_proximity (0=healthy, 1=total loop-collapse), and fires a
-// logged canary event when the reply starts looping.
+// The Σ₀ §1 spectral certificate (src/cio_sde, src/sigma0/loop_lm.py) can detect
+// collapsing / repeating / diverging generation, but it lives in Python and is not
+// bound to the Node serving loop — so the cert can read "healthy" while a live reply
+// is in loop-collapse. This is a lightweight, dependency-free TEXT canary that runs
+// per reply on the serving path: it computes surface collapse signals (self-repeat,
+// n-gram echo, lexical diversity) into a single `proximity` in [0,1] and, when that
+// crosses threshold, emits a logged `canary_*` signal. It is a passive OBSERVER —
+// no behavior change when healthy, and it feeds the existing certificate concept
+// rather than adding a parallel decision layer.
 //
-// "Per-reply, not per-token": observe(text) is called once the full reply is
-// assembled, so it works with every streaming provider without tapping mid-stream.
-// The signal is logged; the serving path is never blocked.
-//
-// Acceptance (#1010): a forced repeating reply raises proximity + emits a logged
-// canary_* event; healthy replies are unaffected.
+// Signals (per convergence-plan-refinement.md, Refinement B — the cheap surface track):
+//   - selfRepeatRatio : fraction of duplicated whole lines/sentences (literal loop)
+//   - ngramEchoRatio  : 1 − unique(trigrams)/total(trigrams) (phrase echo)
+//   - typeTokenRatio  : unique tokens / total tokens (lexical contraction; low = bad)
+//   - longestRunRatio : longest immediate token-repeat run / total tokens
 
-const path = require("path");
+const MIN_TOKENS = 12; // below this there isn't enough signal — don't cry collapse
 
-const CANARY_LOG_PATH = path.resolve(__dirname, "../../data/convergence/canary-events.jsonl");
-const DEFAULT_NGRAM = 3;
-const PROXIMITY_THRESHOLD = 0.35; // >= 35% repeated trigrams → rising collapse
-
-// ── Pure: word-level n-gram counter ─────────────────────────────────────────
-function extractNgrams(text, n = DEFAULT_NGRAM) {
-  const words = String(text || "").toLowerCase().split(/\s+/).filter(Boolean);
-  if (words.length < n) return { total: 0, repeated: 0, proximity: 0 };
-  const counts = new Map();
-  for (let i = 0; i <= words.length - n; i++) {
-    const gram = words.slice(i, i + n).join(" ");
-    counts.set(gram, (counts.get(gram) || 0) + 1);
-  }
-  const total = counts.size + (words.length - n); // approx total positions
-  let repeated = 0;
-  for (const cnt of counts.values()) {
-    if (cnt > 1) repeated += cnt - 1;
-  }
-  const proximity = total > 0 ? Math.min(1, repeated / Math.max(1, words.length - n + 1)) : 0;
-  return { total: words.length - n + 1, repeated, proximity };
+function tokenize(text) {
+  const m = String(text || "").toLowerCase().match(/[\p{L}\p{N}']+/gu);
+  return m || [];
 }
 
-// ── Pure: echo detection — did the last 1/3 of the reply appear earlier? ────
-function detectEcho(text) {
-  const words = String(text || "").toLowerCase().split(/\s+/).filter(Boolean);
-  if (words.length < 18) return 0;
-  const tailLen = Math.floor(words.length / 3);
-  const tail = words.slice(-tailLen).join(" ");
-  const head = words.slice(0, words.length - tailLen).join(" ");
-  // Count how many 5-grams from the tail appeared in the head
-  const tailGrams = [];
-  const tailWords = tail.split(/\s+/);
-  for (let i = 0; i <= tailWords.length - 5; i++) tailGrams.push(tailWords.slice(i, i + 5).join(" "));
-  if (!tailGrams.length) return 0;
-  const matched = tailGrams.filter((g) => head.includes(g)).length;
-  return matched / tailGrams.length;
+function splitUnits(text) {
+  // sentence/line units for literal self-repeat detection
+  return String(text || "")
+    .split(/[\n.!?]+/)
+    .map((s) => s.trim().toLowerCase())
+    .filter((s) => s.length >= 8);
 }
 
-// ── Core: compute sigma0_proximity for a completed reply ────────────────────
-function computeProximity(text) {
-  const { proximity: repeatProx } = extractNgrams(text, DEFAULT_NGRAM);
-  const echoScore = detectEcho(text);
-  // Weighted combination: trigram repeat dominates, echo is secondary signal
-  return Math.min(1, repeatProx * 0.7 + echoScore * 0.3);
-}
-
-// ── I/O: log a canary event best-effort (never throws) ──────────────────────
-function logCanaryEvent(event) {
-  try {
-    const { appendJsonlQueued } = require("./file-queue");
-    appendJsonlQueued(CANARY_LOG_PATH, {
-      ts: new Date().toISOString(),
-      ...event,
-    }).catch(() => {});
-  } catch { /* never block the response */ }
-}
-
-// ── Main API: observe a completed reply ─────────────────────────────────────
-// Returns { proximity, echo, canary_fired, action }.
-// When proximity >= PROXIMITY_THRESHOLD, logs a canary_collapse event.
-function observe(text, { agent = "keystone", provider = "unknown", surface = "dream-chat" } = {}) {
-  if (!text || text.length < 50) {
-    return { proximity: 0, echo: 0, canary_fired: false, action: null };
+function selfRepeatRatio(text) {
+  const units = splitUnits(text);
+  if (units.length < 2) return 0;
+  const seen = new Set();
+  let dup = 0;
+  for (const u of units) {
+    if (seen.has(u)) dup++;
+    else seen.add(u);
   }
-  const proximity = computeProximity(text);
-  const echo = detectEcho(text);
-  const canary_fired = proximity >= PROXIMITY_THRESHOLD;
+  return dup / units.length;
+}
 
-  if (canary_fired) {
-    logCanaryEvent({
-      type: "canary_collapse",
-      proximity,
-      echo,
-      agent,
-      provider,
-      surface,
-      text_length: text.length,
-      action: "logged",
-    });
+function ngramEchoRatio(tokens, n = 3) {
+  if (tokens.length < n + 1) return 0;
+  const total = tokens.length - n + 1;
+  const seen = new Set();
+  for (let i = 0; i < total; i++) {
+    seen.add(tokens.slice(i, i + n).join(" "));
+  }
+  return 1 - seen.size / total;
+}
+
+function longestRunRatio(tokens) {
+  if (tokens.length < 2) return 0;
+  let max = 1;
+  let run = 1;
+  for (let i = 1; i < tokens.length; i++) {
+    run = tokens[i] === tokens[i - 1] ? run + 1 : 1;
+    if (run > max) max = run;
+  }
+  return (max - 1) / tokens.length;
+}
+
+/**
+ * Score a completed reply for collapse proximity.
+ * @returns {{proximity:number, collapsed:boolean, signals:object, reason?:string}}
+ */
+function scoreReplyCollapse(text, opts = {}) {
+  const threshold = opts.threshold != null ? opts.threshold : 0.5;
+  const tokens = tokenize(text);
+  const signals = {
+    tokens: tokens.length,
+    selfRepeatRatio: 0,
+    ngramEchoRatio: 0,
+    typeTokenRatio: tokens.length ? new Set(tokens).size / tokens.length : 1,
+    longestRunRatio: 0,
+  };
+
+  if (tokens.length < MIN_TOKENS) {
+    return { proximity: 0, collapsed: false, signals, reason: "too_short" };
   }
 
-  return { proximity, echo, canary_fired, action: canary_fired ? "logged" : null };
+  signals.selfRepeatRatio = selfRepeatRatio(text);
+  signals.ngramEchoRatio = ngramEchoRatio(tokens);
+  signals.longestRunRatio = longestRunRatio(tokens);
+
+  // Lexical-contraction penalty: healthy prose sits well above ~0.45 TTR; map the
+  // shortfall below that floor into [0,1].
+  const ttrFloor = 0.45;
+  const ttrPenalty = Math.max(0, (ttrFloor - signals.typeTokenRatio) / ttrFloor);
+
+  // Weighted blend — any single strong signal is enough to raise proximity.
+  const proximity = Math.min(
+    1,
+    0.4 * signals.ngramEchoRatio +
+      0.3 * ttrPenalty +
+      0.2 * signals.selfRepeatRatio +
+      0.1 * Math.min(1, signals.longestRunRatio * 5)
+  );
+
+  return {
+    proximity: Number(proximity.toFixed(4)),
+    collapsed: proximity >= threshold,
+    signals,
+  };
+}
+
+/**
+ * Build the logged canary signal payload for a collapsed reply. The recommended
+ * action mirrors the §1 anti_collapse_signal vocabulary but is advisory here — the
+ * canary stays passive on the serving path.
+ */
+function antiCollapseSignal(score) {
+  let action = "inject_novelty";
+  if (score.signals.selfRepeatRatio >= 0.5 || score.signals.longestRunRatio >= 0.2) {
+    action = "truncate_context";
+  } else if (score.signals.typeTokenRatio < 0.2) {
+    action = "switch_agent";
+  }
+  return {
+    event: "canary_collapse",
+    proximity: score.proximity,
+    action,
+    signals: score.signals,
+  };
 }
 
 module.exports = {
-  computeProximity,
-  extractNgrams,
-  detectEcho,
-  observe,
-  PROXIMITY_THRESHOLD,
-  CANARY_LOG_PATH,
+  scoreReplyCollapse,
+  antiCollapseSignal,
+  MIN_TOKENS,
 };

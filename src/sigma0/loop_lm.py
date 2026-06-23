@@ -105,6 +105,55 @@ class Sigma0LoopLM:
         m = self.model
         return m.get_base_model() if hasattr(m, "get_base_model") else m
 
+    # ── forward-truncation (EXPERIMENTAL) ─────────────────────────────────────
+    # Replicates OuroModel.forward but BREAKS the recurrent loop when the last
+    # token's Q-exit fires, so simple tokens cost their realized depth instead of
+    # full R4. Uses the model's OWN components (embed_tokens / rotary_emb / norm /
+    # early_exit_gate / layers / create_causal_mask) — a faithful replica, not a
+    # reinvention. No-cache only (each call processes the full sequence and we read
+    # only the last token), so it stays O(N^2); it is a win for SHORT outputs where
+    # the avoided steps dominate. MUST pass the harness parity check before trust.
+    def _truncated_forward(self, ids, q):
+        import math
+        import sys
+        torch, *_ = _lazy()
+        m = self._backbone().model  # OuroModel
+        mod = sys.modules[type(m).__module__]
+        inputs_embeds = m.embed_tokens(ids)
+        seq = inputs_embeds.shape[1]
+        cache_position = torch.arange(seq, device=inputs_embeds.device)
+        position_ids = cache_position.unsqueeze(0)
+        mask_kwargs = dict(config=m.config, input_embeds=inputs_embeds, attention_mask=None,
+                           cache_position=cache_position, past_key_values=None, position_ids=position_ids)
+        causal = {"full_attention": mod.create_causal_mask(**mask_kwargs)}
+        if getattr(m, "has_sliding_layers", False):
+            causal["sliding_attention"] = mod.create_sliding_window_causal_mask(**mask_kwargs)
+        hidden = inputs_embeds
+        pos_emb = m.rotary_emb(hidden, position_ids)
+        hs_list, g_list = [], []
+        survival, cdf = 1.0, 0.0
+        n = m.total_ut_steps
+        for current_ut in range(n):
+            for layer in m.layers[: m.config.num_hidden_layers]:
+                hidden = layer(hidden, attention_mask=causal[layer.attention_type],
+                               position_ids=position_ids, past_key_value=None, use_cache=False,
+                               cache_position=cache_position, position_embeddings=pos_emb,
+                               current_ut=current_ut)
+            hn = m.norm(hidden)
+            g = m.early_exit_gate(hn)
+            hs_list.append(hn)
+            g_list.append(g)
+            # last-token cumulative Q-exit (paper §3) — break when CDF ≥ q
+            logit = float(g[0, -1, 0])
+            lam = 1.0 / (1.0 + math.exp(-logit))
+            t = current_ut + 1
+            p = survival if t == n else lam * survival
+            cdf += p
+            survival *= (1.0 - lam)
+            if cdf >= q:
+                break
+        return hs_list, g_list
+
     # ── native Q-exit over the last token's per-step gates (paper §3) ─────────
     @staticmethod
     def qexit_step(gate_steps, q: float, max_steps: int):
@@ -144,13 +193,46 @@ class Sigma0LoopLM:
                 return t + 1, rel, "fixed_point", deltas   # 1-indexed exit depth
         return n, (deltas[-1] if deltas else 0.0), "max_depth", deltas
 
+    # ── acceleration-based convergence exit (the certificate-consistent upgrade) ─
+    # Second-order step-size criterion (Two-Scale, arXiv:2509.23314): exit when the
+    # ACCELERATION aᵏ = ‖Δᵏ − Δᵏ⁻¹‖ (normalized) stays < eps for `patience` consecutive
+    # steps. The first-order converge_step above false-exits on SPIRAL dynamics — a looped
+    # block makes orthogonal refinements, so ‖Δh‖ plateaus at a small nonzero value while the
+    # direction keeps ROTATING. That rotation is exactly the non-normal / skew case the collapse
+    # certificate §1.1 flags as the hard one (where the energy proof fails), so acceleration is
+    # both the SOTA exit and the certificate-consistent choice. `deltas` is still the first-order
+    # ‖Δh‖/‖h‖ trajectory, kept identical to converge_step so E2 mean_contraction is unchanged.
+    @staticmethod
+    def accel_step(hidden_per_step, eps: float, max_steps: int, patience: int = 2):
+        """Returns (exit_step_1indexed, accel_at_exit, reason, deltas)."""
+        deltas, diffs, hits = [], [], 0
+        n = len(hidden_per_step)
+        for t in range(1, n):
+            prev, cur = hidden_per_step[t - 1], hidden_per_step[t]
+            denom = float(prev.norm()) or 1e-9
+            d = cur - prev
+            deltas.append(float(d.norm()) / denom)
+            diffs.append(d)
+            if len(diffs) >= 2:
+                accel = float((diffs[-1] - diffs[-2]).norm())
+                accel /= (float(diffs[-1].norm()) + float(diffs[-2].norm()) + 1e-9)
+                if accel < eps:
+                    hits += 1
+                    if hits >= patience:
+                        return t + 1, accel, "accel_fixed_point", deltas
+                else:
+                    hits = 0
+        return n, (deltas[-1] if deltas else 0.0), "max_depth", deltas
+
     # ── generation with per-token adaptive depth ─────────────────────────────
     def generate(self, prompt: str, q: float = 0.5, max_new_tokens: int = 200, messages=None,
                  rep_penalty: float = 1.3, mode: str = "qexit", eps: float = 0.05,
-                 canary: bool = True, adapt: bool = False):
-        """mode='qexit' (baseline, exit on confidence) or 'converge' (exit on
-        latent fixed point). 'converge' also returns the mean contraction delta
-        so the spiral hypothesis (E2) is falsifiable from real trajectories.
+                 canary: bool = True, adapt: bool = False, stop=None):
+        """mode='qexit' (baseline, exit on the trained confidence gate — what Ouro was trained
+        for), 'converge' (exit on first-order latent fixed point ‖Δh‖<eps), or 'accel' (exit on
+        the spiral-robust second-order acceleration ‖Δᵏ−Δᵏ⁻¹‖<eps for 2 steps — the certificate-
+        consistent upgrade). 'converge'/'accel' also return the mean contraction delta so the
+        spiral hypothesis (E2) is falsifiable from real trajectories.
 
         canary=True wires the decode stream into the Σ₀ SurpriseMonitor (#766): per-token
         self-repeat/echo/argmax-margin feed sigma0_proximity, surfaced as `canary_*` in the
@@ -182,16 +264,61 @@ class Sigma0LoopLM:
                 dc = DecodeCanary()
             except Exception:
                 dc = None  # canary is best-effort; never break generation
-        q_cur, rep_cur = q, rep_penalty
+        q_cur, rep_cur, eps_cur = q, rep_penalty, eps
         canary_max_prox, canary_spooks, canary_signal = 0.0, 0, "none"
+        # Σ₀ DIVERGENCE instrument — the certificate's SECOND fate (§7). The decode canary's
+        # signals (self-repeat / n-gram echo / entropy-drop) detect COLLAPSE; they are blind to
+        # divergence: runaway generation that never terminates (varied tokens, low repeat, so
+        # degeneracy≈0). We instrument it here, where the tokenizer + token budget are visible.
+        # proximity ramps from _div_start → max_new_tokens ("running to the length limit"), and a
+        # stray training-template turn marker is an unambiguous restart → hard stop + truncate.
+        canary_max_div, stop_reason, _trunc_text = 0.0, None, None
+        _div_start = max(8, int(0.6 * max_new_tokens))
+        _stop_markers = stop if stop is not None else [
+            "\n### Instruction:", "\n### Response:", "\n### Task:", "\n### Input:",
+            "</answer>", "<|im_end|>"]
+        _EOS_BIAS = 6.0   # logit boost added to EOS, scaled by divergence, only when adapt=True
+        # #PERF: incremental KV decode via the model's native UniversalTransformerCache.
+        # The legacy path forwarded the FULL growing sequence with use_cache=False on
+        # every token = O(N^2) decode — the dominant cost behind ~1 s/token and the
+        # 170-280 s coding outliers on the leaderboard. With the cache we encode the
+        # prompt once, then forward ONLY the new token each step (O(N) total). The model
+        # auto-creates and returns the cache (see modeling_ouro.OuroModel.forward:596,661).
+        # The gate/hidden reads below already index [-1] (last position), so they stay
+        # correct whether the pass is the full prompt or a single new token.
+        # Set OURO_LOOP_CACHE=0 to fall back to the legacy full-re-encode path.
+        _use_cache = os.environ.get("OURO_LOOP_CACHE", "1") == "1"
+        # #PERF upgrade #2: forward-truncation (EXPERIMENTAL, OURO_LOOP_TRUNCATE=1).
+        # Break the recurrent loop when the last token's Q-exit fires → simple tokens
+        # cost their realized depth instead of full R4. INCOMPATIBLE with the cross-token
+        # KV cache (an early-exiting token never writes its deeper-step KV, so later
+        # tokens can't attend to it) → truncation FORCES no-cache and stays O(N^2). Net:
+        # a win for SHORT outputs (chat); the cache fix wins for LONG outputs (coding).
+        # qexit mode only. Validate parity via `bench_ouro_loop.py --truncate` first.
+        _truncate = os.environ.get("OURO_LOOP_TRUNCATE", "0") == "1" and mode == "qexit"
+        if _truncate:
+            _use_cache = False
+        _past = None
+        _cur = ids  # first pass = full prompt; subsequent passes = only the new token
         with torch.no_grad():
             for _tok_idx in range(max_new_tokens):
-                # OuroModel.forward returns (outputs, hidden_states_list, gate_list)
-                _out, hidden_states_list, gate_list = bb.model(input_ids=ids, use_cache=False)
-                if mode == "converge":
-                    # contraction over the latent trajectory of the last token
+                # OuroModel.forward returns (BaseModelOutputWithPast, hidden_states_list, gate_list)
+                if _truncate:
+                    hidden_states_list, gate_list = self._truncated_forward(ids, q_cur)
+                elif _use_cache:
+                    _out, hidden_states_list, gate_list = bb.model(
+                        input_ids=_cur, past_key_values=_past, use_cache=True)
+                    _past = _out.past_key_values
+                else:
+                    _out, hidden_states_list, gate_list = bb.model(input_ids=ids, use_cache=False)
+                if mode in ("converge", "accel"):
+                    # contraction over the latent trajectory of the last token; 'accel' uses the
+                    # spiral-robust second-order criterion, 'converge' the first-order one (E2).
                     h_per_step = [h[0, -1, :] for h in hidden_states_list]
-                    step, rel, reason, deltas = self.converge_step(h_per_step, eps, self.max_steps)
+                    _exit = self.accel_step if mode == "accel" else self.converge_step
+                    # eps_cur is modulated by the adapt actuator below: DIVERGENCE tightens it
+                    # (step deeper to resolve the runaway), COLLAPSE loosens it (exit sooner).
+                    step, rel, reason, deltas = _exit(h_per_step, eps_cur, self.max_steps)
                     if deltas:
                         exit_deltas.append(sum(deltas) / len(deltas))
                 else:
@@ -207,6 +334,17 @@ class Sigma0LoopLM:
                     for tid in set(ids[0, -len(depths):].tolist()):
                         v = logits[tid]
                         logits[tid] = v / rep_cur if v > 0 else v * rep_cur
+                # Σ₀ divergence proximity: 0 until _div_start, ramps to 1 at the token cap —
+                # approaching the length limit without terminating IS the divergence fate.
+                divergence = 0.0
+                if max_new_tokens > _div_start:
+                    divergence = max(0.0, min(1.0, (_tok_idx - _div_start) / (max_new_tokens - _div_start)))
+                canary_max_div = max(canary_max_div, divergence)
+                # Divergence actuator (opt-in via adapt): bias toward EOS as the run nears the cap,
+                # so a runaway is pulled to a stop instead of rambling to the limit. Gentle + late
+                # (only past _div_start) — healthy short answers emit EOS well before it, untouched.
+                if adapt and divergence > 0.0 and eos is not None:
+                    logits[eos] = logits[eos] + _EOS_BIAS * divergence
                 nxt = int(torch.argmax(logits))
                 if dc is not None:
                     # Feed both decode-health signals to the one canary: argmax margin
@@ -218,18 +356,29 @@ class Sigma0LoopLM:
                     margin = float((top2[0] - top2[1]).item())
                     entropy = float(-(probs * (probs + 1e-10).log()).sum().item())
                     obs = dc.observe(nxt, margin=margin, exit_depth=step, max_steps=self.max_steps,
-                                     entropy=entropy, token_idx=_tok_idx)
+                                     entropy=entropy, token_idx=_tok_idx, divergence=divergence)
                     canary_max_prox = max(canary_max_prox, obs["proximity"])
                     canary_spooks += int(obs["spook"])
                     if obs["signal"] != "none":
                         canary_signal = obs["signal"]
-                    if adapt:  # actuator: gate knobs on Σ₀ proximity (opt-in; changes tokens)
-                        k = dc.knobs(q, rep_penalty)
+                    if adapt:  # actuator: gate knobs on Σ₀ proximity + divergence (opt-in)
+                        k = dc.knobs(q, rep_penalty, divergence=divergence, eps=eps)
                         q_cur, rep_cur = k["q"], k["rep_penalty"]
-                ids = torch.cat([ids, torch.tensor([[nxt]], device=ids.device)], dim=1)
+                        eps_cur = k.get("eps", eps)   # divergence→deeper, collapse→shallower
+                _nxt_t = torch.tensor([[nxt]], device=ids.device)
+                ids = torch.cat([ids, _nxt_t], dim=1)
+                _cur = _nxt_t  # next pass forwards only the new token; the cache holds the rest
                 if nxt == eos:
                     break
-        text = self.tok.decode(ids[0, -len(depths):], skip_special_tokens=True)
+                # Σ₀ divergence hard-stop: a training-template turn marker means the model has
+                # finished the answer and is hallucinating a NEW turn (a restart) — terminate and
+                # truncate before the marker rather than letting the tail ramble/rot.
+                _g = self.tok.decode(ids[0, -len(depths):], skip_special_tokens=True)
+                _hit = next(((m, _g.find(m)) for m in _stop_markers if m in _g), None)
+                if _hit is not None:
+                    _trunc_text, stop_reason = _g[:_hit[1]].rstrip(), "restart_marker"
+                    break
+        text = _trunc_text if _trunc_text is not None else self.tok.decode(ids[0, -len(depths):], skip_special_tokens=True)
         mean_depth = sum(depths) / len(depths) if depths else 0
 
         # #768: empirical discrete Jacobian from consecutive exit-depth hidden vectors.
@@ -275,8 +424,10 @@ class Sigma0LoopLM:
             out["canary_max_proximity"] = round(canary_max_prox, 4)
             out["canary_spooks"] = canary_spooks
             out["canary_signal"] = canary_signal
+            out["canary_max_divergence"] = round(canary_max_div, 4)  # §7 second fate (runaway)
+            out["stop_reason"] = stop_reason                          # 'restart_marker' | None
             out["adapt"] = adapt
-        if mode == "converge":
+        if mode in ("converge", "accel"):
             # mean contraction delta across tokens: < eps ⇒ loop genuinely converges (E2)
             out["eps"] = eps
             out["mean_contraction"] = round(sum(exit_deltas) / len(exit_deltas), 4) if exit_deltas else None

@@ -141,9 +141,12 @@ const routes = [
   require("./routes/dream"),
   require("./routes/dreams"),
   require("./routes/keystone"),
+  require("./routes/rollover"), // #898: Keystone-vs-Claude landed-work share
   require("./routes/image"),
   require("./routes/web-images"),
   require("./routes/youtube"),
+  require("./routes/github-activity"), // Explore: latest releases + commits (cached)
+  require("./routes/discover-feeds"),  // Explore: curated discovery rail (RSS/Atom, cached)
   require("./routes/three-doors-image-pool"),
   require("./routes/three-doors-convergence"),
   require("./routes/convergence-dispatch"),
@@ -178,7 +181,17 @@ const routes = [
 
 // ── Session middleware (Patreon OAuth) ──
 const session = require("express-session");
-const sessionSecret = process.env.SESSION_SECRET || "lantern-local-dev-secret-change-in-prod";
+// Fail-closed: the committed dev default may sign sessions only on loopback. Bound
+// beyond loopback (PORT set / NODE_ENV=production) without a real SESSION_SECRET,
+// refuse to boot rather than sign with a repo-public key. #867
+const { resolveSessionSecret } = require("./lib/session-secret");
+let sessionSecret;
+try {
+  sessionSecret = resolveSessionSecret(process.env);
+} catch (err) {
+  console.error("[FATAL] " + err.message);
+  process.exit(1);
+}
 const sessionMiddleware = session({
   secret: sessionSecret,
   resave: false,
@@ -462,6 +475,13 @@ process.on("SIGINT", () => shutdown("SIGINT"));
 
 server.listen(port, host, () => {
   console.log(`Lantern Garage app listening on ${host}:${port}`);
+
+  // ── Gated auto-dispatch: auto-work the backlog into draft PRs (OFF unless AUTO_DISPATCH=1) ──
+  try {
+    require("./lib/auto-dispatch").start({ repoRoot: require("path").resolve(__dirname, "../.."), port });
+  } catch (e) {
+    console.error("[auto-dispatch] failed to start (non-fatal):", e && e.message);
+  }
 
   // ── Kalshi Tight-Band Collector (6s polling) ──
   const kalshiCollector = require("./lib/kalshi-collector");
