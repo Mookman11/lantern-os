@@ -915,11 +915,14 @@ function buildPayload() {
 }
 
 function clearForm() {
-  document.getElementById("intake-form").reset();
+  const form = document.getElementById("intake-form");
+  if (form) form.reset();
   pillars = DEFAULT_PILLARS.map(p => ({ ...p }));
   renderPillars();
-  document.getElementById("profile-banner").classList.remove("show");
-  document.getElementById("status").classList.remove("show");
+  const banner = document.getElementById("profile-banner");
+  if (banner) banner.classList.remove("show");
+  const statusEl = document.getElementById("status");
+  if (statusEl) statusEl.classList.remove("show");
 }
 
 document.getElementById("intake-form").addEventListener("submit", async (e) => {
@@ -942,9 +945,12 @@ document.getElementById("intake-form").addEventListener("submit", async (e) => {
       const result = await r.json();
       const slug = result?.slug || payload.slug;
       showStatus(`✓ Saved: data/creators/${slug}.json`, "success");
-      document.getElementById("banner-name").textContent = payload.identity.fullName || payload.slug;
-      document.getElementById("banner-meta").textContent = ` — saved at ${new Date().toLocaleTimeString()}`;
-      document.getElementById("profile-banner").classList.add("show");
+      const saveBannerName = document.getElementById("banner-name");
+      const saveBannerMeta = document.getElementById("banner-meta");
+      const saveBanner = document.getElementById("profile-banner");
+      if (saveBannerName) saveBannerName.textContent = payload.identity.fullName || payload.slug;
+      if (saveBannerMeta) saveBannerMeta.textContent = ` — saved at ${new Date().toLocaleTimeString()}`;
+      if (saveBanner) saveBanner.classList.add("show");
     } else {
       const err = await r.json().catch(() => ({}));
       showStatus("Error: " + (err.error || `HTTP ${r.status}`), "error");

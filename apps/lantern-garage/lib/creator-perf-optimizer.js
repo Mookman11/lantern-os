@@ -148,9 +148,10 @@ class CreatorPerfOptimizer {
       uptime,
       energySavedJoules: parseFloat(energySavedEstimate),
       bandwidthMB: parseFloat(bandwidthMB),
-      apiCallsAvoidedPercent: this.stats.apiCallsMade > 0
-        ? ((this.stats.apiCallsSkipped / (this.stats.apiCallsSkipped + this.stats.apiCallsMade)) * 100).toFixed(1) + '%'
-        : (this.stats.apiCallsSkipped > 0 ? '100%' : '0%'),
+      apiCallsAvoidedPercent: (() => {
+        const total = this.stats.apiCallsMade + this.stats.apiCallsSkipped;
+        return total === 0 ? '0.0%' : ((this.stats.apiCallsSkipped / total) * 100).toFixed(1) + '%';
+      })(),
     };
   }
 

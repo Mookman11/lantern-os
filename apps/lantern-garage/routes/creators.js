@@ -11,7 +11,7 @@ module.exports = async function creatorsRoutes(req, res, url, deps) {
   // GET /api/creators — list all creator slugs
   if (url.pathname === "/api/creators" && req.method === "GET") {
     ensureDir();
-    const files = fs.readdirSync(creatorsDir).filter(f => f.endsWith(".json"));
+    const files = fs.readdirSync(creatorsDir).filter(f => f.endsWith(".json")).sort();
     const slugs = files.map(f => f.replace(".json", ""));
     sendJson(res, { creators: slugs });
     return true;
@@ -29,8 +29,12 @@ module.exports = async function creatorsRoutes(req, res, url, deps) {
       sendJson(res, { error: "Creator not found" }, 404);
       return true;
     }
-    const data = JSON.parse(fs.readFileSync(filePath, "utf8"));
-    sendJson(res, { creator: data });
+    try {
+      const data = JSON.parse(fs.readFileSync(filePath, "utf8"));
+      sendJson(res, { creator: data });
+    } catch (err) {
+      sendJson(res, { error: "Failed to parse creator profile" }, 500);
+    }
     return true;
   }
 
