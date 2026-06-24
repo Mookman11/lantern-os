@@ -24,7 +24,10 @@ assert.strictEqual(research.priorityLabel(items[0]), "Unlabeled");
 
 const handoff = research.buildHandoff(items[1], "Codex");
 assert(handoff.includes("issue #10: Urgent routing fix"));
-assert(handoff.includes("https://example.test/10"));
+const handoffLines = handoff.split("\n");
+const sourceIndex = handoffLines.indexOf("Source of truth");
+assert(sourceIndex >= 0);
+assert.strictEqual(handoffLines[sourceIndex + 1], "https://example.test/10");
 assert(handoff.includes("Do not broaden scope beyond the issue."));
 assert(handoff.includes("Do not claim completion without code/test evidence."));
 
