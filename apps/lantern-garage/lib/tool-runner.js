@@ -29,6 +29,10 @@ const { tokenizeCommand, safeExec } = require("./safe-exec");
 const { resolveCommand } = require("./command-allowlist");
 
 const REPO = path.resolve(__dirname, "..", "..", "..");
+// User workspace: outside the repo, for user artifacts (resumes, exports, generated docs).
+// Defaults to ~/.keystone/workspace; overrideable via KEYSTONE_WORKSPACE env var.
+const WORKSPACE = process.env.KEYSTONE_WORKSPACE
+  || path.join(require("os").homedir(), ".keystone", "workspace");
 const MAX_OUT = 4000;
 const SKIP_DIR = /(^|[\\/])(\.git|node_modules|\.venv|\.venv-train|hf-cache)([\\/]|$)/;
 const CAPABILITY_SCHEMA_VERSION = 1;
@@ -46,6 +50,19 @@ function _safe(p) {
     throw _codedError("path escapes repo", "unsafe_path");
   }
   return abs;
+}
+
+// Workspace safe-path guard — mirrors _safe() but anchored to WORKSPACE root (#1096)
+function _safeWs(p) {
+  const abs = path.resolve(WORKSPACE, String(p == null ? "." : p));
+  if (abs !== WORKSPACE && !abs.startsWith(WORKSPACE + path.sep)) {
+    throw _codedError("path escapes workspace", "unsafe_workspace_path");
+  }
+  return abs;
+}
+
+function _ensureWorkspace() {
+  if (!fs.existsSync(WORKSPACE)) fs.mkdirSync(WORKSPACE, { recursive: true });
 }
 
 function _globToRe(glob) {
@@ -240,6 +257,110 @@ const REGISTRY = {
       const html = await _httpGet(url);
       const text = _htmlToText(html);
       return text ? text.slice(0, 8000) : "[web_fetch: no readable text]";
+    },
+  },
+  // ── workspace tools (ADR-0008 §Decision 4): user-artifact area outside the repo ────
+  workspace_read: {
+    policy: "read",
+    desc: "Read a file from the user workspace (~/.keystone/workspace/). Use for user-owned artifacts: resumes, exports, generated docs.",
+    schema: { type: "object", properties: { file_path: { type: "string" } }, required: ["file_path"] },
+    run(i) {
+      const p = _safeWs(i.file_path);
+      if (!fs.existsSync(p)) throw _codedError(`workspace file not found: ${i.file_path}`, "not_found");
+      const content = fs.readFileSync(p, "utf8");
+      return content.length > MAX_OUT ? content.slice(0, MAX_OUT) + "\n…[truncated]" : content;
+    },
+  },
+  workspace_write: {
+    policy: "mutating",
+    desc: "Write a file to the user workspace (~/.keystone/workspace/). Creates intermediate directories. Never writes to the repo.",
+    schema: {
+      type: "object",
+      properties: { file_path: { type: "string" }, content: { type: "string" } },
+      required: ["file_path", "content"],
+    },
+    run(i) {
+      _ensureWorkspace();
+      const p = _safeWs(i.file_path);
+      fs.mkdirSync(path.dirname(p), { recursive: true });
+      fs.writeFileSync(p, String(i.content == null ? "" : i.content), "utf8");
+      return `wrote workspace/${i.file_path} (${String(i.content || "").length} bytes)`;
+    },
+  },
+  workspace_list: {
+    policy: "read",
+    desc: "List files in the user workspace (~/.keystone/workspace/) under an optional subdirectory.",
+    schema: { type: "object", properties: { path: { type: "string" } } },
+    run(i) {
+      _ensureWorkspace();
+      const dir = _safeWs(i.path || ".");
+      if (!fs.existsSync(dir)) return "(workspace directory is empty)";
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      if (!entries.length) return "(no files)";
+      return entries.map(e => (e.isDirectory() ? `${e.name}/` : e.name)).join("\n");
+    },
+  },
+  create_document: {
+    policy: "mutating",
+    desc: "Create a formatted document (markdown, text) in the user workspace. Returns the workspace-relative path.",
+    schema: {
+      type: "object",
+      properties: {
+        filename: { type: "string", description: "Workspace-relative path, e.g. 'resume-2026.md'" },
+        content: { type: "string" },
+        format: { type: "string", enum: ["markdown", "text"], description: "File format hint (default: markdown)" },
+      },
+      required: ["filename", "content"],
+    },
+    run(i) {
+      _ensureWorkspace();
+      const ext = (i.format === "text") ? ".txt" : ".md";
+      const filename = String(i.filename || "document").replace(/\.+\//g, "");
+      const finalName = filename.endsWith(ext) ? filename : (filename.includes(".") ? filename : filename + ext);
+      const p = _safeWs(finalName);
+      fs.mkdirSync(path.dirname(p), { recursive: true });
+      fs.writeFileSync(p, String(i.content == null ? "" : i.content), "utf8");
+      return `created workspace/${finalName} (${String(i.content || "").length} chars)`;
+    },
+  },
+  generate_document: {
+    policy: "mutating",
+    desc: "Generate a formatted resume or cover-letter from structured fields. Writes HTML (printable as PDF) or markdown to the user workspace. Call list_document_templates first to see available templates and required fields.",
+    schema: {
+      type: "object",
+      properties: {
+        template: { type: "string", description: "'resume' or 'cover-letter'" },
+        fields:   { type: "object", description: "Template fields (name, email, experience, …)" },
+        filename: { type: "string", description: "Output filename in workspace (optional — defaults to template name)" },
+        format:   { type: "string", enum: ["html", "markdown"], description: "Output format (default: html)" },
+      },
+      required: ["template", "fields"],
+    },
+    run(i) {
+      _ensureWorkspace();
+      const { render } = require("./document-templates");
+      const fmt = i.format === "markdown" ? "markdown" : "html";
+      const { content, extension } = render(i.template, i.fields || {}, fmt);
+      const base = String(i.filename || i.template).replace(/\.+\//g, "").replace(/\.[^.]+$/, "");
+      const finalName = `${base}${extension}`;
+      const p = _safeWs(finalName);
+      fs.mkdirSync(path.dirname(p), { recursive: true });
+      fs.writeFileSync(p, content, "utf8");
+      const hint = extension === ".html"
+        ? " (open in browser → File > Print > Save as PDF)"
+        : "";
+      return `generated workspace/${finalName} (${content.length} chars)${hint}`;
+    },
+  },
+  list_document_templates: {
+    policy: "read",
+    desc: "List available document templates (resume, cover-letter) and their input fields.",
+    schema: { type: "object", properties: {} },
+    run() {
+      const { listTemplates } = require("./document-templates");
+      return listTemplates().map(t =>
+        `${t.name}:\n` + t.fields.map(f => `  ${f.name}${f.required ? " (required)" : ""} — ${f.label}`).join("\n")
+      ).join("\n\n");
     },
   },
 };
