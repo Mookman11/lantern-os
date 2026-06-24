@@ -722,6 +722,7 @@ function renderPillars() {
 function updateTotal() {
   const total = pillars.reduce((s, p) => s + (parseInt(p.pct) || 0), 0);
   const el = document.getElementById("pct-total");
+  if (!el) return; // #1108: guard — element may be absent in test / alternate layouts
   el.textContent = `Total: ${total}%`;
   el.className = "pct-total " + (total === 100 ? "ok" : "warn");
 }
@@ -731,6 +732,7 @@ function esc(s) { return (s||"").replace(/&/g,"&amp;").replace(/"/g,"&quot;").re
 
 function showStatus(msg, type) {
   const el = document.getElementById("status");
+  if (!el) return; // #1108: guard — element may be absent in test / alternate layouts
   el.textContent = msg;
   el.className = `status-bar show ${type}`;
   if (type !== "loading") setTimeout(() => el.classList.remove("show"), 5000);
@@ -756,11 +758,18 @@ async function promptLoad() {
 async function loadProfile(slug) {
   showStatus(`Loading ${slug}…`, "loading");
   try {
-    const r = await fetch(`/api/creators/${slug}`);
-    if (!r.ok) { showStatus("Profile not found", "error"); return; }
-    const { creator } = await r.json();
-    fillForm(creator);
-    showStatus(`Loaded: ${creator.identity?.fullName || slug}`, "success");
+    const r = await fetch(`/api/creators/${encodeURIComponent(slug)}`);
+    // #1109: handle non-ok responses (404, 400, 500) before trying to parse JSON
+    if (!r.ok) {
+      let errMsg = "Profile not found";
+      try { const body = await r.json(); if (body && body.error) errMsg = body.error; } catch {}
+      showStatus(errMsg, "error");
+      return;
+    }
+    const body = await r.json();
+    if (!body || !body.creator) { showStatus("Unexpected response from server", "error"); return; }
+    fillForm(body.creator);
+    showStatus(`Loaded: ${body.creator.identity?.fullName || slug}`, "success");
   } catch (e) {
     showStatus("Load error: " + e.message, "error");
   }
@@ -845,10 +854,13 @@ function fillForm(c) {
   setField("f-los-user", los.dreamJournalUser);
   setField("f-sigma0-note", los.sigma0Connection);
 
+  // #1114: guard banner elements — they may be absent in embedded / headless contexts
   const banner = document.getElementById("profile-banner");
-  document.getElementById("banner-name").textContent = id.fullName || c.slug;
-  document.getElementById("banner-meta").textContent = ` — ${c.slug} · loaded ${new Date().toLocaleTimeString()}`;
-  banner.classList.add("show");
+  const bannerName = document.getElementById("banner-name");
+  const bannerMeta = document.getElementById("banner-meta");
+  if (bannerName) bannerName.textContent = id.fullName || c.slug;
+  if (bannerMeta) bannerMeta.textContent = ` — ${c.slug} · loaded ${new Date().toLocaleTimeString()}`;
+  if (banner) banner.classList.add("show");
 }
 
 function csv(s) { return (s||"").split(",").map(x=>x.trim()).filter(Boolean); }
@@ -915,11 +927,13 @@ function buildPayload() {
 }
 
 function clearForm() {
-  document.getElementById("intake-form").reset();
+  // #1116: guard each DOM access — elements may be missing in test / alternate layouts
+  const form = document.getElementById("intake-form");
+  if (form) form.reset();
   pillars = DEFAULT_PILLARS.map(p => ({ ...p }));
   renderPillars();
-  document.getElementById("profile-banner").classList.remove("show");
-  document.getElementById("status").classList.remove("show");
+  document.getElementById("profile-banner")?.classList.remove("show");
+  document.getElementById("status")?.classList.remove("show");
 }
 
 document.getElementById("intake-form").addEventListener("submit", async (e) => {
@@ -941,9 +955,13 @@ document.getElementById("intake-form").addEventListener("submit", async (e) => {
     if (r.ok) {
       const result = await r.json();
       showStatus(`✓ Saved: data/creators/${result.slug}.json`, "success");
-      document.getElementById("banner-name").textContent = payload.identity.fullName || payload.slug;
-      document.getElementById("banner-meta").textContent = ` — saved at ${new Date().toLocaleTimeString()}`;
-      document.getElementById("profile-banner").classList.add("show");
+      // #1116: guard banner elements in save-success path
+      const bnName = document.getElementById("banner-name");
+      const bnMeta = document.getElementById("banner-meta");
+      const bnBanner = document.getElementById("profile-banner");
+      if (bnName) bnName.textContent = payload.identity.fullName || payload.slug;
+      if (bnMeta) bnMeta.textContent = ` — saved at ${new Date().toLocaleTimeString()}`;
+      if (bnBanner) bnBanner.classList.add("show");
     } else {
       const err = await r.json();
       showStatus("Error: " + (err.error || "unknown"), "error");

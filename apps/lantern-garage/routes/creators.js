@@ -8,24 +8,36 @@ module.exports = async function creatorsRoutes(req, res, url, deps) {
     if (!fs.existsSync(creatorsDir)) fs.mkdirSync(creatorsDir, { recursive: true });
   }
 
-  // GET /api/creators — list all creator slugs
+  // GET /api/creators — list all creator slugs (#1119: sort alphabetically)
   if (url.pathname === "/api/creators" && req.method === "GET") {
     ensureDir();
     const files = fs.readdirSync(creatorsDir).filter(f => f.endsWith(".json"));
-    const slugs = files.map(f => f.replace(".json", ""));
+    const slugs = files.map(f => f.replace(".json", "")).sort();
     sendJson(res, { creators: slugs });
     return true;
   }
 
   // GET /api/creators/:slug — load a creator profile
   if (url.pathname.startsWith("/api/creators/") && req.method === "GET") {
-    const slug = url.pathname.split("/api/creators/")[1].replace(/[^a-z0-9-]/g, "");
-    const filePath = path.join(creatorsDir, `${slug}.json`);
+    const rawSlug = url.pathname.slice("/api/creators/".length);
+    // #1107: reject instead of silently sanitizing — the caller should send a valid slug
+    if (!rawSlug || !/^[a-z0-9-]+$/.test(rawSlug)) {
+      sendJson(res, { error: "Invalid slug — use lowercase letters, numbers, and hyphens only" }, 400);
+      return true;
+    }
+    const filePath = path.join(creatorsDir, `${rawSlug}.json`);
     if (!fs.existsSync(filePath)) {
       sendJson(res, { error: "Creator not found" }, 404);
       return true;
     }
-    const data = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    // #1118: guard JSON.parse — a corrupted profile must not 500 the server
+    let data;
+    try {
+      data = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    } catch (e) {
+      sendJson(res, { error: "Creator profile is corrupted and cannot be read" }, 500);
+      return true;
+    }
     sendJson(res, { creator: data });
     return true;
   }

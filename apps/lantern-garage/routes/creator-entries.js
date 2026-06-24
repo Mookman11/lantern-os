@@ -8,6 +8,24 @@ module.exports = async function creatorEntriesRoutes(req, res, url, deps) {
   const { generateProjectThumbnail } = require("../lib/thumbnail-generator");
   const ci = require("../../../src/creator-intelligence");
 
+  // #1120: shared helper — was duplicated at POST /api/creator-entries and POST .../renders
+  // #1112: on failure, update entry with thumbnailError so the UI can surface it
+  function scheduleThumbnailGen(entryId, filePath, label) {
+    setImmediate(async () => {
+      try {
+        const thumbnailPath = await generateProjectThumbnail(repoRoot, entryId, filePath);
+        if (thumbnailPath) {
+          entryStore.updateEntry(repoRoot, entryId, { thumbnail: thumbnailPath, thumbnailError: null });
+          console.log(`[creator-entries] ✅ Thumbnail generated (${label}) for entry ${entryId}`);
+        }
+      } catch (err) {
+        console.error(`[creator-entries] Thumbnail generation failed (${label}):`, err.message);
+        // #1112: persist error so the UI can show feedback instead of silently failing
+        try { entryStore.updateEntry(repoRoot, entryId, { thumbnailError: err.message }); } catch {}
+      }
+    });
+  }
+
   // =========================================================================
   // GET /api/creator-entries - List all entries
   // =========================================================================
@@ -97,17 +115,7 @@ module.exports = async function creatorEntriesRoutes(req, res, url, deps) {
 
       // Generate thumbnail in background (non-blocking)
       if (body.filePath && (body.filePath.endsWith(".mp4") || body.filePath.endsWith(".mov") || body.filePath.endsWith(".avi"))) {
-        setImmediate(async () => {
-          try {
-            const thumbnailPath = await generateProjectThumbnail(repoRoot, entry.id, body.filePath);
-            if (thumbnailPath) {
-              entryStore.updateEntry(repoRoot, entry.id, { thumbnail: thumbnailPath });
-              console.log("[creator-entries] ✅ Thumbnail generated for entry " + entry.id);
-            }
-          } catch (err) {
-            console.error("[creator-entries] Thumbnail generation failed:", err.message);
-          }
-        });
+        scheduleThumbnailGen(entry.id, body.filePath, "create");
       }
 
       // Add formatted date and send
@@ -211,17 +219,7 @@ module.exports = async function creatorEntriesRoutes(req, res, url, deps) {
 
       // Regenerate thumbnail from highlight/render video (non-blocking)
       if (renderType === "highlight" || renderType.startsWith("variant")) {
-        setImmediate(async () => {
-          try {
-            const thumbnailPath = await generateProjectThumbnail(repoRoot, entryId, body.filePath);
-            if (thumbnailPath) {
-              entryStore.updateEntry(repoRoot, entryId, { thumbnail: thumbnailPath });
-              console.log(`[creator-entries] ✅ Updated thumbnail for ${renderType} video of entry ${entryId}`);
-            }
-          } catch (err) {
-            console.error("[creator-entries] Thumbnail regeneration failed:", err.message);
-          }
-        });
+        scheduleThumbnailGen(entryId, body.filePath, renderType);
       }
 
       sendJson(res, {
