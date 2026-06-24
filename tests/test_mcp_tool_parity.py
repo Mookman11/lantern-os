@@ -7,6 +7,8 @@ import os
 import sys
 from pathlib import Path
 
+import pytest
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MCP_DIR = REPO_ROOT / "src" / "mcp_server"
@@ -74,6 +76,7 @@ def test_node_bridge_manifest_and_structured_outcomes(monkeypatch):
 
 
 def test_mcp_discovery_uses_runtime_manifest(monkeypatch):
+    pytest.importorskip("fastapi", reason="full MCP discovery requires the server dependency set")
     monkeypatch.setenv("CHAT_TOOL_EXEC", "1")
     monkeypatch.setenv("MCP_SHARED_TOOL_OPERATOR", "0")
 
