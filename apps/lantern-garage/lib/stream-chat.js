@@ -38,10 +38,36 @@ const serving = require("./serving-modes");
 const { convergeMessage } = require("./convergence-adapter");
 const { keystoneRun, KEYSTONE_SYSTEM_PROMPT } = require("./keystone-runtime");
 const { unifiedAgentStreamSSE: unifiedStreamSSE } = require("./unified-agent");
+const { appendJsonlQueued } = require("./file-queue");
 
 const repoRoot = path.resolve(__dirname, "../../../");
+const OURO_HARVEST_LIVE = path.resolve(repoRoot, "data/ouro-harvest-live.jsonl");
 
 const maxConversationTextLength = 4000;
+
+// ── Issue #911: live coding success emitter ──────────────────────────────────
+// When any keystone/chat reply contains a Python def + assert block, log a raw
+// candidate row to data/ouro-harvest-live.jsonl. Fire-and-forget only — NEVER
+// triggers retraining; the offline continual_ouro_pipeline.py reads this via
+// --source-jsonl when the user explicitly runs it. Boundary: OFFLINE + OPT-IN.
+const _PY_FUNC_RE = /```python\s*(def\s+\w+\([^)]*\)[^`]*?)```/gs;
+const _ASSERT_RE = /assert\s+[^\n]+/g;
+
+function _emitCodingCandidate(instruction, reply) {
+  try {
+    const matches = [...reply.matchAll(_PY_FUNC_RE)];
+    if (!matches.length) return;
+    for (const m of matches) {
+      const code = m[1].trim();
+      const fn = (code.match(/^def\s+(\w+)/) || [])[1] || "fn";
+      const asserts = (code.match(_ASSERT_RE) || []).join("\n");
+      appendJsonlQueued(OURO_HARVEST_LIVE, {
+        fn, instruction: instruction.slice(0, 200), code, asserts,
+        source: "live-chat", ts: Date.now(),
+      }).catch(() => {});
+    }
+  } catch { /* emitter must never break a reply */ }
+}
 
 // Per-request grounding (web search + live GitHub project context) is best-effort
 // enrichment that runs BEFORE the model is called. If the network or the `gh` CLI
@@ -1143,6 +1169,8 @@ async function handleStreamChat(req, url, res) {
         }
       }
     } catch { /* canary must never break a reply */ }
+    // ── #911 live coding emitter: log Python candidates offline ─────────────
+    if (fullReply && message) { _emitCodingCandidate(message, fullReply); }
     return sse.sendDone(res, source, { ...extra, ...signature, routeLabel: finalRouteLabel });
   };
 
