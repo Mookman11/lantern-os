@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.7.63] - 2026-06-24
+- refactor(chat): split `lib/stream-chat.js` (the streaming dispatcher) into focused modules under `lib/stream-chat/` — `history.js` (compaction + provider-message assembly), `doors.js` (reply post-processing + door/web suggestions), `tool-turns.js` (per-provider native tool-use turn helpers), `provider-order.js` (brain ordering). Smaller files for smaller-context coding agents; behavior unchanged.
+- feat(chat): universal tool access — every chat provider now reaches the same `tool-runner` registry. Added native function-calling loops for OpenAI and xAI/Grok and a `functionDeclarations` loop for Gemini (new `openaiTools()`/`geminiTools()` adapters), and upgraded the local Ouro path from single-shot to a bounded multi-step tool loop. Gated by `CHAT_TOOL_EXEC=1` as before.
+- fix(chat): keep the dream-tuned `lantern-csf-dream` model out of the non-RP Keystone chat model chain. An offline/degraded Keystone chat was falling back to the dream model and answering in persona ("the Return Door remembers…"); that model is now reserved for the Three Doors RP surface.
+
 ## [1.7.62] - 2026-06-23
 - fix(training): Lightning AI dispatch was broken by #1079, which set `org=lantern` + teamspace `api-credential-management-project`. The ouro-training studio actually lives in the user-owned teamspace `lightning.ai/alexplace7/custom-ml-model-development-project`, so the SDK could not infer the owner ("Neither name is provided nor can the user be inferred..."). Restore `user=alexplace7` resolution (org is now an optional override) with the correct teamspace, in both `lightning_dispatch.py` and the dispatcher env.
 - fix(training): the Lightning train script was uploaded to an absolute remote path (`/home/zeus/...`); a Windows dispatch client mangled it into a single backslash-named file in the studio working dir, so the run command never found it. Upload to a bare filename and run it relative to the studio working dir.

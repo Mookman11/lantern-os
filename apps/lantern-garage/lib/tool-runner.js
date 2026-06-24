@@ -302,6 +302,48 @@ function anthropicTools({ operator = false } = {}) {
     }));
 }
 
+// Same single source of truth, rendered for the OpenAI / xAI function-calling API
+// (chat/completions `tools`). OpenAI-compatible providers (GPT, Grok) emit native
+// `tool_calls`, so they use this instead of the free-text preamble. Operator filter
+// matches anthropicTools — runTool still enforces policy regardless.
+function openaiTools({ operator = false } = {}) {
+  return TOOL_NAMES
+    .filter((name) => operator || REGISTRY[name].policy === "read")
+    .map((name) => ({
+      type: "function",
+      function: {
+        name,
+        description: REGISTRY[name].desc,
+        parameters: REGISTRY[name].schema,
+      },
+    }));
+}
+
+// Same registry rendered for the Gemini API (`tools[].functionDeclarations`). Gemini
+// accepts an OpenAPI-subset schema; our schemas are already that subset, but we strip
+// any keys Gemini rejects (e.g. additionalProperties) defensively. One element with all
+// declarations, matching Gemini's expected shape.
+function geminiTools({ operator = false } = {}) {
+  const clean = (schema) => {
+    if (!schema || typeof schema !== "object") return schema;
+    const { additionalProperties, $schema, ...rest } = schema;
+    if (rest.properties) {
+      rest.properties = Object.fromEntries(
+        Object.entries(rest.properties).map(([k, v]) => [k, clean(v)])
+      );
+    }
+    return rest;
+  };
+  const functionDeclarations = TOOL_NAMES
+    .filter((name) => operator || REGISTRY[name].policy === "read")
+    .map((name) => ({
+      name,
+      description: REGISTRY[name].desc,
+      parameters: clean(REGISTRY[name].schema),
+    }));
+  return [{ functionDeclarations }];
+}
+
 // ── parse the model's free-text <tool_call> (light JSON repair; not a vocab hack) ──
 function parseToolCall(text) {
   if (!text || typeof text !== "string") return null;
@@ -348,4 +390,4 @@ function _loadsLenient(raw) {
   return null;
 }
 
-module.exports = { parseToolCall, runTool, renderToolPreamble, anthropicTools, REGISTRY, TOOL_NAMES };
+module.exports = { parseToolCall, runTool, renderToolPreamble, anthropicTools, openaiTools, geminiTools, REGISTRY, TOOL_NAMES };
