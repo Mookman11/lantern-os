@@ -30,14 +30,20 @@ class CreatorPerfOptimizer {
     }
   }
 
-  // Register a polling interval for management
-  registerPollingInterval(id, interval, estimatedApiCalls = 1) {
+  // Register a polling interval for management.
+  // Accepts the callback + interval duration so pause/resume can recreate it.
+  // Returns the intervalId so callers can still cancel manually if needed.
+  registerPollingInterval(id, callbackFn, intervalMs, estimatedApiCalls = 1) {
+    const interval = setInterval(callbackFn, intervalMs);
     this.pollingIntervals.set(id, {
       interval,
+      callbackFn,
+      intervalMs,
       estimatedApiCalls,
       isPaused: false,
-      bytesPerCall: 2048, // Average API response size
+      bytesPerCall: 2048,
     });
+    return interval;
   }
 
   // Pause all registered polling intervals
@@ -49,7 +55,7 @@ class CreatorPerfOptimizer {
         config.isPaused = true;
         this.stats.apiCallsSkipped += config.estimatedApiCalls;
         this.stats.bandwidthSaved += config.bytesPerCall;
-        this.stats.energySaved += 50; // Rough estimate per paused interval
+        this.stats.energySaved += 50;
       }
     }
   }
@@ -57,9 +63,10 @@ class CreatorPerfOptimizer {
   // Resume all paused polling intervals
   resumeAllPolling() {
     for (const [id, config] of this.pausedIntervals.entries()) {
-      if (config.isPaused && config.interval) {
+      if (config.isPaused) {
         config.interval = setInterval(config.callbackFn, config.intervalMs);
         config.isPaused = false;
+        this.pollingIntervals.set(id, config);
         this.pausedIntervals.delete(id);
       }
     }
@@ -103,22 +110,6 @@ class CreatorPerfOptimizer {
       return;
     }
     requestAnimationFrame(updateFn);
-  }
-
-  // Cache expensive computations with TTL
-  memoize(fn, ttlMs = 60000) {
-    let cachedResult = null;
-    let cacheExpiry = 0;
-
-    return (...args) => {
-      const now = Date.now();
-      if (cachedResult !== null && now < cacheExpiry) {
-        return cachedResult;
-      }
-      cachedResult = fn(...args);
-      cacheExpiry = now + ttlMs;
-      return cachedResult;
-    };
   }
 
   // Virtual scrolling for large lists (client-side hint)

@@ -262,7 +262,6 @@
       <p>Brand identity onboarding — powered by Lantern OS</p>
     </div>
     <div class="header-actions">
-      <button class="btn btn-ghost" id="load-courtney-btn" onclick="loadCourtney()">Load Courtney</button>
       <button class="btn btn-secondary" id="load-slug-btn" onclick="promptLoad()">Load Profile</button>
     </div>
   </header>
@@ -733,7 +732,7 @@ function showStatus(msg, type) {
   const el = document.getElementById("status");
   el.textContent = msg;
   el.className = `status-bar show ${type}`;
-  if (type !== "loading") setTimeout(() => el.classList.remove("show"), 5000);
+  if (type !== "loading") setTimeout(() => el.classList.remove("show"), type === "error" ? 12000 : 5000);
 }
 
 function setField(id, val) {
@@ -743,10 +742,6 @@ function setField(id, val) {
   else el.value = val || "";
 }
 
-/* ─── Load Courtney's saved profile ─── */
-async function loadCourtney() {
-  await loadProfile("courtney-blasioli");
-}
 
 async function promptLoad() {
   const slug = prompt("Enter creator slug to load (e.g. courtney-blasioli):");
@@ -940,13 +935,14 @@ document.getElementById("intake-form").addEventListener("submit", async (e) => {
 
     if (r.ok) {
       const result = await r.json();
-      showStatus(`✓ Saved: data/creators/${result.slug}.json`, "success");
+      const slug = result?.slug || payload.slug;
+      showStatus(`✓ Saved: data/creators/${slug}.json`, "success");
       document.getElementById("banner-name").textContent = payload.identity.fullName || payload.slug;
       document.getElementById("banner-meta").textContent = ` — saved at ${new Date().toLocaleTimeString()}`;
       document.getElementById("profile-banner").classList.add("show");
     } else {
-      const err = await r.json();
-      showStatus("Error: " + (err.error || "unknown"), "error");
+      const err = await r.json().catch(() => ({}));
+      showStatus("Error: " + (err.error || `HTTP ${r.status}`), "error");
     }
   } catch (err) {
     showStatus("Error: " + err.message, "error");
