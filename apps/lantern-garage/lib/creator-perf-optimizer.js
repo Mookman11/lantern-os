@@ -8,6 +8,7 @@ class CreatorPerfOptimizer {
     this.pausedIntervals = new Map(); // Store paused intervals
     this.stats = {
       apiCallsSkipped: 0,
+      apiCallsMade: 0,
       energySaved: 0, // Estimated in mJ
       bandwidthSaved: 0, // In bytes
       startTime: Date.now(),
@@ -19,14 +20,15 @@ class CreatorPerfOptimizer {
   // Setup page visibility listener to pause/resume polling
   setupVisibilityHandler() {
     if (typeof document !== 'undefined') {
-      document.addEventListener('visibilitychange', () => {
+      this._visibilityHandler = () => {
         this.visibilityState = document.visibilityState;
         if (document.hidden) {
           this.pauseAllPolling();
         } else {
           this.resumeAllPolling();
         }
-      });
+      };
+      document.addEventListener('visibilitychange', this._visibilityHandler);
     }
   }
 
@@ -34,10 +36,12 @@ class CreatorPerfOptimizer {
   // Accepts the callback + interval duration so pause/resume can recreate it.
   // Returns the intervalId so callers can still cancel manually if needed.
   registerPollingInterval(id, callbackFn, intervalMs, estimatedApiCalls = 1) {
-    const interval = setInterval(callbackFn, intervalMs);
+    const tracked = this.stats;
+    const wrappedFn = () => { tracked.apiCallsMade += estimatedApiCalls; callbackFn(); };
+    const interval = setInterval(wrappedFn, intervalMs);
     this.pollingIntervals.set(id, {
       interval,
-      callbackFn,
+      callbackFn: wrappedFn,
       intervalMs,
       estimatedApiCalls,
       isPaused: false,
@@ -48,11 +52,13 @@ class CreatorPerfOptimizer {
 
   // Pause all registered polling intervals
   pauseAllPolling() {
-    for (const [id, config] of this.pollingIntervals.entries()) {
-      if (!config.isPaused) {
+    for (const id of Array.from(this.pollingIntervals.keys())) {
+      const config = this.pollingIntervals.get(id);
+      if (config && !config.isPaused) {
         clearInterval(config.interval);
-        this.pausedIntervals.set(id, config);
         config.isPaused = true;
+        this.pausedIntervals.set(id, config);
+        this.pollingIntervals.delete(id);
         this.stats.apiCallsSkipped += config.estimatedApiCalls;
         this.stats.bandwidthSaved += config.bytesPerCall;
         this.stats.energySaved += 50;
@@ -142,13 +148,21 @@ class CreatorPerfOptimizer {
       uptime,
       energySavedJoules: parseFloat(energySavedEstimate),
       bandwidthMB: parseFloat(bandwidthMB),
-      apiCallsAvoidedPercent: this.stats.apiCallsSkipped > 0 ? '~5-10%' : '0%',
+      apiCallsAvoidedPercent: this.stats.apiCallsMade > 0
+        ? ((this.stats.apiCallsSkipped / (this.stats.apiCallsSkipped + this.stats.apiCallsMade)) * 100).toFixed(1) + '%'
+        : (this.stats.apiCallsSkipped > 0 ? '100%' : '0%'),
     };
   }
 
   // Reset all intervals (for cleanup)
   cleanup() {
+    if (this._visibilityHandler && typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this._visibilityHandler);
+    }
     for (const config of this.pollingIntervals.values()) {
+      clearInterval(config.interval);
+    }
+    for (const config of this.pausedIntervals.values()) {
       clearInterval(config.interval);
     }
     this.pollingIntervals.clear();

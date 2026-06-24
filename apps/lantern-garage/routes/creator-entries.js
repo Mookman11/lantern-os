@@ -103,9 +103,13 @@ module.exports = async function creatorEntriesRoutes(req, res, url, deps) {
             if (thumbnailPath) {
               entryStore.updateEntry(repoRoot, entry.id, { thumbnail: thumbnailPath });
               console.log("[creator-entries] ✅ Thumbnail generated for entry " + entry.id);
+            } else {
+              console.error("[creator-entries] ❌ Thumbnail generation returned no path for entry " + entry.id);
+              entryStore.updateEntry(repoRoot, entry.id, { thumbnailError: "generation returned no path" });
             }
           } catch (err) {
-            console.error("[creator-entries] Thumbnail generation failed:", err.message);
+            console.error("[creator-entries] ❌ Thumbnail generation failed for entry " + entry.id + ":", err.message);
+            entryStore.updateEntry(repoRoot, entry.id, { thumbnailError: err.message });
           }
         });
       }
@@ -217,9 +221,13 @@ module.exports = async function creatorEntriesRoutes(req, res, url, deps) {
             if (thumbnailPath) {
               entryStore.updateEntry(repoRoot, entryId, { thumbnail: thumbnailPath });
               console.log(`[creator-entries] ✅ Updated thumbnail for ${renderType} video of entry ${entryId}`);
+            } else {
+              console.error(`[creator-entries] ❌ Thumbnail regeneration returned no path for entry ${entryId} (${renderType})`);
+              entryStore.updateEntry(repoRoot, entryId, { thumbnailError: "regeneration returned no path" });
             }
           } catch (err) {
-            console.error("[creator-entries] Thumbnail regeneration failed:", err.message);
+            console.error(`[creator-entries] ❌ Thumbnail regeneration failed for entry ${entryId} (${renderType}):`, err.message);
+            entryStore.updateEntry(repoRoot, entryId, { thumbnailError: err.message });
           }
         });
       }

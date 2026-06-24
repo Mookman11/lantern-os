@@ -19,7 +19,11 @@ module.exports = async function creatorsRoutes(req, res, url, deps) {
 
   // GET /api/creators/:slug — load a creator profile
   if (url.pathname.startsWith("/api/creators/") && req.method === "GET") {
-    const slug = url.pathname.split("/api/creators/")[1].replace(/[^a-z0-9-]/g, "");
+    const slug = url.pathname.split("/api/creators/")[1] || "";
+    if (!/^[a-z0-9-]+$/.test(slug)) {
+      sendJson(res, { error: "Invalid slug (lowercase letters, numbers, hyphens only)" }, 400);
+      return true;
+    }
     const filePath = path.join(creatorsDir, `${slug}.json`);
     if (!fs.existsSync(filePath)) {
       sendJson(res, { error: "Creator not found" }, 404);
