@@ -1,5 +1,39 @@
 # Changelog
 
+## [1.7.72] - 2026-06-24
+- feat(training): build the private Kaggle Ouro corpus from Claude, authentic Codex tool traces, and authentic tool-using ChatGPT exports with provenance, scrubbing, deterministic deduplication, and a fail-closed dataset mount (#1142).
+
+## [1.7.71] - 2026-06-24
+- feat(mcp): expose Dream Chat's canonical tool manifest and executor through MCP with matching schemas, policy gates, structured denials, and receipt shape (#1139).
+
+## [1.7.70] - 2026-06-24
+- feat(orchestration): restore the open, unclaimed GitHub issue research queue with priority filtering and bounded Keystone Chat, Codex, and Claude Code handoffs (#1130).
+
+## [1.7.69] - 2026-06-24
+- fix(chat): narration (🔊) no longer reads tool calls. The auto-narrate toggle and Read-aloud button now speak the answer only — `<tool_call>` markup and the hidden `[DOORS]` tag are stripped from the spoken text, so the narrator never reads raw tool JSON/IO aloud.
+- feat(chat): the PCSF signature line under each reply now shows the actual provider, model, and timestamp from the receipt (e.g. `Keystone · chat · anthropic/claude-haiku-4-5 · 2:50 PM`) instead of just `Keystone · chat`.
+- fix(chat): the signature is now rendered for EVERY reply, including the offline/no-model path (shows `Keystone · no model available · <time>`), so a normal answer and a degraded answer have the same shape — they previously looked inconsistent because the offline path rendered no signature at all.
+
+## [1.7.68] - 2026-06-24
+- ux(chat): tool-call cards are now collapsed by default. Each call renders as a `<details>` summary (`🔧 web_search ✓`) that expands to show args + result on click, and multiple native (Claude/OpenAI/Gemini) tool calls are grouped under a single collapsed parent (`🔧 N tool calls`). The workflow is visible but no longer takes over the message — open it only when you want the detail.
+
+## [1.7.67] - 2026-06-24
+- fix(chat): remove the hardcoded dream-persona slop from Keystone's offline reply. When both cloud and local models were unreachable, `unified_agent_connector._offline_reply` returned a fake mystical line for the keystone agent ("Truth: this connects to something older. The Return Door remembers. What pattern repeats?"). Keystone is a technical assistant, not a dream narrator — it now returns an honest "no model is reachable; start a local model or set a cloud key" message. (The other Three-Doors RP personas keep their flavor.)
+
+## [1.7.66] - 2026-06-24
+- fix(chat): show the tool workflow for cloud models. Claude/OpenAI/Gemini use the native tool-use loop (server emits `{type:"tool",phase:"call"/"result"}`), but the chat UI only knew how to fill cards parsed from the *local* model's `<tool_call>` text — so native tool calls ran invisibly and only the final answer appeared. The stream handler now records native calls and synthesizes the same tool-call cards at finalize (filled with the real results), so the user sees `🔧 web_search → 🔧 web_fetch → answer`. `fillToolSlot` also reads the native `preview` field.
+
+## [1.7.65] - 2026-06-24
+- chore(gitignore): stop runtime-generated artifacts from churning into unrelated commits/PRs — ignore `data/convergence/patch-receipts.jsonl`, generated `data/self-improvement/colab-notebooks/`, and `models/*/training-data.*.jsonl`.
+
+## [1.7.64] - 2026-06-24
+- test(eval): lock `accuracy_by_difficulty` in the keystone leaderboard (#843). Clean re-cut of PR #1090 — that branch was stale and showed a destructive −515k-line/2564-file diff; the feature itself already landed on master, so only the (BOM-stripped) test is added here.
+
+## [1.7.63] - 2026-06-24
+- refactor(chat): split `lib/stream-chat.js` (the streaming dispatcher) into focused modules under `lib/stream-chat/` — `history.js` (compaction + provider-message assembly), `doors.js` (reply post-processing + door/web suggestions), `tool-turns.js` (per-provider native tool-use turn helpers), `provider-order.js` (brain ordering). Smaller files for smaller-context coding agents; behavior unchanged.
+- feat(chat): universal tool access — every chat provider now reaches the same `tool-runner` registry. Added native function-calling loops for OpenAI and xAI/Grok and a `functionDeclarations` loop for Gemini (new `openaiTools()`/`geminiTools()` adapters), and upgraded the local Ouro path from single-shot to a bounded multi-step tool loop. Gated by `CHAT_TOOL_EXEC=1` as before.
+- fix(chat): keep the dream-tuned `lantern-csf-dream` model out of the non-RP Keystone chat model chain. An offline/degraded Keystone chat was falling back to the dream model and answering in persona ("the Return Door remembers…"); that model is now reserved for the Three Doors RP surface.
+
 ## [1.7.62] - 2026-06-23
 - fix(training): Lightning AI dispatch was broken by #1079, which set `org=lantern` + teamspace `api-credential-management-project`. The ouro-training studio actually lives in the user-owned teamspace `lightning.ai/alexplace7/custom-ml-model-development-project`, so the SDK could not infer the owner ("Neither name is provided nor can the user be inferred..."). Restore `user=alexplace7` resolution (org is now an optional override) with the correct teamspace, in both `lightning_dispatch.py` and the dispatcher env.
 - fix(training): the Lightning train script was uploaded to an absolute remote path (`/home/zeus/...`); a Windows dispatch client mangled it into a single backslash-named file in the studio working dir, so the run command never found it. Upload to a bare filename and run it relative to the studio working dir.

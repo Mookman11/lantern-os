@@ -24,8 +24,8 @@
  */
 const fs = require("fs");
 const path = require("path");
-const https = require("https");
 const http = require("http");
+const https = require("https");
 const { tokenizeCommand, safeExec } = require("./safe-exec");
 const { resolveCommand } = require("./command-allowlist");
 const { webSearchMcp } = require("./web-search-client");
@@ -35,45 +35,21 @@ const { createDocument, listTemplates } = require("./doc-generator");
 const REPO = path.resolve(__dirname, "..", "..", "..");
 const MAX_OUT = 4000;
 const SKIP_DIR = /(^|[\\/])(\.git|node_modules|\.venv|\.venv-train|hf-cache)([\\/]|$)/;
-const FETCH_TIMEOUT_MS = 10000;
-const FETCH_MAX_BYTES = 512 * 1024; // 512 KB raw HTML cap
 
-// Allowed URL schemes for web_fetch — no file://, no internal network ranges.
-const _SAFE_URL = /^https?:\/\/(?!(?:127\.|10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|\[::1\]))/i;
+const CAPABILITY_SCHEMA_VERSION = 1;
+const RECEIPT_SCHEMA_VERSION = 1;
 
-function _fetchUrl(rawUrl) {
-  return new Promise((resolve, reject) => {
-    let url;
-    try { url = new URL(rawUrl); } catch { return reject(new Error(`invalid URL: ${rawUrl}`)); }
-    if (!_SAFE_URL.test(rawUrl)) return reject(new Error("URL not allowed (must be public http/https)"));
-    const mod = url.protocol === "https:" ? https : http;
-    const req = mod.get({ hostname: url.hostname, port: url.port || undefined, path: url.pathname + url.search, headers: { "User-Agent": "LanternOS/1.0 (+fetch)" } }, (res) => {
-      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        return resolve(_fetchUrl(res.headers.location)); // follow one redirect
-      }
-      let buf = "";
-      res.on("data", (chunk) => { if (buf.length < FETCH_MAX_BYTES) buf += chunk; });
-      res.on("end", () => resolve({ status: res.statusCode, body: buf }));
-    });
-    req.setTimeout(FETCH_TIMEOUT_MS, () => { req.destroy(); reject(new Error("timeout")); });
-    req.on("error", reject);
-  });
-}
-
-// Strip HTML tags + collapse whitespace → readable plain text.
-function _htmlToText(html) {
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, "")
-    .replace(/<style[\s\S]*?<\/style>/gi, "")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/&quot;/gi, '"')
-    .replace(/\s{2,}/g, " ")
-    .trim();
+function _codedError(message, reasonCode) {
+  const error = new Error(message);
+  error.reason = reasonCode;
+  return error;
 }
 
 function _safe(p) {
   const abs = path.resolve(REPO, String(p == null ? "." : p));
-  if (abs !== REPO && !abs.startsWith(REPO + path.sep)) throw new Error("path escapes repo");
+  if (abs !== REPO && !abs.startsWith(REPO + path.sep)) {
+    throw _codedError("path escapes repo", "unsafe_path");
+  }
   return abs;
 }
 
@@ -86,11 +62,70 @@ function _globToRe(glob) {
 function _runShell(command) {
   const cmd = String(command || "").trim();
   const resolved = resolveCommand(cmd);
-  if (!resolved) { const e = new Error(`command not allowlisted: ${cmd}`); e.reason = "unsafe"; throw e; }
+  if (!resolved) throw _codedError(`command not allowlisted: ${cmd}`, "command_not_allowlisted");
   return safeExec(tokenizeCommand(resolved), {
     cwd: REPO, encoding: "utf-8", timeout: 30000, maxBuffer: 1024 * 1024,
     env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
   });
+}
+
+// SSRF guard for web_fetch: block loopback / private / link-local hosts so the
+// model can't poke internal services (the local server, cloud metadata, LAN).
+function _blockedHost(hostname) {
+  const h = String(hostname || "").toLowerCase();
+  if (!h || h === "localhost" || h.endsWith(".localhost") || h.endsWith(".local") || h.endsWith(".internal")) return true;
+  const m = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (m) {
+    const [a, b] = [Number(m[1]), Number(m[2])];
+    if (a === 127 || a === 0 || a === 10) return true;              // loopback / this-host / private-A
+    if (a === 169 && b === 254) return true;                        // link-local + cloud metadata
+    if (a === 192 && b === 168) return true;                        // private-C
+    if (a === 172 && b >= 16 && b <= 31) return true;               // private-B
+  }
+  return false;
+}
+
+// Minimal HTTP(S) GET with redirect handling + timeout, for web_fetch.
+function _httpGet(url, redirects = 3) {
+  return new Promise((resolve, reject) => {
+    let u;
+    try { u = new URL(url); } catch { return reject(_codedError("invalid url", "invalid_url")); }
+    if (u.protocol !== "http:" && u.protocol !== "https:") {
+      return reject(_codedError("only http(s) urls", "invalid_url"));
+    }
+    if (_blockedHost(u.hostname)) {
+      return reject(_codedError("host blocked (loopback/private/metadata)", "private_host_blocked"));
+    }
+    const lib = u.protocol === "https:" ? https : http;
+    const req = lib.get(u, {
+      timeout: 12000,
+      headers: { "User-Agent": "KeystoneOS/1.0 (+web_fetch tool)", "Accept": "text/html,text/plain,*/*" },
+    }, (res) => {
+      const code = res.statusCode || 0;
+      if (code >= 300 && code < 400 && res.headers.location && redirects > 0) {
+        res.resume();
+        return resolve(_httpGet(new URL(res.headers.location, u).toString(), redirects - 1));
+      }
+      if (code >= 400) { res.resume(); return reject(new Error(`http ${code}`)); }
+      let data = "";
+      res.setEncoding("utf8");
+      res.on("data", (c) => { data += c; if (data.length > 600_000) { req.destroy(); } });
+      res.on("end", () => resolve(data));
+    });
+    req.on("error", reject);
+    req.on("timeout", () => { req.destroy(new Error("fetch timeout")); });
+  });
+}
+
+function _htmlToText(html) {
+  return String(html || "")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<\/(p|div|li|h[1-6]|tr|br)>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">")
+    .replace(/&[a-z#0-9]+;/gi, " ")
+    .replace(/[ \t]+/g, " ").replace(/\n\s*\n\s*\n+/g, "\n\n").trim();
 }
 
 // ── canonical registry (names/schemas == training == Claude Code) ───────────────
@@ -191,14 +226,21 @@ const REGISTRY = {
       const query = String(i.query || "").trim();
       if (!query) return "[error: query is required]";
       const maxResults = Math.max(1, Math.min(10, parseInt(i.max_results, 10) || 5));
-      const res = await webSearchMcp(query, maxResults);
-      if (!res || !res.success) return `[web_search failed: ${res && res.error ? res.error : "MCP unavailable"}]`;
-      const results = (res.results || []).slice(0, maxResults);
+      const raw = await webSearchMcp(query, maxResults);
+      // Unwrap MCP envelope {content:[{type:'text',text:'<json>'}]} or a direct {results}.
+      let payload = raw;
+      if (raw && Array.isArray(raw.content)) {
+        const t = raw.content.find((c) => c && c.type === "text");
+        try { payload = t ? JSON.parse(t.text) : raw; } catch { payload = raw; }
+      }
+      if (raw && raw.isError) return `[web_search error: ${payload && payload.error ? payload.error : "search failed"}]`;
+      if (payload && payload.success === false) return `[web_search error: ${payload.error || "search failed"}]`;
+      const results = (payload && payload.results) || [];
       if (!results.length) return `[no results for: ${query}]`;
       const lines = [`web_search("${query}") — ${results.length} result(s):\n`];
       results.forEach((r, idx) => {
-        lines.push(`[${idx + 1}] ${r.title}`);
-        lines.push(`    url: ${r.url}`);
+        lines.push(`[${idx + 1}] ${r.title || "(untitled)"}`);
+        lines.push(`    url: ${r.url || ""}`);
         if (r.snippet) lines.push(`    snippet: ${r.snippet}`);
       });
       return lines.join("\n");
@@ -220,13 +262,12 @@ const REGISTRY = {
       const url = String(i.url || "").trim();
       if (!url) return "[error: url is required]";
       const maxChars = Math.max(200, Math.min(MAX_OUT, parseInt(i.max_chars, 10) || 3000));
-      let fetched;
-      try { fetched = await _fetchUrl(url); }
+      let html;
+      try { html = await _httpGet(url); }
       catch (e) { return `[web_fetch error: ${e.message}]`; }
-      if (fetched && fetched.then) fetched = await fetched;
-      const text = _htmlToText(fetched.body || "");
+      const text = _htmlToText(html || "");
       const excerpt = text.length > maxChars ? text.slice(0, maxChars) + "\n…[truncated]" : text;
-      return `web_fetch(${url}) — HTTP ${fetched.status}\n\n${excerpt}`;
+      return `web_fetch(${url})\n\n${excerpt}`;
     },
   },
 
@@ -320,6 +361,57 @@ const REGISTRY = {
 
 const TOOL_NAMES = Object.keys(REGISTRY);
 
+function capabilityManifest({
+  executionEnabled = process.env.CHAT_TOOL_EXEC === "1",
+} = {}) {
+  return {
+    schema_version: CAPABILITY_SCHEMA_VERSION,
+    receipt_schema_version: RECEIPT_SCHEMA_VERSION,
+    canonical_source: "apps/lantern-garage/lib/tool-runner.js",
+    execution: {
+      enabled: Boolean(executionEnabled),
+      reason: executionEnabled ? null : "chat_tool_exec_disabled",
+    },
+    tools: TOOL_NAMES.map((name) => {
+      const entry = REGISTRY[name];
+      return {
+        name,
+        description: entry.desc,
+        input_schema: entry.schema,
+        policy: entry.policy,
+        operator_required: entry.policy !== "read",
+        surface_availability: {
+          dream_chat: true,
+          mcp: true,
+        },
+        execution_enabled: Boolean(executionEnabled),
+        execution_disabled_reason: executionEnabled ? null : "chat_tool_exec_disabled",
+        result_receipt_schema_version: RECEIPT_SCHEMA_VERSION,
+      };
+    }),
+  };
+}
+
+function _outcome(status, tool, details = {}) {
+  const reasonCode = details.reason_code || null;
+  return {
+    ok: status === "executed",
+    status,
+    tool,
+    reason_code: reasonCode,
+    reason: reasonCode,
+    policy: details.policy || null,
+    ...(details.result !== undefined ? { result: details.result } : {}),
+    ...(details.error ? { error: details.error } : {}),
+    receipt: {
+      schema_version: RECEIPT_SCHEMA_VERSION,
+      tool,
+      status,
+      reason_code: reasonCode,
+    },
+  };
+}
+
 // Match Python json.dumps() default separators (", " / ": ") so this preamble is
 // BYTE-identical to the bridge's _render_tools (scripts/ouro_anthropic_bridge.py), which
 // the FC training corpus is generated through. Train/serve parity is the #1 FC rule —
@@ -361,16 +453,43 @@ function renderToolPreamble() {
  */
 async function runTool(name, input, ctx = {}) {
   const entry = REGISTRY[name];
-  if (!entry) return { ok: false, reason: "unknown", error: `unknown tool '${name}' (available: ${TOOL_NAMES.join(", ")})` };
+  if (!entry) {
+    return _outcome("unavailable", name, {
+      reason_code: "unknown_tool",
+      error: `unknown tool '${name}' (available: ${TOOL_NAMES.join(", ")})`,
+    });
+  }
+  if (ctx.executionEnabled === false) {
+    return _outcome("unavailable", name, {
+      reason_code: "chat_tool_exec_disabled",
+      policy: entry.policy,
+      error: "shared tool execution is disabled",
+    });
+  }
   if (entry.policy !== "read" && !ctx.operator) {
-    return { ok: false, reason: "auth", policy: entry.policy, error: `'${name}' (${entry.policy}) requires operator access` };
+    return _outcome("denied", name, {
+      reason_code: "operator_required",
+      policy: entry.policy,
+      error: `'${name}' (${entry.policy}) requires operator access`,
+    });
   }
   try {
+    // run() may be sync (returns a string) or async (returns a Promise); await covers both.
     let out = String((await entry.run(input || {})) || "");
     if (out.length > MAX_OUT) out = out.slice(0, MAX_OUT) + "\n…[truncated]";
-    return { ok: true, result: out, policy: entry.policy };
+    return _outcome("executed", name, { result: out, policy: entry.policy });
   } catch (e) {
-    return { ok: false, reason: e.reason || "error", policy: entry.policy, error: String(e.stderr || e.message || e).slice(0, MAX_OUT) };
+    const reasonCode = e.reason || "execution_error";
+    const status = reasonCode === "unsafe_path" ||
+      reasonCode === "command_not_allowlisted" ||
+      reasonCode === "private_host_blocked"
+      ? "blocked"
+      : "unavailable";
+    return _outcome(status, name, {
+      reason_code: reasonCode,
+      policy: entry.policy,
+      error: String(e.stderr || e.message || e).slice(0, MAX_OUT),
+    });
   }
 }
 
@@ -388,6 +507,48 @@ function anthropicTools({ operator = false } = {}) {
       description: REGISTRY[name].desc,
       input_schema: REGISTRY[name].schema,
     }));
+}
+
+// Same single source of truth, rendered for the OpenAI / xAI function-calling API
+// (chat/completions `tools`). OpenAI-compatible providers (GPT, Grok) emit native
+// `tool_calls`, so they use this instead of the free-text preamble. Operator filter
+// matches anthropicTools — runTool still enforces policy regardless.
+function openaiTools({ operator = false } = {}) {
+  return TOOL_NAMES
+    .filter((name) => operator || REGISTRY[name].policy === "read")
+    .map((name) => ({
+      type: "function",
+      function: {
+        name,
+        description: REGISTRY[name].desc,
+        parameters: REGISTRY[name].schema,
+      },
+    }));
+}
+
+// Same registry rendered for the Gemini API (`tools[].functionDeclarations`). Gemini
+// accepts an OpenAPI-subset schema; our schemas are already that subset, but we strip
+// any keys Gemini rejects (e.g. additionalProperties) defensively. One element with all
+// declarations, matching Gemini's expected shape.
+function geminiTools({ operator = false } = {}) {
+  const clean = (schema) => {
+    if (!schema || typeof schema !== "object") return schema;
+    const { additionalProperties, $schema, ...rest } = schema;
+    if (rest.properties) {
+      rest.properties = Object.fromEntries(
+        Object.entries(rest.properties).map(([k, v]) => [k, clean(v)])
+      );
+    }
+    return rest;
+  };
+  const functionDeclarations = TOOL_NAMES
+    .filter((name) => operator || REGISTRY[name].policy === "read")
+    .map((name) => ({
+      name,
+      description: REGISTRY[name].desc,
+      parameters: clean(REGISTRY[name].schema),
+    }));
+  return [{ functionDeclarations }];
 }
 
 // ── parse the model's free-text <tool_call> (light JSON repair; not a vocab hack) ──
@@ -436,4 +597,16 @@ function _loadsLenient(raw) {
   return null;
 }
 
-module.exports = { parseToolCall, runTool, renderToolPreamble, anthropicTools, REGISTRY, TOOL_NAMES };
+module.exports = {
+  parseToolCall,
+  runTool,
+  renderToolPreamble,
+  anthropicTools,
+  openaiTools,
+  geminiTools,
+  capabilityManifest,
+  REGISTRY,
+  TOOL_NAMES,
+  CAPABILITY_SCHEMA_VERSION,
+  RECEIPT_SCHEMA_VERSION,
+};
