@@ -1,5 +1,8 @@
 # Changelog
 
+## [1.7.70] - 2026-06-24
+- feat(orchestration): restore the open, unclaimed GitHub issue research queue with priority filtering and bounded Keystone Chat, Codex, and Claude Code handoffs (#1130).
+
 ## [1.7.69] - 2026-06-24
 - fix(chat): narration (🔊) no longer reads tool calls. The auto-narrate toggle and Read-aloud button now speak the answer only — `<tool_call>` markup and the hidden `[DOORS]` tag are stripped from the spoken text, so the narrator never reads raw tool JSON/IO aloud.
 - feat(chat): the PCSF signature line under each reply now shows the actual provider, model, and timestamp from the receipt (e.g. `Keystone · chat · anthropic/claude-haiku-4-5 · 2:50 PM`) instead of just `Keystone · chat`.
