@@ -39,6 +39,7 @@ const { convergeMessage } = require("./convergence-adapter");
 const { keystoneRun, KEYSTONE_SYSTEM_PROMPT } = require("./keystone-runtime");
 const { unifiedAgentStreamSSE: unifiedStreamSSE } = require("./unified-agent");
 const { appendJsonlQueued } = require("./file-queue");
+const { emitClaimDraft } = require("./claim-drafter");
 
 const repoRoot = path.resolve(__dirname, "../../../");
 const OURO_HARVEST_LIVE = path.resolve(repoRoot, "data/ouro-harvest-live.jsonl");
@@ -1171,6 +1172,13 @@ async function handleStreamChat(req, url, res) {
     } catch { /* canary must never break a reply */ }
     // ── #911 live coding emitter: log Python candidates offline ─────────────
     if (fullReply && message) { _emitCodingCandidate(message, fullReply); }
+    // ── #919 finding #2: auto-draft claim packet for grounded replies ────────
+    if (fullReply && message && groundingContext) {
+      emitClaimDraft({
+        reply: fullReply, message, groundingCtx: groundingContext,
+        agentId: agent.id || agent.name || "keystone",
+      });
+    }
     return sse.sendDone(res, source, { ...extra, ...signature, routeLabel: finalRouteLabel });
   };
 
