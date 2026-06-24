@@ -172,7 +172,7 @@ The CADD layer is built on top under [`caad/`](../caad/).
 | **Σ₀ / Ouro serving** | [`src/sigma0/`](../src/sigma0/) (`loop_lm.py`, `provider_node.py`, `quantized_cache.py`, `decode_canary.py`) | The local interchangeable model; served behind Ollama. Reason. |
 | **Self-improvement / training** | `scripts/ouro_*`, `src/training/`, `data/self-improvement/` | LoRA/adapter training jobs; experience capture. Converge. |
 | **Orchestration / autowork / fleet** | `lib/autowork-worktree.js`, `lib/swarm-orchestrator.js`, monoworkstream git hooks | Per-issue worktree-isolated agents; one PR lane per agent prefix. Act. |
-| **Skills** | [`skills/`](../skills/) (17 dirs) | Capability contracts. **Only `dream_journal`, `lucid_dreaming`, `archive_curator`, `voice_curator` have real implementations** — the rest are design contracts only (per [CLAUDE.md](../CLAUDE.md)). |
+| **Skills** | [`skills/`](../skills/) (17 dirs) | Capability contracts. **Only `dream_journal`, `lucid_dreaming`, `archive_curator`, `voice_curator`, `job_application` have real implementations** — the rest are design contracts only (per [CLAUDE.md](../CLAUDE.md)). |
 | **Discord bot** | `src/discord_lounge_bot/` | Optional community integration. |
 
 ---
@@ -184,8 +184,7 @@ Named honestly so they become follow-up issues, not surprises:
 1. **Loop not yet driven end-to-end from serving.** The Python Kernel is real and tested, but the
    Node serving path doesn't route every request through it; only the Kalshi path has closed
    Reason→Verify→Converge. *Debt: wiring, not building.* ([§3](#3-the-loop--the-four-objects-the-formal-core))
-2. **Skills are mostly design-contract-only.** 17 skill dirs, 4 real implementations. Docs must not
-   claim the others are live.
+2. **Skills are mostly design-contract-only.** 17 skill dirs, 5 real implementations (`job_application` added in #1098). Docs must not claim the others are live.
 3. **CSF codec claims vs. reality.** The public API docstring advertises `zstd-19+LDM`
    ([`__init__.py:12`](../src/csf/__init__.py)); in practice the active paths have bottlenecked on
    zlib / low-level zstd, leaving substantial ratio on the table vs. brotli/lzma/zstd-19. *Verify
