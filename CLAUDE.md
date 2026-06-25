@@ -1,7 +1,7 @@
 ---
 author: Alex Place
 created: 2026-06-05
-updated: 2026-06-20
+updated: 2026-06-24
 ---
 
 # CLAUDE.md
@@ -17,6 +17,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 3. **[PROVIDERS.md](PROVIDERS.md)** — All 10 AI providers, configuration, fallback chain, environment variables
 4. **[SECURITY.md](SECURITY.md)** — Critical vulnerabilities, input validation, security best practices
 5. **[SKILLS.md](SKILLS.md)** — Available capabilities, persona routing, provider chain
+6. **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — Canonical current-state architectural writeup (entrypoints, data flow, subsystem map)
+7. **[docs/adr/README.md](docs/adr/README.md)** — Architecture Decision Records index (*why* the system is the way it is)
 
 **Automatic Enforcement:**
 - Git `post-checkout` hook: reminds you to read docs after branch changes
