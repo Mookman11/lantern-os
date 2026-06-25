@@ -170,8 +170,9 @@ class ConvergenceOracle:
             (("proton decay", "white dwarf", "remnant", "stars stop", "star formation end"),
              "Degenerate era"),
             (("black hole", "hawking", "evaporat"), "Black hole era"),
-            (("heat death", "end of the universe", "ultimate fate", "big rip", "vacuum decay",
-              "final state", "die"), "Dark era / heat death"),
+            (("heat death", "end of the universe", "ultimate fate", "fate of the universe",
+              "fate of everything", "big rip", "vacuum decay", "final state", "how does it end",
+              "how will the universe end", "end of time"), "Dark era / heat death"),
         ]
         for keys, band in keymap:
             if any(k in q for k in keys):
