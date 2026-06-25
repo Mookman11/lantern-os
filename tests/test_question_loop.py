@@ -12,7 +12,7 @@ torch = pytest.importorskip("torch")
 
 from src.cio_sde import (
     CIO_SDE, LinearDynamics, QuestionMachine, QuestionDrivenLoop,
-    OracleChannel, MirrorChannel, HumanChannel,
+    OracleChannel, MirrorChannel, HumanChannel, CorroboratedChannel,
 )
 
 
@@ -115,3 +115,43 @@ def test_nap_denial_creates_blind_spot():
     # the channels it WAS allowed to use grounded dims 0 and 2 to truth:
     assert out.belief[0, 0].item() == pytest.approx(TRUE_GOAL[0, 0].item(), abs=1e-5)
     assert out.belief[0, 2].item() == pytest.approx(TRUE_GOAL[0, 2].item(), abs=1e-5)
+
+
+# ── 5. corroboration: ≥2 independent channels fused (External-Reality Rule) ───
+
+def test_corroboration_earns_confidence():
+    """Two independent channels that AGREE → 'corroborated', confidence → 1.0."""
+    ch = CorroboratedChannel("verify", [OracleChannel(TRUE_GOAL), OracleChannel(TRUE_GOAL)])
+    obs = ch.resolve(0, torch.zeros(1, 3))
+    assert obs.agreement == "corroborated"
+    assert obs.n_sources == 2
+    assert obs.confidence == pytest.approx(1.0)
+    assert obs.value == pytest.approx(TRUE_GOAL[0, 0].item())
+
+
+def test_divergence_lowers_confidence_not_silently_averaged():
+    """Two channels that DISAGREE → 'divergent', confidence < 1 — the signal a loop should
+    act on (re-ground / escalate), not trust the averaged value."""
+    other = TRUE_GOAL.clone()
+    other[0, 0] += 0.16                                    # spread 0.08 > tol 0.05 → divergent
+    ch = CorroboratedChannel("verify", [OracleChannel(TRUE_GOAL), OracleChannel(other)], tol=0.05)
+    obs = ch.resolve(0, torch.zeros(1, 3))
+    assert obs.agreement == "divergent"
+    assert 0.0 < obs.confidence < 1.0                     # neither trusted nor discarded — flagged
+    assert obs.value == pytest.approx((TRUE_GOAL[0, 0].item() + other[0, 0].item()) / 2)
+
+
+def test_corroborated_channel_grounds_the_loop():
+    """A CorroboratedChannel plugs into the loop transparently: it discovers truth AND every
+    record is marked corroborated (2 sources) — grounding is now earned, not single-point."""
+    m = _model(seed=5)
+    qm = QuestionMachine(channels={0: "verify", 1: "verify", 2: "verify"})
+    verify = CorroboratedChannel("verify", [OracleChannel(TRUE_GOAL), OracleChannel(TRUE_GOAL)])
+    loop = QuestionDrivenLoop(m, qm, {"verify": verify},
+                              x0=torch.tensor([[1.0, -0.8, 0.5]]), dt=0.1,
+                              goal_belief=torch.zeros(1, 3), horizon=8)
+    out = loop.run(max_steps=6, consolidate_iters=40, final_iters=300)
+
+    assert torch.allclose(out.belief, TRUE_GOAL, atol=1e-5)        # discovered the true goal
+    assert out.history and all(r.agreement == "corroborated" and r.n_sources == 2
+                               and r.confidence == pytest.approx(1.0) for r in out.history)

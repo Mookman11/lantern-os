@@ -52,6 +52,8 @@ class Observation:
     value: float
     source: str
     confidence: float = 1.0
+    agreement: str = "single-source"   # single-source | corroborated | divergent
+    n_sources: int = 1
 
 
 # ── channels (Act-stage organs) ──────────────────────────────────────────────
@@ -112,6 +114,46 @@ class MirrorChannel(Channel):
 
     def resolve(self, dim: int, belief: Tensor) -> Observation:
         return Observation(dim=dim, value=float(belief[0, dim]), source=self.name)
+
+
+class CorroboratedChannel(Channel):
+    """≥2 independent channels, fused — the External-Reality Rule as a single channel.
+
+    One grounding source is a single point of failure: a mirror, a stale feed, or a wrong
+    oracle is believed unconditionally. Corroboration is the fix — query multiple independent
+    channels and fuse. Agreement *earns* confidence; disagreement is surfaced, not averaged
+    away. This is the same discipline as the multi-source flourishing feeds and the
+    deep-research 3-vote verify, brought inside the grounded loop.
+
+      • all sources agree (spread ≤ tol) → "corroborated", confidence → 1.0
+      • sources diverge                  → "divergent", confidence falls with the spread
+      • one source                       → "single-source", confidence 0.5 (uncorroborated)
+
+    The fused value is the precision-unweighted mean; a divergent result's LOW confidence is
+    the signal a loop should act on (re-ground, or escalate to a human), not the value.
+    """
+
+    def __init__(self, name: str, channels, tol: float = 0.05) -> None:
+        super().__init__(name)
+        self.channels = list(channels)
+        self.tol = tol
+
+    def resolve(self, dim: int, belief: Tensor) -> Observation:
+        obs = [c.resolve(dim, belief) for c in self.channels]
+        vals = [o.value for o in obs]
+        n = len(vals)
+        mean = sum(vals) / n if n else 0.0
+        spread = (sum((v - mean) ** 2 for v in vals) / n) ** 0.5 if n > 1 else 0.0
+        if n < 2:
+            agreement, confidence = "single-source", 0.5
+        elif spread <= self.tol:
+            agreement, confidence = "corroborated", 1.0
+        else:
+            agreement = "divergent"
+            confidence = max(0.0, 1.0 - spread / (4.0 * self.tol))
+        srcs = ",".join(sorted({o.source for o in obs}))
+        return Observation(dim=dim, value=mean, source=f"{self.name}[{srcs}]",
+                           confidence=round(confidence, 4), agreement=agreement, n_sources=n)
 
 
 # ── the real web organ (natural-language grounding) ──────────────────────────
@@ -193,12 +235,16 @@ class LoopRecord:
     belief_before: float
     belief_after: float
     seam: float
+    confidence: float = 1.0            # the channel's confidence in this observation
+    agreement: str = "single-source"   # single-source | corroborated | divergent
+    n_sources: int = 1
 
     def to_dict(self) -> Dict[str, object]:
         return {
             "hypothesis": f"ground goal dim {self.dim} via '{self.channel}' (seam {self.seam:.4g})",
-            "evidence": {"observation": self.observation, "belief_before": self.belief_before},
-            "confidence": {"seam": self.seam},
+            "evidence": {"observation": self.observation, "belief_before": self.belief_before,
+                         "n_sources": self.n_sources, "agreement": self.agreement},
+            "confidence": {"seam": self.seam, "grounding": self.confidence},
             "source": f"channel:{self.channel}",
             "step": self.step, "dim": self.dim, "belief_after": self.belief_after,
         }
@@ -255,7 +301,9 @@ class QuestionDrivenLoop:
         self.grounded.add(q.dim)
         rec = LoopRecord(step=len(self.history), dim=q.dim, channel=q.channel,
                          observation=obs.value, belief_before=before,
-                         belief_after=obs.value, seam=q.score)
+                         belief_after=obs.value, seam=q.score,
+                         confidence=obs.confidence, agreement=obs.agreement,
+                         n_sources=obs.n_sources)
         self.history.append(rec)
         return rec
 

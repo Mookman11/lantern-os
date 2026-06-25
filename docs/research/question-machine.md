@@ -108,8 +108,11 @@ trustworthy.
 toward a goal *belief*, asks the top admissible question, resolves it through a `Channel`, and
 folds the external observation back into the belief — the Act stage made real.
 `Channel` organs: `OracleChannel` (grounded reality), `MirrorChannel` (ungrounded
-self-reference), and `CallbackChannel`/`HumanChannel` (the human-in-the-loop — a person *is*
-just a channel). Four tests (`tests/test_question_loop.py`) make the thesis executable:
+self-reference), `CallbackChannel`/`HumanChannel` (the human-in-the-loop — a person *is*
+just a channel), `WebChannel` (live web grounding), and `CorroboratedChannel` (≥2
+independent channels fused — agreement earns confidence, disagreement is flagged
+"divergent" rather than averaged away; the External-Reality Rule as a channel). Tests
+(`tests/test_question_loop.py`) make the thesis executable:
 
 | run | belief discovered | internal coherence (seam) | error vs the true goal |
 |---|---|---|---|
