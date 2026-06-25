@@ -23,7 +23,11 @@ os.environ.setdefault("HF_HOME", "D:/hf-cache")
 # canonical HumanEval completion stops: ONLY true top-level boundaries (column 0).
 # NB: do NOT stop on "\n#" or "\nprint(" — the model writes comments/prints INSIDE the
 # body, and stopping there truncates a valid function (smoke: it emitted "\n#" and died).
-STOP = ["\ndef ", "\nclass ", "\nif __name__", "\n\n\n", "\n```"]
+# "\nassert " and "\ndef test_" catch model self-appended unit-test blocks.
+STOP = ["\ndef ", "\nclass ", "\nif __name__", "\n\n\n", "\n```",
+        "\nassert ", "\ndef test_",
+        # punctuation-spam patterns Ouro emits after valid code
+        ", , , ", '","","', " , , "]
 
 
 def trim_body(body):
@@ -32,7 +36,78 @@ def trim_body(body):
         k = body.find(s)
         if k != -1:
             body = body[:k]
+    # Detect repetition loops — two strategies:
+    #
+    # 1. Prefix repetition: body starts with X; X appears again later.
+    #    Ouro often emits the correct body then repeats from the beginning.
+    #    Use the first 30 non-space chars as the key to avoid false-positives
+    #    on short variable names that legitimately appear multiple times.
+    prefix = body[:30].strip()
+    if len(prefix) >= 10:
+        second = body.find(prefix, 30)
+        if second != -1:
+            body = body[:second]
+    #
+    # 2. Inline return repetition: "return X" immediately followed by "return X".
+    #    Catches patterns like "return resultreturn result".
+    m = re.search(r'(return \w+)\1', body)
+    if m:
+        body = body[:m.start() + len(m.group(1))]
     return body.rstrip()
+
+
+def _repair_first_line(body):
+    """Best-effort repair of common fragment patterns from the Ouro separator strip.
+
+    Ouro emits <endoftext>(expr) as body start; after skip_special_tokens the '(' is
+    gone, leaving 'expr)' as the first token.  Two common cases:
+      'x, y) = rhs'  → '(x, y) = rhs'   (tuple-unpack fragment)
+      'expr, ...'    → 'return expr, ...'  (return-value fragment)
+    """
+    lines = body.split('\n', 1)
+    first = lines[0]
+    rest = ('\n' + lines[1]) if len(lines) > 1 else ''
+    stripped = first.lstrip()
+    indent = first[:len(first) - len(stripped)]
+    # tuple-unpack missing opening paren: "ids, var) = rhs"
+    if re.match(r'\w[\w,\s]*\) =', stripped) and not stripped.startswith('('):
+        return indent + '(' + stripped + rest
+    # bare expression (not a statement keyword) → try prepending 'return'
+    kw = ('return', 'if', 'for', 'while', 'try', 'with', 'raise', 'yield',
+          'pass', 'break', 'continue', 'import', 'from', 'def', 'class',
+          'assert', '#')
+    if stripped and not any(stripped.startswith(k) for k in kw):
+        # Only prepend 'return' for expressions, not assignment statements.
+        # Detect assignment: bare '=' not preceded/followed by =, !, <, >
+        has_assign = bool(re.search(r'(?<![=!<>])=(?!=)', stripped))
+        if not has_assign and re.match(r'[a-zA-Z_\d\("]', stripped):
+            return indent + 'return ' + stripped + rest
+    return body
+
+
+def _normalize_body_indent(body):
+    """Ensure function body lines are at the expected 4-space base indentation.
+
+    The model sometimes emits the body with:
+    a) First line at col 0, subsequent lines already at 4+ (only first line broken).
+    b) ALL lines at relative-to-zero indent (whole body needs +4 shift).
+    Distinguish by checking whether the SECOND non-empty line is also at col 0.
+    """
+    lines = body.split('\n')
+    nonempty = [(i, l) for i, l in enumerate(lines) if l.strip()]
+    if not nonempty:
+        return body
+    first_idx, first_line = nonempty[0]
+    if first_line and first_line[0] in (' ', '\t'):
+        return body  # already indented — nothing to do
+    # First line is at col 0.
+    if len(nonempty) > 1 and nonempty[1][1] and nonempty[1][1][0] not in (' ', '\t'):
+        # Second nonempty line also at col 0 → all lines need +4
+        lines = [('    ' + l if l.strip() else l) for l in lines]
+    else:
+        # Only first line needs +4 (rest already have correct absolute indent)
+        lines[first_idx] = '    ' + first_line
+    return '\n'.join(lines)
 
 
 def make_candidate(text, entry_point, he_prompt):
@@ -60,23 +135,32 @@ def make_candidate(text, entry_point, he_prompt):
             except SyntaxError:
                 pass
         text = c                 # else treat fenced content as the body continuation
-    body = trim_body(text)
+    body = _normalize_body_indent(trim_body(text))
     if not body.strip():
         return None
-    cand = he_prompt + body
-    try:
-        compile(cand, "<c>", "exec")
-        return cand
-    except SyntaxError:
-        # last resort: drop the final (likely truncated) line until it compiles
+    repaired = _repair_first_line(body)
+    # Pass 1: try clean compile on raw body then repaired body.
+    # Do NOT fall through to drop-lines here — the docstring-only function would
+    # compile but return None, blocking the repair path from ever running.
+    for candidate_body in [body, repaired]:
+        cand = he_prompt + candidate_body
+        try:
+            compile(cand, "<c>", "exec"); return cand
+        except SyntaxError:
+            pass
+    # Pass 2: drop-lines fallback (raw then repaired), but only accept if the
+    # result retains at least one real body line beyond the prompt skeleton.
+    min_prompt_lines = len(he_prompt.splitlines())
+    for candidate_body in [body, repaired]:
+        cand = he_prompt + candidate_body
         lines = cand.splitlines()
-        while lines:
+        while len(lines) > min_prompt_lines + 1:
             lines.pop()
             try:
                 compile("\n".join(lines), "<c>", "exec"); return "\n".join(lines)
             except SyntaxError:
                 continue
-        return None
+    return None
 
 
 def run_test(candidate, test_src, entry_point, timeout=12):
@@ -106,7 +190,7 @@ def main():
     ap.add_argument("--adapter", default=os.environ.get("OURO_ADAPTER", "D:/lantern-train/ouro-sigma0-adapters/final"))
     ap.add_argument("--limit", type=int, default=20, help="number of problems (from the start)")
     ap.add_argument("--full", action="store_true", help="run all 164")
-    ap.add_argument("--max-new", type=int, default=200)
+    ap.add_argument("--max-new", type=int, default=300)
     ap.add_argument("--ts", default=str(int(time.time())))
     a = ap.parse_args()
 
