@@ -106,7 +106,7 @@ def main():
     ap.add_argument("--adapter", default=os.environ.get("OURO_ADAPTER", "D:/lantern-train/ouro-sigma0-adapters/final"))
     ap.add_argument("--limit", type=int, default=20, help="number of problems (from the start)")
     ap.add_argument("--full", action="store_true", help="run all 164")
-    ap.add_argument("--max-new", type=int, default=384)
+    ap.add_argument("--max-new", type=int, default=200)
     ap.add_argument("--ts", default=str(int(time.time())))
     a = ap.parse_args()
 
@@ -132,6 +132,10 @@ def main():
         model = PeftModel.from_pretrained(model, a.adapter)
     model.eval()
 
+    out_dir = os.path.join(ROOT, "data", "eval", "humaneval")
+    os.makedirs(out_dir, exist_ok=True)
+    detail_path = os.path.join(out_dir, f"{a.label}-{a.ts}.jsonl")
+
     detail, n_ok, t0 = [], 0, time.time()
     print(f"\n{'task':<14} {'pass':<5} {'note'}", flush=True)
     for i in range(n):
@@ -152,8 +156,12 @@ def main():
         cand = make_candidate(text, ex["entry_point"], ex["prompt"])
         ok, note = run_test(cand, ex["test"], ex["entry_point"])
         n_ok += int(ok)
-        detail.append({"task_id": ex["task_id"], "entry_point": ex["entry_point"],
-                       "ok": ok, "note": note, "completion": text[:600]})
+        row = {"task_id": ex["task_id"], "entry_point": ex["entry_point"],
+               "ok": ok, "note": note, "completion": text[:600]}
+        detail.append(row)
+        # write each result immediately so a pipeline timeout doesn't lose all data
+        with open(detail_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
         print(f"{ex['task_id']:<14} {'OK ' if ok else 'x  '}  {note}", flush=True)
 
     dt = time.time() - t0
@@ -179,10 +187,7 @@ def main():
         "passed": n_ok, "wall_s": round(dt, 1), "sec_per_problem": round(dt / n, 1) if n else 0.0,
         "failure_breakdown": note_counts,  # #774/fix-7: no-parse/timeout/assert/exec-error counts
     }
-    os.makedirs(os.path.join(ROOT, "data", "eval", "humaneval"), exist_ok=True)
-    with open(os.path.join(ROOT, "data", "eval", "humaneval", f"{a.label}-{a.ts}.jsonl"), "w", encoding="utf-8") as f:
-        for d in detail:
-            f.write(json.dumps(d, ensure_ascii=False) + "\n")
+    # detail_path already written incrementally above; nothing more to write for per-problem rows
     with open(os.path.join(ROOT, "data", "eval", "leaderboard.jsonl"), "a", encoding="utf-8") as f:
         f.write(json.dumps(summary, ensure_ascii=False) + "\n")
     tag = "HumanEval" + ("" if a.full else f"[first {n}]")
