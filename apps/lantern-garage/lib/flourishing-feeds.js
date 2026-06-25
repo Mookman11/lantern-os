@@ -124,6 +124,90 @@ function nextQuestions(beliefs, topK = 3) {
   }));
 }
 
+// ── cross-domain correlation — REAL patterns, not trivial outliers ───────────
+// The source dashboard's "discovered patterns" were trivial ("this fraction isn't 0.5").
+// A real pattern is a cross-domain COUPLING. We compute it across countries: fetch each
+// indicator's most-recent per-country value, align by ISO-3 code, and Pearson-correlate
+// the flourishing-relevant pairs. "Across ~200 economies, does X track Y?"
+const CORR_PAIRS = [
+  { a: "SP.DYN.LE00.IN", b: "EG.ELC.ACCS.ZS", label: "life expectancy ↔ electricity access", coupling: "humans:health × humans:opportunity" },
+  { a: "SP.DYN.LE00.IN", b: "SE.SEC.ENRR", label: "life expectancy ↔ schooling", coupling: "humans:health × humans:education" },
+  { a: "SH.DYN.MORT", b: "SE.SEC.ENRR", label: "child mortality ↔ schooling", coupling: "humans:health × humans:education" },
+  { a: "SP.DYN.LE00.IN", b: "EG.FEC.RNEW.ZS", label: "life expectancy ↔ renewable-energy share", coupling: "humans:health × ecosystems:climate" },
+];
+
+// The indicator-data rows carry no region field, so aggregates (AFE/ARB/WLD/income groups)
+// can't be filtered there. Fetch the country-metadata list once — real countries have a
+// region.id ≠ "NA"; aggregates have "NA" — and filter membership by ISO-3 code.
+let _realIso = null;
+async function realCountrySet() {
+  if (_realIso) return _realIso;
+  for (let i = 0; i < 3; i++) {
+    const d = await getJson("https://api.worldbank.org/v2/country?format=json&per_page=400");
+    if (Array.isArray(d) && Array.isArray(d[1])) {
+      const s = new Set();
+      for (const c of d[1]) if (c.region && c.region.id && c.region.id !== "NA") s.add(c.id);
+      if (s.size) { _realIso = s; return s; }
+    }
+    await sleep(900);
+  }
+  return new Set();
+}
+
+async function fetchPerCountry(code, realSet, tries = 3) {
+  const url = `https://api.worldbank.org/v2/country/all/indicator/${code}?format=json&per_page=400&mrnev=1`;
+  for (let i = 0; i < tries; i++) {
+    const d = await getJson(url);
+    if (Array.isArray(d) && Array.isArray(d[1])) {
+      const out = {};
+      for (const r of d[1]) {
+        if (r && r.value != null && r.countryiso3code &&
+            (realSet.size === 0 || realSet.has(r.countryiso3code))) {
+          out[r.countryiso3code] = Number(r.value);
+        }
+      }
+      if (Object.keys(out).length) return out;
+    }
+    if (i < tries - 1) await sleep(900);
+  }
+  return {};
+}
+
+function pearson(pairs) {
+  const n = pairs.length;
+  if (n < 8) return null;
+  let sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0;
+  for (const [x, y] of pairs) { sx += x; sy += y; sxx += x * x; syy += y * y; sxy += x * y; }
+  const cov = sxy - (sx * sy) / n;
+  const vx = sxx - (sx * sx) / n, vy = syy - (sy * sy) / n;
+  if (vx <= 0 || vy <= 0) return null;
+  return cov / Math.sqrt(vx * vy);
+}
+
+let corrCache = { at: 0, items: [] };
+async function correlations(force = false) {
+  if (!force && Date.now() - corrCache.at < TTL_MS && corrCache.items.length) return corrCache.items;
+  const realSet = await realCountrySet();
+  const series = {};
+  const codes = [...new Set(CORR_PAIRS.flatMap((p) => [p.a, p.b]))];
+  for (const c of codes) { series[c] = await fetchPerCountry(c, realSet); await sleep(350); }
+  const items = [];
+  for (const p of CORR_PAIRS) {
+    const A = series[p.a], B = series[p.b];
+    const pairs = [];
+    for (const iso of Object.keys(A)) if (iso in B) pairs.push([A[iso], B[iso]]);
+    const r = pearson(pairs);
+    if (r != null) {
+      items.push({ label: p.label, coupling: p.coupling, r: Number(r.toFixed(3)), n: pairs.length,
+        strength: Math.abs(r) >= 0.7 ? "strong" : Math.abs(r) >= 0.4 ? "moderate" : "weak",
+        direction: r >= 0 ? "positive" : "negative" });
+    }
+  }
+  items.sort((a, b) => Math.abs(b.r) - Math.abs(a.r));
+  if (items.length) corrCache = { at: Date.now(), items };
+  return items;
+}
+
 // ── cache (yearly data → long TTL) ───────────────────────────────────────────
 const TTL_MS = 24 * 60 * 60 * 1000;
 let cache = { at: 0, beliefs: [] };
@@ -157,7 +241,7 @@ async function panel(force = false) {
   };
 }
 
-module.exports = { pollFeeds, panel, domainScores, nextQuestions, INDICATORS };
+module.exports = { pollFeeds, panel, domainScores, nextQuestions, correlations, INDICATORS };
 
 // CLI probe: `node lib/flourishing-feeds.js`
 if (require.main === module) {

@@ -162,5 +162,20 @@ module.exports = async function flourishingRoutes(req, res, url, deps) {
     return true;
   }
 
+  // ── Cross-domain correlations — REAL patterns, not "this fraction isn't 0.5".
+  // Pearson-correlates flourishing-relevant indicator pairs ACROSS ~200 real
+  // countries (aggregates filtered). Replaces the source dashboard's trivial outliers.
+  if (url.pathname === "/api/flourishing/correlations") {
+    try {
+      const force = url.searchParams.get("refresh") === "1";
+      const items = await feeds.correlations(force);
+      sendJson(res, { ok: items.length > 0, count: items.length, correlations: items,
+        note: "Pearson r across real countries (World Bank, most-recent year). Correlation, not causation." });
+    } catch (e) {
+      sendJson(res, { ok: false, error: String(e && e.message || e), correlations: [] });
+    }
+    return true;
+  }
+
   return false;
 };
