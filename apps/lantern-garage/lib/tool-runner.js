@@ -1,6 +1,7 @@
 "use strict";
 /**
  * tool-runner.js — one canonical tool registry for the local Σ₀ Ouro coder in chat.
+ * ADR-0008: capabilities are Tools in this registry — advertised == executed == trainable.
  *
  * CONSISTENCY RULE (how Claude Code / OpenAI / any tool-calling LLM works): a tool is
  * defined ONCE — name + input_schema + executor + policy — and that single definition
@@ -27,10 +28,14 @@ const http = require("http");
 const https = require("https");
 const { tokenizeCommand, safeExec } = require("./safe-exec");
 const { resolveCommand } = require("./command-allowlist");
+const { webSearchMcp } = require("./web-search-client");
+const { workspaceWrite, workspaceRead, workspaceList, getWorkspaceRoot } = require("./user-workspace");
+const { createDocument, listTemplates } = require("./doc-generator");
 
 const REPO = path.resolve(__dirname, "..", "..", "..");
 const MAX_OUT = 4000;
 const SKIP_DIR = /(^|[\\/])(\.git|node_modules|\.venv|\.venv-train|hf-cache)([\\/]|$)/;
+
 const CAPABILITY_SCHEMA_VERSION = 1;
 const RECEIPT_SCHEMA_VERSION = 1;
 
@@ -204,16 +209,24 @@ const REGISTRY = {
       return `edited ${i.file_path}`;
     },
   },
-  // ── user-capability tools (ADR-0008): information lookup, read-policy/safe ──────
+
+  // ── ADR-0008 capability tools ───────────────────────────────────────────────
   web_search: {
-    policy: "read", desc: "Search the web for current information. Returns ranked results (title, url, snippet).",
-    schema: { type: "object", properties: { query: { type: "string" }, max_results: { type: "integer" } }, required: ["query"] },
+    policy: "read",
+    desc: "Search the web for real-time information. Returns top results with title, URL, and snippet. Each result is cited per the Σ₀ External Reality Rule.",
+    schema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "The search query" },
+        max_results: { type: "integer", description: "Max results to return (1–10, default 5)" },
+      },
+      required: ["query"],
+    },
     async run(i) {
-      const q = String(i.query || "").trim();
-      if (!q) return "[web_search: empty query]";
-      const { webSearchMcp } = require("./web-search-client");
-      const n = Math.max(1, Math.min(8, parseInt(i.max_results, 10) || 5));
-      const raw = await webSearchMcp(q, n);
+      const query = String(i.query || "").trim();
+      if (!query) return "[error: query is required]";
+      const maxResults = Math.max(1, Math.min(10, parseInt(i.max_results, 10) || 5));
+      const raw = await webSearchMcp(query, maxResults);
       // Unwrap MCP envelope {content:[{type:'text',text:'<json>'}]} or a direct {results}.
       let payload = raw;
       if (raw && Array.isArray(raw.content)) {
@@ -223,23 +236,125 @@ const REGISTRY = {
       if (raw && raw.isError) return `[web_search error: ${payload && payload.error ? payload.error : "search failed"}]`;
       if (payload && payload.success === false) return `[web_search error: ${payload.error || "search failed"}]`;
       const results = (payload && payload.results) || [];
-      if (!results.length) return `[no results for "${q}"]`;
-      return results.slice(0, n).map((r) =>
-        `[${r.rank || "?"}] ${r.title || "(untitled)"}\n    ${r.url || ""}` + (r.snippet ? `\n    ${r.snippet}` : "")
-      ).join("\n");
+      if (!results.length) return `[no results for: ${query}]`;
+      const lines = [`web_search("${query}") — ${results.length} result(s):\n`];
+      results.forEach((r, idx) => {
+        lines.push(`[${idx + 1}] ${r.title || "(untitled)"}`);
+        lines.push(`    url: ${r.url || ""}`);
+        if (r.snippet) lines.push(`    snippet: ${r.snippet}`);
+      });
+      return lines.join("\n");
     },
   },
+
   web_fetch: {
-    policy: "read", desc: "Fetch a web page and return its readable text (truncated). http(s) only; internal hosts are blocked.",
-    schema: { type: "object", properties: { url: { type: "string" } }, required: ["url"] },
+    policy: "read",
+    desc: "Fetch the text content of a public URL. HTML is stripped to readable plain text. Use for reading web pages, documentation, or articles. No internal/private IPs allowed.",
+    schema: {
+      type: "object",
+      properties: {
+        url: { type: "string", description: "The public https:// or http:// URL to fetch" },
+        max_chars: { type: "integer", description: "Max characters of content to return (default 3000)" },
+      },
+      required: ["url"],
+    },
     async run(i) {
       const url = String(i.url || "").trim();
-      if (!/^https?:\/\//i.test(url)) {
-        throw _codedError("url must start with http:// or https://", "invalid_url");
+      if (!url) return "[error: url is required]";
+      const maxChars = Math.max(200, Math.min(MAX_OUT, parseInt(i.max_chars, 10) || 3000));
+      let html;
+      try { html = await _httpGet(url); }
+      catch (e) { return `[web_fetch error: ${e.message}]`; }
+      const text = _htmlToText(html || "");
+      const excerpt = text.length > maxChars ? text.slice(0, maxChars) + "\n…[truncated]" : text;
+      return `web_fetch(${url})\n\n${excerpt}`;
+    },
+  },
+
+  // ── ADR-0008 user workspace tools ──────────────────────────────────────────
+  workspace_write: {
+    policy: "mutating",
+    desc: "Write a file to the user workspace (~/.keystone/workspace/). Use for saving user artifacts: resumes, cover letters, documents. Path must be relative, no .. escapes. Operator only.",
+    schema: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "Workspace-relative path, e.g. 'resumes/my-resume.md'" },
+        content: { type: "string", description: "File content to write" },
+      },
+      required: ["path", "content"],
+    },
+    run(i) {
+      const abs = workspaceWrite(String(i.path || ""), String(i.content || ""));
+      return `wrote workspace:${i.path} (${String(i.content || "").length} bytes)\nfull path: ${abs}`;
+    },
+  },
+
+  workspace_read: {
+    policy: "read",
+    desc: "Read a file from the user workspace (~/.keystone/workspace/). Path must be relative.",
+    schema: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "Workspace-relative path to read" },
+      },
+      required: ["path"],
+    },
+    run(i) {
+      const content = workspaceRead(String(i.path || ""));
+      return content.length > MAX_OUT ? content.slice(0, MAX_OUT) + "\n…[truncated]" : content;
+    },
+  },
+
+  workspace_list: {
+    policy: "read",
+    desc: "List files and directories in the user workspace (~/.keystone/workspace/) or a subdirectory.",
+    schema: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "Workspace-relative directory to list (default: root)" },
+      },
+      required: [],
+    },
+    run(i) {
+      const entries = workspaceList(String(i.path || ""));
+      const root = getWorkspaceRoot();
+      if (!entries.length) return `workspace:${i.path || "/"} is empty\nroot: ${root}`;
+      const lines = [`workspace:${i.path || "/"} — ${entries.length} entries (root: ${root})`];
+      entries.forEach((e) => lines.push(`  ${e.type === "dir" ? "[dir]" : "[file]"} ${e.name}${e.type === "file" ? ` (${e.size}B)` : ""}`));
+      return lines.join("\n");
+    },
+  },
+
+  // ── ADR-0008 document generation (#1097) ────────────────────────────────────
+  create_document: {
+    policy: "mutating",
+    desc: 'Generate a document from a template and save it to the user workspace. Templates: "resume", "cover_letter". Pass structured fields matching the template. Returns the workspace path of the created file. Operator only.',
+    schema: {
+      type: "object",
+      properties: {
+        template: { type: "string", description: '"resume" or "cover_letter"' },
+        fields: { type: "object", description: "Template-specific fields (name, email, experience, etc.)" },
+        output_path: { type: "string", description: "Optional workspace-relative output path (auto-generated if omitted)" },
+      },
+      required: ["template", "fields"],
+    },
+    run(i) {
+      if (!i.template) return "[error: template is required]";
+      if (!i.fields || typeof i.fields !== "object") return "[error: fields must be an object]";
+      try {
+        const result = createDocument(String(i.template), i.fields, i.output_path || null);
+        return [
+          `created ${result.template}: workspace:${result.path}`,
+          `full path: ${result.fullPath}`,
+          `size: ${result.byteLength} bytes`,
+          "",
+          "--- preview (first 500 chars) ---",
+          result.content.slice(0, 500) + (result.content.length > 500 ? "\n…" : ""),
+        ].join("\n");
+      } catch (e) {
+        const tmplList = listTemplates().map((t) => `  ${t.name}: ${t.description}`).join("\n");
+        return `[create_document error: ${e.message}]\n\nAvailable templates:\n${tmplList}`;
       }
-      const html = await _httpGet(url);
-      const text = _htmlToText(html);
-      return text ? text.slice(0, 8000) : "[web_fetch: no readable text]";
     },
   },
 };

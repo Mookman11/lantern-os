@@ -193,7 +193,7 @@ Business logic is split into `apps/lantern-garage/lib/`:
 
 Six agent personas are defined in `apps/lantern-garage/lib/dream-chat.js`: `lantern`, `blinkbug`, `keystone`, `waterfall`, `xenon`, `founder`. Each has a `systemPrompt`. `selectAgent()` scores inbound messages by keyword match; the winner's prompt is injected into the LLM call.
 
-**Only these four skills have real implementations:** `dream_journal`, `lucid_dreaming`, `archive_curator`, `voice_curator`. All other `skills/*/SKILL.md` entries are design contracts only — do not claim they are live.
+**Only these five skills have real implementations:** `dream_journal`, `lucid_dreaming`, `archive_curator`, `voice_curator`, `job_application`. All other `skills/*/SKILL.md` entries are design contracts only — do not claim they are live.
 
 ### MCP server
 
