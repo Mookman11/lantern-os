@@ -420,6 +420,138 @@ def stability_gates(A: Tensor, margin: float = 0.0, pseudo_eps: float = 1e-2) ->
     )
 
 
+# ── #768 contraction half — Theorem 1 for NON-NORMAL A (spectral dichotomy) ───
+
+@dataclass
+class DichotomyCertificate:
+    """Theorem 1's collapse-onto-the-manifold guarantee, extended to NON-NORMAL A.
+
+    Theorem 1 (CollapseCertificate) splits the state by the SYMMETRIC part A_s and
+    runs an energy V=½‖P_M x‖² on the active modes. For non-normal A the cross-term
+    P_M A P_N ≠ 0 breaks V̇ ≤ 2αV, and the A_s-null manifold is not even invariant —
+    so that proof genuinely fails. The fix is to split by A's OWN spectrum:
+
+      active M = {Re λ < −δ},  slow/center N = {Re λ ≥ −δ}.
+
+    These are A-invariant, so the oblique Riesz projector commutes with A and the
+    cross-term that defeats the energy proof is identically zero (measured by
+    `invariance_residual`). Then:
+
+      • (active) on M, A is Hurwitz (abscissa ≤ −δ). The reduced Lyapunov metric P
+        (AᴹᵀP+PAᴹ=−I) gives ‖e^{tA}Π_M x‖ ≤ √cond(P)·e^{−t/(2λ_max(P))}‖Π_M x‖ → 0:
+        the active modes ALWAYS decay, after a bounded transient √cond(P) (the
+        non-normality shows up only as that finite overshoot, never as a failure to
+        contract). This is the SAME Lyapunov metric as stability_gates(), on Aᴹ.
+      • (fate) decided purely by β = max Re λ(N): β > 0 ⇒ DIVERGE; β < 0 ⇒ COLLAPSE
+        (whole system Hurwitz); β ≈ 0 ⇒ MARGINAL — bounded collapse onto the center
+        manifold (assuming the axis modes are semisimple; a defective imaginary-axis
+        eigenvalue gives polynomial growth, a measure-zero boundary). No third fate:
+        the active part always dies, so only sign(β) decides.
+
+    For NORMAL A the Riesz projector IS the orthogonal A_s-projector and this reduces
+    to Theorem 1 exactly — so this strictly generalizes CollapseCertificate.
+
+    HONEST SCOPE: contraction of the LOCAL linear Jacobian onto its slow manifold —
+    NOT a global non-collapse guarantee. Grounding remains the safety mechanism.
+    See docs/SIGMA0-T1-NONNORMAL-DICHOTOMY.md.
+    """
+    fate: str                  # "COLLAPSE" | "MARGINAL" | "DIVERGE"
+    collapses: bool            # active decays AND slow stays bounded (β ≤ tol)
+    active_dim: int
+    slow_dim: int
+    active_abscissa: float     # max Re λ on M  (≤ −δ by construction; −inf if empty)
+    slow_abscissa: float       # β = max Re λ on N — the quantity that decides the fate
+    active_decay_rate: float   # 1/(2λ_max(P)): provable finite-t Lyapunov rate on M
+    transient_bound: float     # √cond(P): bound on the active transient overshoot
+    invariance_residual: float # ‖(I−BBᵀ)A B‖ — numerical quality of the split (→0)
+    delta: float
+
+    def summary(self) -> str:
+        return (
+            f"dichotomy[#768]: fate={self.fate} "
+            f"(active maxReλ={self.active_abscissa:+.4f} on {self.active_dim} modes, "
+            f"slow β={self.slow_abscissa:+.4f} on {self.slow_dim}) "
+            f"decay≥{self.active_decay_rate:.4f} transient≤{self.transient_bound:.3g} "
+            f"split-resid={self.invariance_residual:.2e}"
+        )
+
+
+@torch.no_grad()
+def dichotomy_certificate(A: Tensor, delta: float = 0.0,
+                          tol: float = 1e-7) -> DichotomyCertificate:
+    """Evaluate the non-normal spectral-dichotomy extension of Theorem 1 on A.
+
+    Splits A by its own spectrum at −δ (active = {Re λ < −δ}), certifies that the
+    active block decays (reduced Lyapunov, bounded transient), and classifies the
+    fate from the slow block's abscissa. Reuses the SAME Lyapunov metric as
+    stability_gates(), applied to the active block Aᴹ.
+
+    `delta ≥ 0` is the split threshold; use a value inside a spectral gap so the
+    Riesz projector stays well-conditioned (a near-split-line eigenvalue inflates
+    `invariance_residual`). Never raises on degeneracy — returns −inf abscissae and
+    inf transient for the empty/ill-posed blocks.
+    """
+    import numpy as np
+    Abar = A.mean(0) if A.dim() == 3 else A
+    M = Abar.detach().cpu().numpy().astype(float)
+    n = M.shape[0]
+
+    w, V = np.linalg.eig(M)
+    active_mask = w.real < -delta
+    n_active = int(active_mask.sum())
+    n_slow = n - n_active
+    active_abscissa = float(w.real[active_mask].max()) if n_active else float("-inf")
+    slow_abscissa = float(w.real[~active_mask].max()) if n_slow else float("-inf")
+
+    # oblique Riesz projector onto the active invariant subspace, then an ORTHONORMAL
+    # basis of its range (SVD) — evolving/measuring in this basis stays inside the
+    # invariant subspace, so the slow (possibly divergent) modes never contaminate it.
+    Pi_M = np.real_if_close(
+        V @ np.diag(active_mask.astype(complex)) @ np.linalg.inv(V), tol=1000).real
+    U, s, _ = np.linalg.svd(Pi_M)
+    r = int((s > 1e-9).sum())
+    B = U[:, :r] if r > 0 else np.zeros((n, 0))
+
+    # invariance residual: M is A-invariant ⟺ (I−BBᵀ)A B = 0 (the vanishing cross-term)
+    invariance_residual = (
+        float(np.linalg.norm((np.eye(n) - B @ B.T) @ M @ B)) if r > 0 else 0.0)
+
+    # active decay: reduced Lyapunov P on Aᴹ=BᵀAB (the SAME metric as stability_gates)
+    rate, transient = 0.0, float("nan")
+    if r > 0:
+        A_M = B.T @ M @ B
+        try:
+            from scipy.linalg import solve_continuous_lyapunov
+            P = solve_continuous_lyapunov(A_M.T, -np.eye(r))
+            pe = np.linalg.eigvalsh(0.5 * (P + P.T))
+            if float(pe.min()) > 0:
+                rate = float(1.0 / (2.0 * pe.max()))            # finite-t Lyapunov rate
+                transient = float(np.sqrt(pe.max() / pe.min())) # √cond(P) overshoot
+        except Exception:
+            pass
+
+    # fate — decided purely by the slow block's abscissa β (no third option)
+    if slow_abscissa > tol:
+        fate, collapses = "DIVERGE", False
+    elif slow_abscissa < -tol:
+        fate, collapses = "COLLAPSE", True
+    else:
+        fate, collapses = "MARGINAL", True   # bounded onto center (axis modes semisimple)
+
+    return DichotomyCertificate(
+        fate=fate,
+        collapses=collapses,
+        active_dim=n_active,
+        slow_dim=n_slow,
+        active_abscissa=active_abscissa,
+        slow_abscissa=slow_abscissa,
+        active_decay_rate=rate,
+        transient_bound=transient,
+        invariance_residual=invariance_residual,
+        delta=delta,
+    )
+
+
 @torch.no_grad()
 def lyapunov_value(x: Tensor, A: Tensor, eig_eps: float = 1e-2) -> float:
     """V(x) = ½‖P_M x‖² — energy in the active (non-null) subspace of A_s."""

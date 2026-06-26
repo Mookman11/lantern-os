@@ -1,5 +1,5 @@
 {
-  "built_at": 1782464304.843524,
+  "built_at": 1782487209.3741558,
   "docs": [
     "README.md",
     "CLAUDE.md",
@@ -48,5 +48,5 @@
     "docs/convergence-io/DILATION.md"
   ],
   "sections": 651,
-  "sha256": "0233f503937a1c55baa054bbbf577150f64adc4666f9e78f077cae85a95249fb"
+  "sha256": "8dd9046f77766ea7ebaa2c0f5331a6bd99958ad3672d23db11f06574bd70d0b3"
 }

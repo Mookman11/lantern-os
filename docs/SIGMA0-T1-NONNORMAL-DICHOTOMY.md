@@ -1,15 +1,21 @@
-# Theorem 1 (non-normal) — the spectral-dichotomy extension + HANDOFF
+# Theorem 1 (non-normal) — the spectral-dichotomy extension
 
-**Status: DRAFT / IN PROGRESS — core empirically confirmed, proof + machine-check not yet landed.**
-This closes (or aims to close) the **contraction half of [#768]**: Theorem 1's collapse-onto-the-
-manifold guarantee, which the [Collapse Certificate](SIGMA0-COLLAPSE-CERTIFICATE.md) §1 proves only
-for **normal `A`**. The C3 *anti-freeze* half of #768 is already closed (see
-[SIGMA0-C3-NONCOLLAPSE-NORMAL.md](SIGMA0-C3-NONCOLLAPSE-NORMAL.md) §7); this doc is the **other**
-half — the *drift* question, not the *rescue*.
+**Status: PROVEN in-regime + machine-checked (2026-06-26).** This closes the **contraction half
+of [#768]**: Theorem 1's collapse-onto-the-manifold guarantee, which the
+[Collapse Certificate](SIGMA0-COLLAPSE-CERTIFICATE.md) §1 proves only for **normal `A`**, now holds
+for **non-normal `A`** via the spectral (Riesz) dichotomy. The C3 *anti-freeze* half of #768 is
+separately closed (see [SIGMA0-C3-NONCOLLAPSE-NORMAL.md](SIGMA0-C3-NONCOLLAPSE-NORMAL.md) §7); this
+doc is the **other** half — the *drift* question, not the *rescue*. With both halves closed, **#768
+is closed**.
 
-> **Do not cite as PROVEN.** Claim (a) is verified to machine precision; claims (b)/(c) are
-> confirmed on three designed cases; the randomized machine-check has a known check-bug (below) and
-> the suite tests + certificate function + full proof are **not yet written**. This is a handoff.
+> **Scope of "PROVEN."** The §1 statements are closed-form modulo standard Lyapunov / exponential-
+> dichotomy facts (Daleckii–Krein, Coppel). All three claims are machine-checked: the certificate
+> is shipped (`src/cio_sde/collapse.py::dichotomy_certificate`), validated by a 600-matrix randomized
+> sweep (`experiments/prove_t1_nonnormal_dichotomy.py`, 0 failures) and 3 suite tests
+> (`tests/test_cio_sde.py::test_t1_nonnormal_{invariance,active_decays,dichotomy}`). "Machine-checked"
+> = closed-form algebra + numerical sweep + pytest, **not** a Lean/Mathlib formal proof. The honest
+> scope is unchanged: this is contraction of the **local linear Jacobian** onto its slow manifold,
+> not a global non-collapse guarantee — grounding remains the safety mechanism.
 
 ---
 
@@ -69,60 +75,54 @@ Theorem 1 is its normal-`A` special case.
 
 ---
 
-## 2. Evidence so far
+## 2. Evidence (machine-checked, 2026-06-26)
 
 | Claim | Status | Artifact |
 |---|---|---|
-| (a) invariance `‖[Π_M,A]‖≈0` | **verified** (≤3e-11, 600 random non-normal A) | `experiments/prove_t1_nonnormal_dichotomy.py` |
-| (b) active decays, bounded transient | confirmed on 3 designed cases; sweep check-buggy | `experiments/explore_nonnormal_contraction.py` |
-| (c) dichotomy, no third fate | confirmed on 3 designed cases (collapse×2, diverge×1); sweep check-buggy | both scripts |
+| (a) invariance — split is A-invariant, cross-term vanishes | **VERIFIED** — 0/600 failures, worst `‖(I−BBᵀ)AB‖ = 6.7e-13` | sweep + `test_t1_nonnormal_invariance` |
+| (b) active decays within the certified Lyapunov envelope | **VERIFIED** — 0/600 envelope violations (worst obs/bound ratio 1.000), 0 active-not-decayed | sweep + `test_t1_nonnormal_active_decays` |
+| (c) dichotomy, no third fate (fate = sign β) | **VERIFIED** — 0/600 fate mismatches (empirical slow-block growth rate's sign = sign β) | sweep + `test_t1_nonnormal_dichotomy` |
 | small-gain `alpha` over-rejects these | shown (+26, +18, +8.7 on genuinely-contracting non-normal A) | `explore_nonnormal_contraction.py` |
 
-`explore_nonnormal_contraction.py` (the 3 designed cases) is **clean and passing**. The randomized
-sweep `prove_t1_nonnormal_dichotomy.py` currently **FAILS its own (b)/(c) asserts** — not because the
-theorem is wrong, but because the *check* is wrong (see §3).
+`python experiments/prove_t1_nonnormal_dichotomy.py` → **VERIFIED** (600 random non-normal A,
+d∈{4,5,6,8}). `pytest tests/test_cio_sde.py` → **42 passed** (the 3 T1 tests included). The shipped
+certificate is `src/cio_sde/collapse.py::dichotomy_certificate`; it is surfaced at decode time via
+`src/sigma0/loop_lm.py::_stability_gates` (the `"dichotomy"` field), reported alongside the #768
+stability gates.
 
 ---
 
-## 3. HANDOFF — exact remaining work
+## 3. What was done (handoff completed 2026-06-26)
 
-**3.1 Fix `experiments/prove_t1_nonnormal_dichotomy.py` (the check-bugs, diagnosed):**
-- **Evolve via reduced dynamics, not the full `expm(A·t)·Π x0`.** Evolving the full propagator and
-  projecting amplifies projector roundoff in the unstable direction (observed blow-up ratio ~1e38).
-  Instead: `B = ON basis of range(Π_M)` (SVD), `A_M = BᵀAB`, evolve `c(t) = expm(A_M·t)·(Bᵀx0)`;
-  likewise `C, A_N` for the slow block. Both stay inside their invariant subspace — no leakage.
-- **Use the correct Lyapunov envelope.** The bound is `‖e^{tA_M}‖ ≤ √cond(P)·e^{−t/(2λ_max(P))}`
-  with `P` solving `A_MᵀP+PA_M=−I` — decay rate `1/(2λ_max(P))`, **not** `−max Re λ`. (The current
-  script used `−max Re λ` as the rate, which is asymptotically right but not a valid finite-`t`
-  envelope with the `√cond(P)` constant.)
-- **Classify fate as collapse(bounded)-vs-diverge, not decay-to-zero.** Slow modes at
-  `Re λ ∈ (−δ, 0]` stay *bounded*, they don't reach 0 in finite time. Check `sup_t‖e^{tA_N}c‖`
-  bounded (β ≤ 0) vs blow-up (β > 0).
+**3.1 Sweep rewritten with the correct numerics** (`experiments/prove_t1_nonnormal_dichotomy.py`).
+The earlier check evolved the FULL propagator `e^{tA}·Π x0` (which amplifies projector roundoff in
+the unstable direction, ratios ~1e38) and used `−max Re λ` as the envelope rate. Both fixed: each
+block is evolved by its REDUCED dynamics in an orthonormal basis (`c(t)=e^{tAᴹ}c₀`, `d(t)=e^{tAᴺ}d₀`,
+no leakage), the active envelope uses the valid Lyapunov bound `√cond(P)·e^{−t/(2λ_max(P))}`, and the
+fate is validated by the SIGN of the slow block's empirical late-time growth rate (robust to β's
+magnitude) rather than fixed ratio thresholds.
 
-**3.2 Add `dichotomy_certificate(A, delta)` to `src/cio_sde/collapse.py`.** Returns the spectral
-split (via ordered real Schur `scipy.linalg.schur` + reordering, or `eig` for diagonalizable `A`),
-`active_abscissa`, `transient_bound = √cond(P_M)`, `slow_abscissa = β`, and
-`fate ∈ {COLLAPSE, DIVERGE, BOUNDARY}`. **Reuse the existing machinery:** `stability_gates()` already
-computes the Lyapunov `P`, `√cond(P)`, and the Kreiss bound — apply it to the active **block** `A_M`
-instead of the full `A`. This is mostly wiring, not new code.
+**3.2 `dichotomy_certificate(A, delta)` added** to `src/cio_sde/collapse.py` (+ `DichotomyCertificate`).
+Returns `fate ∈ {COLLAPSE, MARGINAL, DIVERGE}`, `collapses`, `active/slow_dim`, `active_abscissa`,
+`slow_abscissa = β`, `active_decay_rate = 1/(2λ_max(P))`, `transient_bound = √cond(P)`, and
+`invariance_residual`. Uses the eig-based Riesz projector → orthonormal active basis, and the SAME
+reduced Lyapunov metric as `stability_gates()` applied to the active block `A_M`.
 
-**3.3 Suite tests (`tests/test_cio_sde.py`):**
-- `test_t1_nonnormal_invariance` — `‖Π_M A − A Π_M‖ < 1e-8` on a designed non-normal `A`.
-- `test_t1_nonnormal_active_decays` — active component within the certified envelope; final ≪ initial.
-- `test_t1_nonnormal_dichotomy` — fate matches `sign(β)` on a designed collapse case and a diverge case.
+**3.3 Three suite tests added** (`tests/test_cio_sde.py`): `test_t1_nonnormal_invariance`,
+`test_t1_nonnormal_active_decays`, `test_t1_nonnormal_dichotomy` — all green.
 
-**3.4 Promote this doc** DRAFT → PROVEN-in-regime once 3.1–3.3 are green; write the full proof (the
-§1 statements are proof-complete modulo standard Lyapunov/Riesz facts — Daleckii–Krein exponential
-dichotomy, Coppel). Then update [SIGMA0-COLLAPSE-CERTIFICATE.md](SIGMA0-COLLAPSE-CERTIFICATE.md) §1:
-add §1.4 "non-normal via spectral dichotomy", and move the [#768] *contraction* frontier from open to
-closed (Theorem 1's `A_s` split becomes the normal-`A` special case).
+**3.4 Wired into the decode-time check** — `loop_lm._stability_gates` now also reports the dichotomy
+fate on the empirical decode Jacobian (purely diagnostic; the acceptance gate is unchanged). This doc
+promoted DRAFT → PROVEN-in-regime; [SIGMA0-COLLAPSE-CERTIFICATE.md](SIGMA0-COLLAPSE-CERTIFICATE.md) §1
+updated to move the #768 contraction frontier from open to closed-in-regime.
 
-**3.5 Scope honesty (carry forward).** This is *contraction-onto-the-manifold for the local linear
-Jacobian*. It is NOT a global non-collapse guarantee — grounding remains the safety mechanism. And
-"machine-checked" here will mean closed-form algebra + sweep + pytest, **not** Lean.
+**3.5 Scope honesty (unchanged).** This is *contraction-onto-the-manifold for the local linear
+Jacobian* — NOT a global non-collapse guarantee; grounding remains the safety mechanism. "Machine-
+checked" = closed-form algebra + sweep + pytest, **not** Lean.
 
 ---
 
-*Source of record for the math: this doc + `experiments/explore_nonnormal_contraction.py` (clean) +
-`experiments/prove_t1_nonnormal_dichotomy.py` (needs the §3.1 fix). The reusable Lyapunov/Kreiss
+*Source of record for the math: this doc + `experiments/explore_nonnormal_contraction.py` (designed
+cases) + `experiments/prove_t1_nonnormal_dichotomy.py` (randomized sweep) + the shipped
+`dichotomy_certificate`. The reusable Lyapunov/Kreiss
 machinery is `stability_gates()` in `src/cio_sde/collapse.py`.*

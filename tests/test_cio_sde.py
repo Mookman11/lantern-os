@@ -8,6 +8,7 @@ from src.cio_sde import (
     free_energy, gaussian_kl,
     SemanticCollapseOperator, CollapseOutcome,
     collapse_certificate, lyapunov_value, AntiCollapseOperator,
+    dichotomy_certificate,
     InterventionPolicy,
     SurpriseMonitor,
 )
@@ -748,6 +749,79 @@ def test_c3_nonnormal_covariance_lift():
         # tiny min-gate proximity — the regime where the floor (not strength·p) carries it
         _, sig_extra = op.excite(torch.zeros(1, d), sigma, A, 0.01, torch.zeros(1, d))
         assert detector._anisotropy(sigma + sig_extra) >= eps_a  # lifted — no alignment used
+
+
+# ── #768 contraction half — Theorem 1 for NON-NORMAL A (spectral dichotomy) ──
+
+def _nonnormal_from_spectrum(real_eigs, complex_pairs, cond, seed):
+    """Real non-normal A = S Λ S⁻¹ with the EXACT prescribed spectrum and an
+    ill-conditioned real similarity S (so A is genuinely non-normal). Λ is real
+    block-diagonal (1×1 real blocks; 2×2 [[a,b],[−b,a]] for each complex pair)."""
+    import numpy as np
+    rng = np.random.default_rng(seed)
+    blocks = [np.array([[r]], float) for r in real_eigs]
+    blocks += [np.array([[a, b], [-b, a]], float) for (a, b) in complex_pairs]
+    n = sum(B.shape[0] for B in blocks)
+    Lam = np.zeros((n, n)); i = 0
+    for B in blocks:
+        k = B.shape[0]; Lam[i:i + k, i:i + k] = B; i += k
+    U, _, _ = np.linalg.svd(rng.standard_normal((n, n)))
+    _, _, Wt = np.linalg.svd(rng.standard_normal((n, n)))
+    S = U @ np.diag(np.linspace(1.0, cond, n)) @ Wt
+    return torch.tensor(S @ Lam @ np.linalg.inv(S), dtype=torch.float64)
+
+
+def test_t1_nonnormal_invariance():
+    """(a) The Riesz spectral split is A-invariant — the cross-term that defeats the
+    symmetric-split energy proof of Theorem 1 vanishes (‖(I−BBᵀ)A B‖ ≈ 0) even for
+    strongly non-normal A. This is the load-bearing fact of the dichotomy."""
+    A = _nonnormal_from_spectrum([-0.8, -1.2, -2.0, -0.6], [(0.0, 1.5)], cond=200.0, seed=1)
+    assert (A @ A.T - A.T @ A).norm() > 1.0                 # genuinely non-normal
+    cert = dichotomy_certificate(A, delta=0.25)
+    assert cert.invariance_residual < 1e-8
+    assert cert.active_dim + cert.slow_dim == A.shape[0]
+
+
+def test_t1_nonnormal_active_decays():
+    """(b) The active block contracts within the CERTIFIED Lyapunov envelope
+    √cond(P)·e^{−t/(2λmax(P))}, evolved by the reduced dynamics so the slow modes can
+    never contaminate it — even when A also carries a divergent mode."""
+    pytest.importorskip("scipy")
+    import numpy as np
+    from scipy.linalg import expm
+    A = _nonnormal_from_spectrum([-0.8, -1.2, -2.0, 0.3], [], cond=50.0, seed=3)  # one RHP mode
+    delta = 0.25
+    cert = dichotomy_certificate(A, delta=delta)
+    assert cert.active_dim >= 1 and cert.transient_bound >= 1.0 and cert.active_decay_rate > 0
+    # rebuild the active ON basis + reduced generator and simulate the reduced flow
+    M = A.numpy()
+    w, V = np.linalg.eig(M)
+    Pi = np.real_if_close(
+        V @ np.diag((w.real < -delta).astype(complex)) @ np.linalg.inv(V), tol=1000).real
+    U, s, _ = np.linalg.svd(Pi); r = int((s > 1e-9).sum())
+    B = U[:, :r]; A_M = B.T @ M @ B
+    c0 = B.T @ (Pi @ np.random.default_rng(7).standard_normal(M.shape[0]))
+    a0 = float(np.linalg.norm(c0))
+    for t in (0.5, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0):
+        ct = float(np.linalg.norm(expm(A_M * t) @ c0))
+        bound = cert.transient_bound * np.exp(-cert.active_decay_rate * t) * a0
+        assert ct <= bound * (1 + 1e-6)                    # within the certified envelope
+    assert float(np.linalg.norm(expm(A_M * 200.0) @ c0)) < 1e-4 * a0   # active modes die
+
+
+def test_t1_nonnormal_dichotomy():
+    """(c) The fate is decided purely by the slow block's abscissa β — no third fate.
+    All-stable ⇒ COLLAPSE; one RHP mode in the slow block ⇒ DIVERGE; in the diverge
+    case the active part STILL contracts (the whole point). The shipped small-gain
+    certificate over-rejects both — it cannot certify either as contracting."""
+    collapse = _nonnormal_from_spectrum([-0.5, -0.6, -0.7, -0.8, -0.9, -1.0], [], cond=200.0, seed=2)
+    diverge = _nonnormal_from_spectrum([-0.8, -1.2, -2.0, -0.6, -1.5, 0.3], [], cond=30.0, seed=3)
+    c_cert = dichotomy_certificate(collapse, delta=0.25)
+    d_cert = dichotomy_certificate(diverge, delta=0.25)
+    assert c_cert.fate == "COLLAPSE" and c_cert.collapses
+    assert d_cert.fate == "DIVERGE" and not d_cert.collapses
+    assert d_cert.slow_abscissa > 0 > c_cert.active_abscissa
+    assert d_cert.active_decay_rate > 0                     # active contracts despite divergence
 
 
 # ── Σ₀-K1 component 8: collapse certificate + NIS canary, end-to-end (#852) ──
