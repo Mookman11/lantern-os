@@ -1,14 +1,38 @@
-# Theorem C3 (normal A) — Σ₀⁻¹ prevents permanent freeze
+# Theorem C3 — Σ₀⁻¹ prevents permanent freeze (all A)
 
-**Status: DRAFT — math writeup, pre-implementation. NOT yet machine-checked.**
-This proves the §3 sufficiency claim of the [Collapse Certificate](SIGMA0-COLLAPSE-CERTIFICATE.md)
-**for the normal/symmetric case only** — the same regime boundary as Theorem 1 (§1).
-The non-normal case stays open and is the lone residual frontier ([#768]). Nothing
-here may be cited as PROVEN until `experiments/prove_c3_noncollapse.py` +
-`tests/test_cio_sde.py::test_c3_*` land and pass. This document is the spec those
-artifacts must satisfy; it also specifies two **code fixes** (L4, G13) that the
-current `src/cio_sde/collapse.py` requires for the theorem to be true of the
-*shipped* operator, not just an idealized one.
+**Status: PROVEN (all A), computationally machine-checked.**
+Verified against the repo 2026-06-26. The original proof closed the **normal/symmetric**
+case; **§7 (L2′)** then removed the alignment hypothesis L1 — the one place normality was
+used — so the no-permanent-freeze conclusion now holds for **non-normal `A` too**. Gating
+artifacts all landed and pass:
+- normal A: `experiments/prove_c3_noncollapse.py` (3000 configs → **0** floor failures,
+  **0** cond_flat survivals; necessity: the old scale-blind bump fails **2989/3000**).
+- non-normal A: `experiments/prove_c3_noncollapse_nonnormal.py` (4000 genuinely non-normal
+  configs incl. the adversarial worst-case alignment → **0** lift failures, **0** gate
+  survivals).
+- tests: `tests/test_cio_sde.py::{test_l4_floor_lifts_anisotropy,
+  test_l4_floor_scale_equivariant, test_g13_no_zero_rank_bump, test_c3_no_consecutive_freeze,
+  test_c3_nonnormal_covariance_lift}` (all green), atop the L4/G13 code fixes in
+  `src/cio_sde/collapse.py` (`_cov_floor` @507, `_near_null_basis` @479).
+
+This proves the §3 sufficiency claim of the
+[Collapse Certificate](SIGMA0-COLLAPSE-CERTIFICATE.md).
+
+**Three honest scope limits remain — do not overclaim past them:**
+1. **C3 is no-permanent-*freeze*, not the whole collapse story.** What stays open for
+   non-normal `A` is **Theorem 1's contraction** — whether an ungrounded system collapses
+   onto the manifold *at all* vs. diverges (the §1 cross-term, [#768]). C3 says the
+   *rescue* operator can't let the freeze gate latch; it says nothing about *whether* the
+   bad dynamics contract. [#768] is therefore now **split**: the anti-freeze half is
+   closed (here); the Theorem-1 contraction half remains.
+2. **"Machine-checked" = closed-form algebra + numerical sweep + pytest, NOT a Lean/Mathlib
+   formal proof.** The chain is *feasible* in Lean; that has not been done.
+3. **C3 governs the operator's *action*.** In the live engine Σ₀⁻¹ is observe-only by
+   default (#1138), so C3 is conditional on the operator being permitted to act.
+
+This document also specifies the two **code fixes** (L4, G13) that the shipped
+`src/cio_sde/collapse.py` operator required for the theorem to be true of the *shipped*
+operator, not just an idealized one — both now landed.
 
 Companion lemma (already closed): [L2 — the one-step anisotropy lift](SIGMA0-L2-ANISOTROPY-LIFT-PROOF.md).
 
@@ -33,7 +57,7 @@ The proof chains five lemmas. Three are settled; two require the code fixes belo
 
 | Lemma | Claim | Status before this doc |
 |---|---|---|
-| **L1** | the bump basis (`eig(A_s)`) aligns with `eig(Σ)` | proven **normal A**, open non-normal |
+| **L1** | the bump basis (`eig(A_s)`) aligns with `eig(Σ)` | proven **normal A** — and **removed entirely** for all `A` by L2′ (§7) |
 | **L2** | one aligned bump `b ≥ Δ` ⟹ `a(Σ⁺) ≥ ε_a` (breaks `cond_flat`) | **PROVEN + machine-checked** |
 | **L3** | `cond_flat` false ⟹ the AND-gate cannot fire that step | trivial (AND-gate) |
 | **L4** | the operator actually delivers `b ≥ Δ` on a freeze-approach step | **FALSE for shipped code** — fixed here |
@@ -245,10 +269,12 @@ corollary; L5 (§4) converts it to no-consecutive-latch, i.e. no permanent freez
   on Fix A + Fix B landing*. The fixes are real defects (the live operator can fire a
   weak or blank bump on a freeze-approach), so this also hardens the shipped safety
   mechanism, not just the math.
-- ❌ **Does not give:** (i) the **non-normal** case — L1 fails there (the §1
-  cross-term: `A_s` ≠ integrated `A`), so the bump basis need not align with Σ; this
-  is the *same* open frontier as Theorem 1 and remains [#768]. (ii) Anything about
-  the other three conditions returning — C3 only guarantees the gate cannot *latch*,
+- ❌ **Does not give:** (i) **Theorem 1's contraction** for non-normal `A` — whether the
+  ungrounded dynamics collapse onto the manifold *at all* vs. diverge (the §1 cross-term).
+  C3 closes the *anti-freeze* half of [#768] (§7); this *contraction* half remains. Note
+  these are genuinely different: C3 needed alignment only for the **rescue** bump, which
+  L2′ discharges, whereas Theorem 1's gap is about the **drift** dynamics. (ii) Anything
+  about the other three conditions returning — C3 only guarantees the gate cannot *latch*,
   not that the system is well-grounded (grounding is a separate, external mechanism).
   (iii) A statement about `dx_extra` (the random state kick) re-exciting the *state*;
   C3 is about the **covariance** leg breaking the freeze, which is what the integrator
@@ -281,7 +307,41 @@ and `::test_c4_floor_is_scale_equivariant`.
    (c) `test_l4_floor_scale_equivariant` — rescale Σ by `c`, assert the floor still
    lifts (guards Defect A's scale-blindness); (d) `test_g13_no_zero_rank_bump` — modes
    parked just above `eig_eps`, assert `rank(P_N) ≥ 1` when `cond_rank` fires.
-4. Certificate doc (§3): on green, move the label from "MEASURED-over-distribution"
-   to "PROVEN (normal A), MEASURED (non-normal)" and link this doc.
+4. Certificate doc (§3): on green, the label moves to **PROVEN (all A)** — see §7.
+
+---
+
+## 7. Closing the non-normal case — L2′ removes the alignment hypothesis
+
+The normal-A proof above (§2.2 "L1 interaction") leaned on alignment: at `cond_flat`,
+`Σ ≈ μI`, so for **normal `A`** the `m` smallest-`|λ(A_s)|` directions are (to slack `a < ε_a`)
+an eigenbasis of Σ, and L2's eigenvalue-shift bookkeeping applies. The doc called the
+non-normal case open because for non-normal `A` the bump basis `eig(A_s)` need not align
+with `eig(Σ)`.
+
+**That hypothesis was never necessary.** L2's operative bound — `σ⁺ ≥ √(m(d−m))/d·b − aμ` —
+holds for an **arbitrary** rank-`m` orthogonal projector `P` (`1 ≤ m ≤ d−1`), with no
+relation to `Σ`'s eigenvectors, by the reverse triangle inequality in Frobenius norm:
+
+$$\Sigma^+-\mu^+I=(\Sigma-\mu I)+b\big(P-\tfrac{m}{d}I\big),\quad
+\sqrt{d}\,\sigma^+=\lVert\Sigma^+-\mu^+I\rVert_F\ge b\sqrt{\tfrac{m(d-m)}{d}}-a\mu\sqrt{d}.$$
+
+Dividing by `√d` reproduces L2 step (3) verbatim, so the same `Δ` works. The misalignment
+penalty `tr((Σ−μI)P) = tr((Σ−μI)(P−\tfrac{m}{d}I)) ≤ ‖Σ−μI‖_F‖P−\tfrac{m}{d}I‖_F =
+aμ√(m(d−m))` is bounded by `a(Σ)`, which `cond_flat` forces below `ε_a`. Full derivation:
+[L2′ in SIGMA0-L2-ANISOTROPY-LIFT-PROOF.md](SIGMA0-L2-ANISOTROPY-LIFT-PROOF.md).
+
+**Consequence.** L1 drops out of the C3 chain entirely. The bump basis from `A_s` is
+*some* rank-`m` projector with `1 ≤ m ≤ d−1` (guaranteed by Fix B's clamp) regardless of
+`A`'s normality, so L2′ + L3 + L4 + L5 give `P(permanent freeze) = 0` for **all `A`**. The
+adversarial check — Σ built so its `m` smallest eigendirections coincide with the bump
+basis (minimal `tr(ΣP)`, the hardest case) — passes with 0 failures across 4000 non-normal
+configs (`experiments/prove_c3_noncollapse_nonnormal.py`,
+`tests/test_cio_sde.py::test_c3_nonnormal_covariance_lift`).
+
+**What this does NOT close.** Theorem 1's *contraction* for non-normal `A` (the §1
+cross-term in the **drift**, not the rescue bump) is a separate question and stays open
+([#768]). C3 guarantees the gate cannot latch; it does not guarantee the ungrounded
+dynamics contract rather than diverge — that is what grounding, not Σ₀⁻¹, governs.
 
 [#768]: https://github.com/alex-place/lantern-os/issues/768

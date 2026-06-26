@@ -8,6 +8,7 @@ from src.cio_sde import (
     free_energy, gaussian_kl,
     SemanticCollapseOperator, CollapseOutcome,
     collapse_certificate, lyapunov_value, AntiCollapseOperator,
+    InterventionPolicy,
     SurpriseMonitor,
 )
 
@@ -21,6 +22,15 @@ def _init_state(b=8, dim=4, scale=1.0):
     x0 = scale * torch.randn(b, dim)
     s0 = torch.eye(dim).expand(b, dim, dim).clone()
     return x0, s0
+
+
+def _acting(m, budget=10_000):
+    """Enable Σ₀ intervention. Observe-only is the production default (#1138), so a
+    test that exercises what happens WHEN the operator ACTS (freeze, projection,
+    the canary spiking on the snap/kick) must opt in — otherwise tr.collapses stays
+    empty by policy and the behavior under test never runs."""
+    m.intervention_policy = InterventionPolicy(observe_only=False, max_interventions=budget)
+    return m
 
 
 # ── SDE rollout ──────────────────────────────────────────────────────────────
@@ -160,6 +170,7 @@ def test_collapse_fires_in_degenerate_regime():
     for p in m.graph.active.drift_net.parameters():
         torch.nn.init.zeros_(p)
     m.collapse_op = SemanticCollapseOperator()
+    _acting(m)
     x0, s0 = _init_state(scale=0.01)
     _, _, tr = rollout(m, x0, s0, steps=20, base_seed=1)
     assert len(tr.collapses) > 0
@@ -173,6 +184,7 @@ def test_collapse_freezes_state():
     for p in m.graph.active.drift_net.parameters():
         torch.nn.init.zeros_(p)
     m.collapse_op = SemanticCollapseOperator()
+    _acting(m)
     x0, s0 = _init_state(scale=0.01)
     xf, _, tr = rollout(m, x0, s0, steps=20, base_seed=1)
     # last few x-norms should be essentially constant (frozen attractor)
@@ -279,7 +291,7 @@ def _collapse_prone_model(dim=4, seed=0):
     for p in m.graph.active.drift_net.parameters():
         torch.nn.init.zeros_(p)
     m.collapse_op = SemanticCollapseOperator()
-    return m
+    return _acting(m)
 
 
 def _run_recursive_with_grounding(real_fraction, *, dim=4, segments=8,
@@ -396,6 +408,7 @@ def test_surprise_monitor_integration():
     m.surprise_monitor = SurpriseMonitor(spook_sigmas=3.0, anti_collapse_trigger=True)
     m.anti_collapse_op = AntiCollapseOperator(strength=0.5)
     m.collapse_op = SemanticCollapseOperator()
+    _acting(m)
 
     x0, s0 = _init_state(scale=0.01)
     _, _, tr = rollout(m, x0, s0, steps=30, base_seed=1)
@@ -496,6 +509,7 @@ def test_collapse_is_nonexpansive_projection():
     for p in m.graph.active.drift_net.parameters():
         torch.nn.init.zeros_(p)
 
+    _acting(m)
     x0, s0 = _init_state(scale=0.01)
     _, _, tr = rollout(m, x0, s0, steps=20, base_seed=1)
 
@@ -695,6 +709,47 @@ def test_c3_no_consecutive_freeze():
     assert not res_t1.triggered                                # …so no consecutive freeze
 
 
+def test_c3_nonnormal_covariance_lift():
+    """Theorem C3 extends to NON-NORMAL A — the alignment hypothesis L1 is removable.
+
+    The aligned L2 proof gets σ⁺ ≥ √(m(d−m))/d·b − aμ via the law of total variance.
+    The SAME bound holds for ANY rank-m orthogonal projector via the reverse triangle
+    inequality in Frobenius norm: ‖Σ⁺−μ⁺I‖_F ≥ b‖P−(m/d)I‖_F − ‖Σ−μI‖_F, with no
+    alignment — the misalignment penalty tr((Σ−μI)P) ≤ ‖Σ−μI‖_F·‖P‖_F = a·μ·√(dm) is
+    bounded by a(Σ), which cond_flat forces below ε_a. So the floored bump breaks
+    cond_flat for non-normal A too, even when Σ's eigenbasis is ADVERSARIALLY
+    misaligned (Σ's smallest eigendirections forced onto the bump basis — least
+    Frobenius gain). This closes the covariance-leg half of [#768]."""
+    detector = SemanticCollapseOperator()
+    op = AntiCollapseOperator(detector=detector, strength=0.5)
+    eps_a = detector.anisotropy_eps
+    g = torch.Generator().manual_seed(20260626)
+
+    for d in (4, 5, 6, 8):
+        # genuinely non-normal A: rank-deficient symmetric part + nonzero skew part
+        Q, _ = torch.linalg.qr(torch.randn(d, d, generator=g))
+        lam = torch.zeros(d); lam[0] = 0.7                      # one active mode ⇒ null > d/2
+        K = torch.randn(d, d, generator=g)
+        A = ((Q * lam) @ Q.T + (K - K.T) / (K - K.T).norm()).unsqueeze(0)
+        assert (A[0] @ A[0].T - A[0].T @ A[0]).norm() > 1e-6    # confirm A is non-normal
+
+        # adversarial worst case: build Σ so its m SMALLEST eigendirections ARE the bump
+        # basis (eig(A_s)), i.e. minimal tr(ΣP) — the hardest alignment for the lift.
+        P_basis = op._near_null_basis(A)                        # (d, m), from A_s
+        m_rank = P_basis.shape[1]
+        full = torch.randn(d, d, generator=g)
+        full[:, :m_rank] = P_basis
+        Qs, _ = torch.linalg.qr(full)
+        Qs[:, :m_rank] = P_basis                                # keep bump basis exact
+        ev = torch.sort(_near_isotropic_diag(d, 0.5 * eps_a, mu=2.0)).values  # ascending
+        sigma = ((Qs * ev) @ Qs.T).unsqueeze(0)                 # smallest λ on bump basis
+        assert detector._anisotropy(sigma) < eps_a             # cond_flat holds pre-bump
+
+        # tiny min-gate proximity — the regime where the floor (not strength·p) carries it
+        _, sig_extra = op.excite(torch.zeros(1, d), sigma, A, 0.01, torch.zeros(1, d))
+        assert detector._anisotropy(sigma + sig_extra) >= eps_a  # lifted — no alignment used
+
+
 # ── Σ₀-K1 component 8: collapse certificate + NIS canary, end-to-end (#852) ──
 
 def test_collapse_certificate_and_nis_canary_on_live_trajectory():
@@ -712,6 +767,7 @@ def test_collapse_certificate_and_nis_canary_on_live_trajectory():
     m.surprise_monitor = SurpriseMonitor(spook_sigmas=3.0, anti_collapse_trigger=True)
     m.anti_collapse_op = AntiCollapseOperator(strength=0.5)
     m.collapse_op = SemanticCollapseOperator()
+    _acting(m)
 
     x0, s0 = _init_state(scale=0.01)
     xf, sf, tr = rollout(m, x0, s0, steps=30, base_seed=1)
