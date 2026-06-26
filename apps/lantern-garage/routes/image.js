@@ -53,6 +53,26 @@ module.exports = function imageRoutes(req, res, url, deps) {
     return true;
   }
 
+  // POST /api/vision/analyze — answer about an uploaded image with a vision model (Claude
+  // primary, gpt-4o-mini fallback; key server-side). Used by the chat when an image is attached.
+  if (req.method === "POST" && url.pathname === "/api/vision/analyze") {
+    (async () => {
+      try {
+        const raw = await collectRequestBody(req, 16 * 1024 * 1024); // image base64 is large
+        const data = JSON.parse(raw || "{}");
+        const prompt = String(data.prompt || "").slice(0, MAX_PROMPT_LEN * 4);
+        const image = data.image || "";
+        if (!image) { sendJson(res, { ok: false, error: "image required" }, 400); return; }
+        const { analyzeImage } = require("../lib/vision");
+        const result = await analyzeImage(prompt, image, { mimeType: data.mimeType });
+        sendJson(res, result, result.ok ? 200 : 502);
+      } catch (err) {
+        sendJson(res, { ok: false, error: err.message }, 500);
+      }
+    })();
+    return true;
+  }
+
   if (req.method === "POST" && url.pathname === "/api/image/generate") {
     collectRequestBody(req, async (body) => {
       try {
