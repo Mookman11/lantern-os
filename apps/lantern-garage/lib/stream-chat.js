@@ -20,6 +20,7 @@ const { unifiedAgentStreamSSE } = require("./unified-agent");
 const sse = require("./stream-chat/sse");
 const { parseStreamChatRequest } = require("./stream-chat/request");
 const { scoreReplyCollapse, antiCollapseSignal } = require("./collapse-canary");
+const { scoreReplyGroundedness, ungroundedSignal } = require("./groundedness-canary");
 const { assembleSessionContext } = require("./session-summary-store");
 const { formatCSFContextForPrompt, saveDoorChoice } = require("./csf-memory");
 const { formatGrounding: oracleFormatGrounding } = require("./convergence-oracle");
@@ -203,6 +204,9 @@ async function handleStreamChat(req, url, res) {
   });
   let { message, user, requestedAgent, requestedProvider, history, mcpFlag, routeIntent } = parsed;
   const attachments = Array.isArray(parsed.attachments) ? parsed.attachments : [];
+  // "Ground this" retry (groundedness canary loop): force the web-search grounding
+  // branch even when the heuristic wouldn't have fired for this message.
+  const forceGround = !!parsed.forceGround;
 
   // Surface mode: dream-chat (default) or three-doors.
   // The game page declares itself via body.surface; bang commands can also flip it below.
@@ -742,10 +746,11 @@ async function handleStreamChat(req, url, res) {
   // when proximity~0 and the message wouldn't otherwise trigger grounding. Internal
   // monitors are provably blind to slow drift, so we ground on a timer regardless.
   const groundingTickDue = isGroundingDue(_lastGroundingTickMs);
-  if (!isKeystoneDebug && (needsGrounding(message) || groundingD >= 1.5 || groundingTickDue)) {
-    // On a mandatory tick fall back to the message itself when no query extracts, so
-    // the cadence still reaches external reality on otherwise un-groundable turns.
-    const searchQuery = extractSearchQuery(message) || (groundingTickDue ? String(message || "").slice(0, 120).trim() : "");
+  if (!isKeystoneDebug && (needsGrounding(message) || groundingD >= 1.5 || groundingTickDue || forceGround)) {
+    // On a mandatory tick — or an explicit "Ground this" retry — fall back to the
+    // message itself when no query extracts, so we still reach external reality on
+    // otherwise un-groundable turns.
+    const searchQuery = extractSearchQuery(message) || ((groundingTickDue || forceGround) ? String(message || "").slice(0, 120).trim() : "");
     if (searchQuery) {
       try {
         const searchResult = await withTimeout(webSearchMcp(searchQuery, gpol.maxResults), GROUNDING_TIMEOUT_MS, { success: false });
@@ -973,6 +978,29 @@ async function handleStreamChat(req, url, res) {
             `[canary_collapse] proximity=${canary.proximity} action=${sig.action} ` +
             `source=${source} provider=${signature.provider} ` +
             `signals=${JSON.stringify(canary.signals)}`
+          );
+        }
+      }
+    } catch { /* canary must never break a reply */ }
+    // ── Σ₀ groundedness canary (42-state guardrail) ─────────────────────────
+    // The collapse canary above catches textual *degeneration*. It cannot see the
+    // other Σ₀ failure mode (SIGMA0-COLLAPSE-CERTIFICATE §2, the "42-state"): a
+    // fluent, non-repeating reply that asserts confident claims with no external
+    // anchor — internally coherent, externally adrift. Score that axis here, where
+    // the upstream groundingContext is already in scope, and stamp the risk onto the
+    // done signature so a confident-but-ungrounded reply can't pass as healthy.
+    // Passive observer: advisory only, never blocks a reply.
+    try {
+      if (fullReply) {
+        const g = scoreReplyGroundedness(fullReply, { groundingContext });
+        signature.sigma0_grounding = { risk: g.risk, anchored: g.anchored };
+        if (g.ungrounded) {
+          signature.ungrounded = true;
+          const usig = ungroundedSignal(g);
+          signature.ungroundedSignal = usig;
+          console.warn(
+            `[canary_ungrounded] risk=${g.risk} source=${source} ` +
+            `provider=${signature.provider} signals=${JSON.stringify(g.signals)}`
           );
         }
       }
