@@ -348,12 +348,13 @@ async function handleStreamChat(req, url, res) {
           recordDistillationPair,
         } = require("./keystone-escalation");
         const runId = `kernel-${Date.now()}`;
-        // #1197 verify-gated local-first: run Ouro(local) → … → Claude and escalate
-        // when the local result isn't VERIFIED (tests pass), not when the local model
-        // merely "returns something" (#1167). Enabled by rolloverMode=default or the
-        // KEYSTONE_LOCAL_FIRST opt-in; kept off by default while the local student is
-        // a 1.4B (flip on once a stronger student lands — see #1199). Shadow stays Claude-only.
-        const localFirst = rolloverMode === "default" || process.env.KEYSTONE_LOCAL_FIRST === "1";
+        // Policy (#1207): cloud is the reasoning brain; the local best-in-slot coder
+        // (e.g. Qwen2.5-Coder-7B) handles CODING/TOOLS first to save cloud tokens, with
+        // #1197 verify-gated escalation to the cloud teacher when the local result isn't
+        // VERIFIED (tests pass) — not when it merely "returns something" (#1167). So the
+        // interactive coding path is local-first BY DEFAULT now; disable with
+        // KEYSTONE_LOCAL_FIRST=0 (e.g. when no capable local coder is served).
+        const localFirst = rolloverMode === "default" || process.env.KEYSTONE_LOCAL_FIRST !== "0";
         const providers = localFirst
           ? kernelEscalationChain()
           : [{ provider, model: kernelModel || "claude-opus-4-8" }];
