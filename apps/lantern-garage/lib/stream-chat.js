@@ -1632,7 +1632,7 @@ async function handleStreamChat(req, url, res) {
         const tools = toolRunner.geminiTools({ operator });
         if (tools[0] && tools[0].functionDeclarations.length) {
           const geminiModelName = modelFor("gemini");
-          const generationConfig = { maxOutputTokens: isRpMode ? 1536 : 1024, temperature: isRpMode ? 0.88 : 0.7 };
+          const generationConfig = { maxOutputTokens: isRpMode ? 2048 : 4096, temperature: isRpMode ? 0.88 : 0.7 }; // #1210: room for multi-call tool reasoning + answer
           const contents = [
             ...compacted.map((h) => ({ role: h.role === "assistant" ? "model" : "user", parts: [{ text: h.text }] })),
             { role: "user", parts: [{ text: message }] },
@@ -1820,7 +1820,7 @@ async function handleStreamChat(req, url, res) {
             for (let iter = 0; iter < MAX_TOOL_ITERS; iter++) {
               const { assistantContent, toolUses, stopReason } = await anthropicToolTurn({
                 anthropicKey, model: claudeModel, system, messages: convo, tools,
-                maxTokens: isRpMode ? 1536 : 1024,
+                maxTokens: isRpMode ? 2048 : 4096, // #1210: room for multi-call tool reasoning + answer
                 onToken: (t) => { fullReply += t; sendToken(t); },
               });
               if (!toolUses.length || stopReason !== "tool_use") break; // model gave its answer
