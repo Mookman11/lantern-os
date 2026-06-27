@@ -192,6 +192,12 @@ def main():
     ap.add_argument("--full", action="store_true", help="run all 164")
     ap.add_argument("--max-new", type=int, default=300)
     ap.add_argument("--ts", default=str(int(time.time())))
+    # Phase 1 (#1292): Ouro recurrence-depth control. exit_at_step forces exit at a
+    # given UT step (1..total_ut_steps=4); weighted-exit averages logits across all
+    # steps by exit probability. Default (None) = the model's shipped behavior.
+    ap.add_argument("--exit-at-step", type=int, default=None, help="force Ouro UT exit at this step (1-4)")
+    ap.add_argument("--weighted-exit", action="store_true", help="average logits across UT steps by exit prob")
+    ap.add_argument("--odd-only", action="store_true", help="eval only odd-indexed problems (held-out when even were self-studied)")
     a = ap.parse_args()
 
     # datasets must be imported before torch on Windows to avoid pyarrow/CUDA DLL conflict
@@ -220,9 +226,21 @@ def main():
     os.makedirs(out_dir, exist_ok=True)
     detail_path = os.path.join(out_dir, f"{a.label}-{a.ts}.jsonl")
 
+    # Phase 1 (#1292): Ouro recurrence-depth kwargs propagate through generate()->forward().
+    depth_kwargs = {}
+    if a.exit_at_step is not None:
+        depth_kwargs["exit_at_step"] = a.exit_at_step
+    if a.weighted_exit:
+        depth_kwargs["use_weighted_exit"] = True
+    if depth_kwargs:
+        print(f"recurrence-depth control: {depth_kwargs}", flush=True)
+
+    # --odd-only: held-out problems when even-indexed were used as self-study (#1292 Phase 0)
+    indices = [i for i in range(n) if (not a.odd_only or i % 2 == 1)]
+
     detail, n_ok, t0 = [], 0, time.time()
     print(f"\n{'task':<14} {'pass':<5} {'note'}", flush=True)
-    for i in range(n):
+    for i in indices:
         ex = ds[i]
         # canonical completion: feed the raw signature+docstring, let the model continue the code
         ids = tok(ex["prompt"], return_tensors="pt").input_ids.to(model.device)
@@ -234,7 +252,7 @@ def main():
             out = model.generate(ids, attention_mask=attn, max_new_tokens=a.max_new, do_sample=False,
                                  repetition_penalty=1.1, pad_token_id=tok.pad_token_id,
                                  eos_token_id=None,
-                                 stop_strings=STOP, tokenizer=tok)
+                                 stop_strings=STOP, tokenizer=tok, **depth_kwargs)
         # skip_special_tokens strips the leading endoftext separator token
         text = tok.decode(out[0, ids.shape[1]:], skip_special_tokens=True)
         # strip chat-role prefix emitted by models overtrained on conversation data
@@ -263,21 +281,23 @@ def main():
                      "exec-error" if key.startswith("Traceback") or key.startswith("runner") else \
                      "other"
             note_counts[bucket] = note_counts.get(bucket, 0) + 1
+    n_eval = len(indices)  # actual problems evaluated (may be a held-out subset, #1292)
     summary = {
         # reconciled schema — "benchmark" key shared across all eval scripts (#776)
         "benchmark": "humaneval",
         "ts": a.ts, "label": a.label, "engine": "ouro-fast-cached",
         "base_model": a.base_model, "adapter": bool(a.adapter),
-        "n": n, "subset": (not a.full), "pass@1": round(n_ok / n, 3) if n else 0.0,
-        "accuracy": round(n_ok / n, 3) if n else 0.0,  # alias for cross-benchmark summary
-        "passed": n_ok, "wall_s": round(dt, 1), "sec_per_problem": round(dt / n, 1) if n else 0.0,
+        "n": n_eval, "subset": (not a.full), "pass@1": round(n_ok / n_eval, 3) if n_eval else 0.0,
+        "accuracy": round(n_ok / n_eval, 3) if n_eval else 0.0,  # alias for cross-benchmark summary
+        "passed": n_ok, "wall_s": round(dt, 1), "sec_per_problem": round(dt / n_eval, 1) if n_eval else 0.0,
         "failure_breakdown": note_counts,  # #774/fix-7: no-parse/timeout/assert/exec-error counts
+        "exit_at_step": a.exit_at_step, "weighted_exit": a.weighted_exit, "odd_only": a.odd_only,
     }
     # detail_path already written incrementally above; nothing more to write for per-problem rows
     with open(os.path.join(ROOT, "data", "eval", "leaderboard.jsonl"), "a", encoding="utf-8") as f:
         f.write(json.dumps(summary, ensure_ascii=False) + "\n")
-    tag = "HumanEval" + ("" if a.full else f"[first {n}]")
-    print(f"\nVERDICT {tag} pass@1 = {summary['pass@1']*100:.1f}%  ({n_ok}/{n})  "
+    tag = "HumanEval" + ("-odd" if a.odd_only else "") + ("" if a.full else f"[first {n}]")
+    print(f"\nVERDICT {tag} pass@1 = {summary['pass@1']*100:.1f}%  ({n_ok}/{n_eval})  "
           f"{summary['sec_per_problem']}s/problem", flush=True)
     print(json.dumps(summary))
 
