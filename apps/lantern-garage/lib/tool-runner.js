@@ -28,9 +28,10 @@ const http = require("http");
 const https = require("https");
 const { tokenizeCommand, safeExec } = require("./safe-exec");
 const { resolveCommand } = require("./command-allowlist");
-const { webSearchMcp } = require("./web-search-client");
+const { webSearch } = require("./web-search-client");
 const { workspaceWrite, workspaceRead, workspaceList, getWorkspaceRoot } = require("./user-workspace");
 const { createDocument, listTemplates } = require("./doc-generator");
+const toolLogger = require("./tool-logger");
 
 const REPO = path.resolve(__dirname, "..", "..", "..");
 // User workspace: outside the repo, for user artifacts (resumes, exports, generated docs).
@@ -88,18 +89,42 @@ function _runShell(command) {
 
 // SSRF guard for web_fetch: block loopback / private / link-local hosts so the
 // model can't poke internal services (the local server, cloud metadata, LAN).
-function _blockedHost(hostname) {
-  const h = String(hostname || "").toLowerCase();
-  if (!h || h === "localhost" || h.endsWith(".localhost") || h.endsWith(".local") || h.endsWith(".internal")) return true;
-  const m = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (m) {
-    const [a, b] = [Number(m[1]), Number(m[2])];
-    if (a === 127 || a === 0 || a === 10) return true;              // loopback / this-host / private-A
-    if (a === 169 && b === 254) return true;                        // link-local + cloud metadata
-    if (a === 192 && b === 168) return true;                        // private-C
-    if (a === 172 && b >= 16 && b <= 31) return true;               // private-B
-  }
+// Checks the hostname string AND (in _httpGet) the DNS-resolved address, so a
+// public domain that resolves to a private IP (DNS rebinding) is also blocked. (#1213)
+function _ipv4Blocked(a, b) {
+  if (a === 127 || a === 0 || a === 10) return true;               // loopback / this-host / private-A
+  if (a === 169 && b === 254) return true;                         // link-local + cloud metadata (169.254.169.254)
+  if (a === 192 && b === 168) return true;                         // private-C
+  if (a === 172 && b >= 16 && b <= 31) return true;                // private-B
+  if (a === 100 && b >= 64 && b <= 127) return true;               // CGNAT 100.64/10
   return false;
+}
+// Parse alternate IPv4 encodings (decimal 2130706433, hex 0x7f000001) to dotted form.
+function _numericToIpv4(h) {
+  let n = null;
+  if (/^\d+$/.test(h)) n = Number(h);
+  else if (/^0x[0-9a-f]+$/.test(h)) n = parseInt(h, 16);
+  if (n === null || !Number.isFinite(n) || n < 0 || n > 0xffffffff) return null;
+  return `${(n >>> 24) & 255}.${(n >>> 16) & 255}.${(n >>> 8) & 255}.${n & 255}`;
+}
+// True if a literal IP (v4, v6, v4-mapped, or alt-encoded) is loopback/private/link-local.
+function _blockedIp(ip) {
+  let s = String(ip || "").toLowerCase().replace(/^\[|\]$/g, "");
+  const v4 = s.match(/(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/); // also catches ::ffff:127.0.0.1
+  if (v4) return _ipv4Blocked(Number(v4[1]), Number(v4[2]));
+  if (s.includes(":")) {                                            // IPv6
+    if (s === "::1" || s === "::") return true;                     // loopback / unspecified
+    if (/^(fc|fd)/.test(s)) return true;                            // unique-local fc00::/7
+    if (/^fe[89ab]/.test(s)) return true;                           // link-local fe80::/10
+    return false;
+  }
+  const dotted = _numericToIpv4(s);
+  return dotted ? _ipv4Blocked(Number(dotted.split(".")[0]), Number(dotted.split(".")[1])) : false;
+}
+function _blockedHost(hostname) {
+  const h = String(hostname || "").toLowerCase().replace(/^\[|\]$/g, "");
+  if (!h || h === "localhost" || h.endsWith(".localhost") || h.endsWith(".local") || h.endsWith(".internal")) return true;
+  return _blockedIp(h);
 }
 
 // Minimal HTTP(S) GET with redirect handling + timeout, for web_fetch.
@@ -113,24 +138,32 @@ function _httpGet(url, redirects = 3) {
     if (_blockedHost(u.hostname)) {
       return reject(_codedError("host blocked (loopback/private/metadata)", "private_host_blocked"));
     }
-    const lib = u.protocol === "https:" ? https : http;
-    const req = lib.get(u, {
-      timeout: 12000,
-      headers: { "User-Agent": "KeystoneOS/1.0 (+web_fetch tool)", "Accept": "text/html,text/plain,*/*" },
-    }, (res) => {
-      const code = res.statusCode || 0;
-      if (code >= 300 && code < 400 && res.headers.location && redirects > 0) {
-        res.resume();
-        return resolve(_httpGet(new URL(res.headers.location, u).toString(), redirects - 1));
+    // Defeat DNS rebinding: also reject if the hostname RESOLVES to a private
+    // address. (Residual TOCTOU — Node re-resolves on connect — is acceptable;
+    // this blocks the common rebinding/misconfig + all literal-encoding bypasses.)
+    require("dns").lookup(u.hostname, { all: true, verbatim: true }, (dnsErr, addrs) => {
+      if (!dnsErr && Array.isArray(addrs) && addrs.some((a) => _blockedIp(a.address))) {
+        return reject(_codedError("host resolves to a private address", "private_host_blocked"));
       }
-      if (code >= 400) { res.resume(); return reject(new Error(`http ${code}`)); }
-      let data = "";
-      res.setEncoding("utf8");
-      res.on("data", (c) => { data += c; if (data.length > 600_000) { req.destroy(); } });
-      res.on("end", () => resolve(data));
+      const lib = u.protocol === "https:" ? https : http;
+      const req = lib.get(u, {
+        timeout: 12000,
+        headers: { "User-Agent": "KeystoneOS/1.0 (+web_fetch tool)", "Accept": "text/html,text/plain,*/*" },
+      }, (res) => {
+        const code = res.statusCode || 0;
+        if (code >= 300 && code < 400 && res.headers.location && redirects > 0) {
+          res.resume();
+          return resolve(_httpGet(new URL(res.headers.location, u).toString(), redirects - 1));
+        }
+        if (code >= 400) { res.resume(); return reject(new Error(`http ${code}`)); }
+        let data = "";
+        res.setEncoding("utf8");
+        res.on("data", (c) => { data += c; if (data.length > 600_000) { req.destroy(); } });
+        res.on("end", () => resolve(data));
+      });
+      req.on("error", reject);
+      req.on("timeout", () => { req.destroy(new Error("fetch timeout")); });
     });
-    req.on("error", reject);
-    req.on("timeout", () => { req.destroy(new Error("fetch timeout")); });
   });
 }
 
@@ -230,6 +263,7 @@ const REGISTRY = {
   // ── ADR-0008 capability tools ───────────────────────────────────────────────
   web_search: {
     policy: "read",
+    guest_safe: true, // web-only: safe to advertise/run for non-operators on the public server (#1213)
     desc: "Search the web for real-time information. Returns top results with title, URL, and snippet. Each result is cited per the Σ₀ External Reality Rule.",
     schema: {
       type: "object",
@@ -243,18 +277,17 @@ const REGISTRY = {
       const query = String(i.query || "").trim();
       if (!query) return "[error: query is required]";
       const maxResults = Math.max(1, Math.min(10, parseInt(i.max_results, 10) || 5));
-      const raw = await webSearchMcp(query, maxResults);
-      // Unwrap MCP envelope {content:[{type:'text',text:'<json>'}]} or a direct {results}.
-      let payload = raw;
-      if (raw && Array.isArray(raw.content)) {
-        const t = raw.content.find((c) => c && c.type === "text");
-        try { payload = t ? JSON.parse(t.text) : raw; } catch { payload = raw; }
+      // webSearch() bounds the MCP call (timeout + 1 retry) and falls back to a
+      // keyless direct DuckDuckGo search, so a slow/down MCP path doesn't make the
+      // tool time out and the model silently answer from memory (#1212).
+      const payload = await webSearch(query, maxResults);
+      if (!payload.success) {
+        // Explicit error so the model reports "search unavailable" instead of guessing.
+        return `[web_search error: ${payload.error || "search failed"} — search is unavailable right now; say so rather than answering from memory]`;
       }
-      if (raw && raw.isError) return `[web_search error: ${payload && payload.error ? payload.error : "search failed"}]`;
-      if (payload && payload.success === false) return `[web_search error: ${payload.error || "search failed"}]`;
-      const results = (payload && payload.results) || [];
+      const results = payload.results || [];
       if (!results.length) return `[no results for: ${query}]`;
-      const lines = [`web_search("${query}") — ${results.length} result(s):\n`];
+      const lines = [`web_search("${query}") — ${results.length} result(s)${payload.source && payload.source !== "mcp" ? ` (${payload.source} fallback)` : ""}:\n`];
       results.forEach((r, idx) => {
         lines.push(`[${idx + 1}] ${r.title || "(untitled)"}`);
         lines.push(`    url: ${r.url || ""}`);
@@ -266,6 +299,7 @@ const REGISTRY = {
 
   web_fetch: {
     policy: "read",
+    guest_safe: true, // web-only (SSRF-guarded): safe for non-operators on the public server (#1213)
     desc: "Fetch the text content of a public URL. HTML is stripped to readable plain text. Use for reading web pages, documentation, or articles. No internal/private IPs allowed.",
     schema: {
       type: "object",
@@ -672,32 +706,53 @@ function renderToolPreamble() {
  * @returns {{ok:boolean, result?:string, reason?:string, error?:string, policy?:string}}
  */
 async function runTool(name, input, ctx = {}) {
+  const startTime = Date.now();
   const entry = REGISTRY[name];
+
   if (!entry) {
-    return _outcome("unavailable", name, {
+    const result = _outcome("unavailable", name, {
       reason_code: "unknown_tool",
       error: `unknown tool '${name}' (available: ${TOOL_NAMES.join(", ")})`,
     });
+    // Log the unavailable tool
+    await _logToolExecution(name, input, "unavailable", "unknown_tool", startTime, ctx);
+    return result;
   }
+
   if (ctx.executionEnabled === false) {
-    return _outcome("unavailable", name, {
+    const result = _outcome("unavailable", name, {
       reason_code: "chat_tool_exec_disabled",
       policy: entry.policy,
       error: "shared tool execution is disabled",
     });
+    await _logToolExecution(name, input, "unavailable", "chat_tool_exec_disabled", startTime, ctx);
+    return result;
   }
-  if (entry.policy !== "read" && !ctx.operator) {
-    return _outcome("denied", name, {
+
+  // Non-operators (e.g. public-server guests) may run ONLY guest_safe tools —
+  // the web-only set. This is the enforcement boundary behind the advertised-set
+  // filter: even a crafted call to a read-policy filesystem tool (Read/Grep/
+  // workspace_read/…) is denied for guests, so the public chat can't enumerate or
+  // read local files. Operators (loopback/admin) are unrestricted. (#1213)
+  if (!ctx.operator && entry.guest_safe !== true) {
+    const result = _outcome("denied", name, {
       reason_code: "operator_required",
       policy: entry.policy,
       error: `'${name}' (${entry.policy}) requires operator access`,
     });
+    await _logToolExecution(name, input, "denied", "operator_required", startTime, ctx);
+    return result;
   }
+
   try {
     // run() may be sync (returns a string) or async (returns a Promise); await covers both.
     let out = String((await entry.run(input || {})) || "");
+    const outputLength = out.length;
     if (out.length > MAX_OUT) out = out.slice(0, MAX_OUT) + "\n…[truncated]";
-    return _outcome("executed", name, { result: out, policy: entry.policy });
+
+    const result = _outcome("executed", name, { result: out, policy: entry.policy });
+    await _logToolExecution(name, input, "executed", null, startTime, ctx, outputLength);
+    return result;
   } catch (e) {
     const reasonCode = e.reason || "execution_error";
     const status = reasonCode === "unsafe_path" ||
@@ -705,23 +760,26 @@ async function runTool(name, input, ctx = {}) {
       reasonCode === "private_host_blocked"
       ? "blocked"
       : "unavailable";
-    return _outcome(status, name, {
+    const result = _outcome(status, name, {
       reason_code: reasonCode,
       policy: entry.policy,
       error: String(e.stderr || e.message || e).slice(0, MAX_OUT),
     });
+    await _logToolExecution(name, input, status, reasonCode, startTime, ctx, null, e.message);
+    return result;
   }
 }
 
 // ── native Anthropic tool schemas (same single source of truth as the preamble) ──
 // Renders the registry as `tools` for the Messages API. Cloud models (Haiku/Sonnet)
 // emit native `tool_use` blocks, so they don't need the free-text preamble — they get
-// the exact same name + input_schema. When !operator, advertise ONLY read-policy tools
-// so the model never emits a shell/mutating call the policy would reject (runTool still
-// enforces the policy regardless — this just keeps the advertised surface honest).
+// the exact same name + input_schema. When !operator, advertise ONLY guest_safe
+// (web-only) tools so a public-server guest's model never even sees the filesystem/
+// shell/mutating tools (runTool still enforces guest_safe regardless — this just keeps
+// the advertised surface honest). (#1213)
 function anthropicTools({ operator = false } = {}) {
   return TOOL_NAMES
-    .filter((name) => operator || REGISTRY[name].policy === "read")
+    .filter((name) => operator || REGISTRY[name].guest_safe === true)
     .map((name) => ({
       name,
       description: REGISTRY[name].desc,
@@ -735,7 +793,7 @@ function anthropicTools({ operator = false } = {}) {
 // matches anthropicTools — runTool still enforces policy regardless.
 function openaiTools({ operator = false } = {}) {
   return TOOL_NAMES
-    .filter((name) => operator || REGISTRY[name].policy === "read")
+    .filter((name) => operator || REGISTRY[name].guest_safe === true)
     .map((name) => ({
       type: "function",
       function: {
@@ -762,7 +820,7 @@ function geminiTools({ operator = false } = {}) {
     return rest;
   };
   const functionDeclarations = TOOL_NAMES
-    .filter((name) => operator || REGISTRY[name].policy === "read")
+    .filter((name) => operator || REGISTRY[name].guest_safe === true)
     .map((name) => ({
       name,
       description: REGISTRY[name].desc,
@@ -815,6 +873,28 @@ function _loadsLenient(raw) {
   r = r.replace(/\\(?!["\\/bfnrtu])/g, "\\\\");         // invalid escapes -> literal backslash
   try { return JSON.parse(r); } catch {}
   return null;
+}
+
+async function _logToolExecution(name, input, status, errorCode, startTime, ctx = {}, outputLength = null, errorMessage = null) {
+  const duration = Date.now() - startTime;
+  try {
+    await toolLogger.log({
+      tool: name,
+      input,
+      status,
+      error_code: errorCode,
+      error_message: errorMessage,
+      output_length: outputLength,
+      duration_ms: duration,
+      operator: ctx.operator ?? false,
+      provider: ctx.provider || null,
+      session_id: ctx.sessionId || null,
+      user: ctx.user || null,
+    });
+  } catch (err) {
+    // Logging errors should not crash tool execution
+    console.warn(`[ToolRunner] Failed to log ${name}: ${err.message}`);
+  }
 }
 
 module.exports = {
