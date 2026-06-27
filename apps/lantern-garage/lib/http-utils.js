@@ -14,7 +14,7 @@ function sendJson(res, data, status = 200) {
   res.end(body);
 }
 
-function sendFile(res, filePath) {
+function sendFile(res, filePath, req) {
   const ext = path.extname(filePath).toLowerCase();
   const type = {
     ".html": "text/html; charset=utf-8",
@@ -44,20 +44,55 @@ function sendFile(res, filePath) {
     ".webm": "video/webm",
   }[ext] || "application/octet-stream";
 
-  fs.readFile(filePath, (error, data) => {
-    if (error) {
+  fs.stat(filePath, (error, stat) => {
+    if (error || !stat.isFile()) {
       sendJson(res, { error: "not_found" }, 404);
       return;
     }
-    res.writeHead(200, {
+    const total = stat.size;
+    // Accept-Ranges + Content-Length let <audio>/<video> seek (a media element
+    // treats a resource with no byte-range support as non-seekable). Without a
+    // Range request this streams the whole file, exactly as before — just with
+    // a known length instead of chunked.
+    const headers = {
       "Content-Type": type,
       "Cache-Control": "no-store",
       "X-Content-Type-Options": "nosniff",
       "Referrer-Policy": "strict-origin-when-cross-origin",
       "X-Frame-Options": "DENY",
       "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
-    });
-    res.end(data);
+      "Accept-Ranges": "bytes",
+    };
+
+    if (req && req.method === "HEAD") {
+      res.writeHead(200, { ...headers, "Content-Length": total });
+      res.end();
+      return;
+    }
+
+    const range = req && req.headers && req.headers.range;
+    if (range) {
+      const m = /^bytes=(\d*)-(\d*)$/.exec(String(range).trim());
+      let start = m && m[1] ? parseInt(m[1], 10) : 0;
+      let end = m && m[2] ? parseInt(m[2], 10) : total - 1;
+      if (!Number.isFinite(start)) start = 0;
+      if (!Number.isFinite(end) || end >= total) end = total - 1;
+      if (start > end || start >= total) {
+        res.writeHead(416, { "Content-Range": `bytes */${total}` });
+        res.end();
+        return;
+      }
+      res.writeHead(206, { ...headers, "Content-Range": `bytes ${start}-${end}/${total}`, "Content-Length": end - start + 1 });
+      const stream = fs.createReadStream(filePath, { start, end });
+      stream.on("error", () => res.destroy());
+      stream.pipe(res);
+      return;
+    }
+
+    res.writeHead(200, { ...headers, "Content-Length": total });
+    const stream = fs.createReadStream(filePath);
+    stream.on("error", () => res.destroy());
+    stream.pipe(res);
   });
 }
 

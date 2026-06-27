@@ -234,6 +234,19 @@
       "why": "Entered the US public domain on Jan 1, 2024 — streamable in-page from the Internet Archive",
       "evidence_source": "archive.org · steamboat-willie-1928-by-walt-disney_202407 (Public Domain, 2024)",
       "embed": { "provider": "archive.org", "src": "https://archive.org/embed/steamboat-willie-1928-by-walt-disney_202407", "height": 420, "interactive": true }
+    },
+    {
+      "slug": "keystone-radio",
+      "title": "Keystone Radio",
+      "kind": "listen",
+      "url": "/fallout-radio.html",
+      "source": "Keystone Radio",
+      "published": "2026-06-27",
+      "topics": ["listen", "radio", "lore"],
+      "lore": "A retro Pip-Boy tuner spinning public-domain 1940s radio — Ink Spots, Bing Crosby, Ella, the songs that play at the end of the world. Press play; tune the dial.",
+      "why": "Keystone's own retro player — six public-domain Fallout-era recordings, served locally",
+      "evidence_source": "Keystone (local) · /fallout-radio.html · public-domain 78s",
+      "embed": { "provider": "local", "src": "/fallout-radio.html", "height": 660, "interactive": true }
     }
   ]
 }
