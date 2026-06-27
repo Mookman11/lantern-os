@@ -117,6 +117,45 @@
       "why": "Public-domain jazz, streamable in-page from the Internet Archive",
       "evidence_source": "archive.org · JazzClassics (Public Domain)",
       "embed": { "provider": "archive.org", "src": "https://archive.org/embed/JazzClassics", "height": 240, "interactive": true }
+    },
+    {
+      "slug": "sonic-1",
+      "title": "Sonic the Hedgehog (1991)",
+      "kind": "game",
+      "url": "https://archive.org/details/Sonic_The_Hedgehog_W_REV01_h3C",
+      "source": "Internet Archive",
+      "published": "1991-06-23",
+      "topics": ["game", "lore", "genesis"],
+      "lore": "Sega's answer to Mario: a blue hedgehog with attitude and somewhere to be. Built to show off what the Genesis could do at full speed in 1991 — press Enter, then arrows + A/S/D.",
+      "why": "Sega Genesis emulator, playable in-browser at the Internet Archive",
+      "evidence_source": "archive.org · Sonic_The_Hedgehog_W_REV01_h3C (emulator: genesis)",
+      "embed": { "provider": "archive.org", "src": "https://archive.org/embed/Sonic_The_Hedgehog_W_REV01_h3C", "height": 480, "interactive": true }
+    },
+    {
+      "slug": "mario-bros",
+      "title": "Mario Bros. (1983, NES port)",
+      "kind": "game",
+      "url": "https://archive.org/details/mariobros_nes",
+      "source": "Internet Archive",
+      "published": "1983-01-01",
+      "topics": ["game", "lore", "nintendo"],
+      "lore": "The 1983 game that first put 'Mario' in a title and handed him his brother Luigi. The original arcade cabinet isn't on the open internet, so this is the faithful NES port — same pipes, same POW block.",
+      "why": "Playable NES emulator at the Internet Archive (arcade original is not openly available)",
+      "evidence_source": "archive.org · mariobros_nes (emulator: nes; arcade original unavailable)",
+      "embed": { "provider": "archive.org", "src": "https://archive.org/embed/mariobros_nes", "height": 480, "interactive": true }
+    },
+    {
+      "slug": "super-mario-land",
+      "title": "Super Mario Land (1989)",
+      "kind": "game",
+      "url": "https://archive.org/details/sml_gb_2a",
+      "source": "Internet Archive",
+      "published": "1989-04-21",
+      "topics": ["game", "lore", "gameboy"],
+      "lore": "Mario's first handheld outing — a small, strange kingdom called Sarasaland that shipped alongside the original Game Boy and sold eighteen million copies on the strength of curiosity alone.",
+      "why": "Game Boy emulator, playable in-browser at the Internet Archive",
+      "evidence_source": "archive.org · sml_gb_2a (emulator: gbcolor)",
+      "embed": { "provider": "archive.org", "src": "https://archive.org/embed/sml_gb_2a", "height": 480, "interactive": true }
     }
   ]
 }
