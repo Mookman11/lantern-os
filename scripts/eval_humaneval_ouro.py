@@ -237,6 +237,8 @@ def main():
                                  stop_strings=STOP, tokenizer=tok)
         # skip_special_tokens strips the leading endoftext separator token
         text = tok.decode(out[0, ids.shape[1]:], skip_special_tokens=True)
+        # strip chat-role prefix emitted by models overtrained on conversation data
+        text = re.sub(r'^assistant\s*[:\n]\s*', '', text, flags=re.IGNORECASE)
         cand = make_candidate(text, ex["entry_point"], ex["prompt"])
         ok, note = run_test(cand, ex["test"], ex["entry_point"])
         n_ok += int(ok)
