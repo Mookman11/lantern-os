@@ -203,3 +203,8 @@ module.exports = async function discoverFeedsRoute(req, res, url, deps) {
 };
 
 module.exports.load = load;
+// Exported for unit tests (pure, network-free): feed parsing + excerpt/image extraction.
+module.exports.parseFeed = parseFeed;
+module.exports.htmlToText = htmlToText;
+module.exports.clip = clip;
+module.exports.firstImage = firstImage;
