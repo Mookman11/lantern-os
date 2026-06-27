@@ -1,0 +1,70 @@
+{
+  "_comment": "Curated embed seed for the Explore feed (Observe stage). Each entry becomes one full-width 'embed' card rendered as a lazy iframe. Sourced from open archives (Internet Archive / Musopen, public-domain or freely-streamable) and local Keystone games. Every card carries [why, source] per the Σ₀ Verify rule. To add/replace content, edit this file — no code change. Per-card key = 'source:embed:<slug>' so each panel earns or loses its slot independently (engagement or discarded). Verified live 2026-06-27.",
+  "embeds": [
+    {
+      "slug": "t-rex",
+      "title": "T-Rex Runner",
+      "kind": "game",
+      "url": "/t-rex/index.html",
+      "source": "Keystone Arcade",
+      "published": "2026-06-27",
+      "topics": ["game", "play", "offline"],
+      "lore": "A dinosaur outruns the void of a dead connection. The original offline myth — born the moment the network dies.",
+      "why": "The Chrome offline classic, served locally — no network required",
+      "evidence_source": "wayou/t-rex-runner (BSD) · local /t-rex/",
+      "embed": { "provider": "local", "src": "/t-rex/index.html", "height": 320, "interactive": true }
+    },
+    {
+      "slug": "prince-of-persia",
+      "title": "Prince of Persia (1990)",
+      "kind": "game",
+      "url": "https://archive.org/details/msdos_Prince_of_Persia_1990",
+      "source": "Internet Archive",
+      "published": "1990-01-01",
+      "topics": ["game", "lore", "dos"],
+      "lore": "Jordan Mechner rotoscoped his brother's run frame-by-frame into a desert palace. You have sixty minutes to cross it and reach her.",
+      "why": "Emulated in-browser by the Internet Archive's MS-DOS library",
+      "evidence_source": "archive.org · msdos_Prince_of_Persia_1990",
+      "embed": { "provider": "archive.org", "src": "https://archive.org/embed/msdos_Prince_of_Persia_1990", "height": 480, "interactive": true }
+    },
+    {
+      "slug": "oregon-trail",
+      "title": "The Oregon Trail (1990)",
+      "kind": "game",
+      "url": "https://archive.org/details/msdos_Oregon_Trail_The_1990",
+      "source": "Internet Archive",
+      "published": "1990-01-01",
+      "topics": ["game", "lore", "dos"],
+      "lore": "Ford the river or caulk the wagon. A whole generation learned mortality to a green CRT glow — 'you have died of dysentery.'",
+      "why": "Emulated in-browser by the Internet Archive's MS-DOS library",
+      "evidence_source": "archive.org · msdos_Oregon_Trail_The_1990",
+      "embed": { "provider": "archive.org", "src": "https://archive.org/embed/msdos_Oregon_Trail_The_1990", "height": 480, "interactive": true }
+    },
+    {
+      "slug": "sinatra",
+      "title": "Frank Sinatra — Radio Years (1943–1964)",
+      "kind": "listen",
+      "url": "https://archive.org/details/FrankSinatraRadioCollectionPart2",
+      "source": "Internet Archive",
+      "published": "1964-01-01",
+      "topics": ["listen", "lore", "jazz"],
+      "lore": "218 radio broadcasts of The Voice, transmitted across two decades and now in the public domain. Put it on; let the room change.",
+      "why": "Public Domain Mark 1.0 — 218 streamable broadcasts",
+      "evidence_source": "archive.org · FrankSinatraRadioCollectionPart2 (Public Domain)",
+      "embed": { "provider": "archive.org", "src": "https://archive.org/embed/FrankSinatraRadioCollectionPart2", "height": 240, "interactive": true }
+    },
+    {
+      "slug": "mozart",
+      "title": "Mozart — Symphony No. 40 in G minor, K.550",
+      "kind": "listen",
+      "url": "https://archive.org/details/Mozart_Symphony_40",
+      "source": "Internet Archive",
+      "published": "2001-12-02",
+      "topics": ["listen", "lore", "classical"],
+      "lore": "The G-minor symphony — restless, modern before its time. Musopen recorded it copyright-free so it could play anywhere, forever.",
+      "why": "Musopen copyright-free recording (Columbia University Orchestra)",
+      "evidence_source": "archive.org · Mozart_Symphony_40 (Musopen)",
+      "embed": { "provider": "archive.org", "src": "https://archive.org/embed/Mozart_Symphony_40", "height": 240, "interactive": true }
+    }
+  ]
+}

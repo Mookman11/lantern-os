@@ -33,6 +33,7 @@ const { rankCandidates } = require("./model-leaderboard");
 const REPO_ROOT = path.resolve(__dirname, "../../..");
 const PCSF_FILE = path.join(REPO_ROOT, "data", "pcsf", "explore.pcsf.json");
 const KNOWLEDGE_META = path.join(REPO_ROOT, "data", "knowledge", "index.meta.json");
+const EMBEDS_FILE = path.join(REPO_ROOT, "data", "explore", "embeds.json");
 const REPO_BLOB = "https://github.com/alex-place/lantern-os/blob/master/";
 
 const PER_SOURCE_TIMEOUT_MS = 8000;
@@ -187,11 +188,53 @@ function docCards() {
     });
 }
 
+// Curated open-archive embeds (games + listening). Data-driven from
+// data/explore/embeds.json so adding content is a JSON edit, not a code change.
+// Cached like the other static reads — the seed only changes on deploy. Each
+// embed keeps its OWN leaderboard key ("source:embed:<slug>") so every panel
+// earns or loses its slot independently: engagement or discarded (#1217).
+let _embeds;
+function loadEmbedSeed() {
+  if (_embeds !== undefined) return _embeds;
+  try {
+    const raw = JSON.parse(fs.readFileSync(EMBEDS_FILE, "utf8"));
+    _embeds = Array.isArray(raw.embeds) ? raw.embeds : [];
+  } catch {
+    _embeds = [];
+  }
+  return _embeds;
+}
+
+function embedCards() {
+  return loadEmbedSeed()
+    .filter((e) => e && e.slug && e.embed && e.embed.src)
+    .map((e) => ({
+      id: "embed:" + e.slug,
+      type: "embed",
+      title: e.title || e.slug,
+      url: e.url || e.embed.src,
+      source: e.source || "Internet Archive",
+      published: e.published || null,
+      topics: Array.isArray(e.topics) ? e.topics : [],
+      evidence: { why: e.why || "", source: e.evidence_source || e.source || "open archive" },
+      embed: {
+        provider: e.embed.provider || "iframe",
+        src: e.embed.src,
+        height: Number(e.embed.height) || 360,
+        interactive: e.embed.interactive !== false,
+      },
+      lore: e.lore || "",
+      // Per-card key so each embed is scored on its own (not lumped by source).
+      key: "source:embed:" + e.slug,
+    }));
+}
+
 // ── Aggregate (Observe) ──────────────────────────────────────────────────────
 
 // Fan out to every producer; one source failing/timing out drops only its cards.
 async function aggregate() {
   const producers = [
+    ["embed", () => Promise.resolve(embedCards())],
     ["read", readCards],
     ["watch", watchCards],
     ["build", buildCards],
@@ -211,7 +254,9 @@ async function aggregate() {
       const dedupe = c.id || c.url;
       if (seen.has(dedupe)) continue;
       seen.add(dedupe);
-      cards.push({ ...c, key: keyForSource(c.source), publishedTs: publishedTs(c.published) });
+      // Respect a producer-set per-card key (embeds use "source:embed:<slug>");
+      // everything else falls through to the per-source key.
+      cards.push({ ...c, key: c.key || keyForSource(c.source), publishedTs: publishedTs(c.published) });
     }
   }
   return cards;

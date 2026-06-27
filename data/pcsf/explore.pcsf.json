@@ -14,6 +14,7 @@
   },
 
   "card_types": [
+    { "type": "embed",  "icon": "🕹️", "label": "Play",   "from": "data/explore/embeds.json — open-archive games + listening (Internet Archive / Musopen) rendered inline as iframes" },
     { "type": "read",   "icon": "📰", "label": "Read",   "from": "discover-feeds RSS + flourishing news" },
     { "type": "watch",  "icon": "🎬", "label": "Watch",  "from": "lanternYT channel videos" },
     { "type": "build",  "icon": "🛠️", "label": "Build",  "from": "GitHub releases + commits" },
@@ -22,6 +23,11 @@
   ],
 
   "sources": [
+    { "name": "Keystone Arcade","key": "source:embed:t-rex",     "type": "embed", "url": "/t-rex/index.html" },
+    { "name": "Internet Archive","key": "source:embed:prince-of-persia", "type": "embed", "url": "https://archive.org/details/msdos_Prince_of_Persia_1990" },
+    { "name": "Internet Archive","key": "source:embed:oregon-trail",     "type": "embed", "url": "https://archive.org/details/msdos_Oregon_Trail_The_1990" },
+    { "name": "Internet Archive","key": "source:embed:sinatra",   "type": "embed", "url": "https://archive.org/details/FrankSinatraRadioCollectionPart2" },
+    { "name": "Internet Archive","key": "source:embed:mozart",    "type": "embed", "url": "https://archive.org/details/Mozart_Symphony_40" },
     { "name": "Keystone Build", "key": "source:Keystone Build", "type": "build", "url": "https://github.com/alex-place/lantern-os" },
     { "name": "Simon Willison", "key": "source:Simon Willison", "type": "read",  "url": "https://simonwillison.net/" },
     { "name": "Hacker News",    "key": "source:Hacker News",    "type": "read",  "url": "https://news.ycombinator.com/" },
@@ -31,9 +37,14 @@
     { "name": "Knowledge Center","key": "source:Knowledge Center","type": "doc", "url": "/knowledgecenter.html" }
   ],
 
-  "topics": ["ai", "local-first", "building", "research", "world-model", "keystone"],
+  "topics": ["ai", "local-first", "building", "research", "world-model", "keystone", "game", "listen", "lore"],
 
   "default_priority": [
+    "source:embed:t-rex",
+    "source:embed:prince-of-persia",
+    "source:embed:sinatra",
+    "source:embed:oregon-trail",
+    "source:embed:mozart",
     "source:Keystone Build",
     "source:Simon Willison",
     "source:Hacker News",
