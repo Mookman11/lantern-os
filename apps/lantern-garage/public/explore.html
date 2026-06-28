@@ -317,6 +317,15 @@
     .fc-embed-bar .fc-fullscreen[aria-pressed="true"] { color: var(--accent); background: var(--surface2); }
     /* muted state — dim + accent so it reads as "audio off" */
     .fc-embed-bar .fc-mute[aria-pressed="true"] { color: var(--accent); background: var(--surface2); }
+    /* #1447: live volume slider (YouTube/Vimeo only) — hidden until an embed exposes
+       a player API; disabled mute button on games. */
+    .fc-embed-bar .fc-volume {
+      width: 66px; height: 30px; margin: 0 2px; cursor: pointer;
+      accent-color: var(--accent); vertical-align: middle;
+    }
+    .fc-embed-bar .fc-volume[hidden] { display: none; }
+    .fc-embed-bar .fc-volume:focus-visible { outline: 2px solid var(--accent); }
+    .fc-embed-bar .fc-mute[aria-disabled="true"] { cursor: default; }
     /* #1447: when an embed is fullscreen we put the same-origin .fc-frame wrapper
        (not the cross-origin iframe) into fullscreen, then force the iframe to fill
        it — the iframe's inline height:Npx otherwise leaves it a small band on a
@@ -1011,62 +1020,81 @@ document.addEventListener('DOMContentLoaded', () => {
     if (activeEmbed === el) activeEmbed = null;
   }
 
-  // #1447 (universal mute): a page can't touch a CROSS-ORIGIN iframe's audio, so
-  // "mute" is provider-aware but works on EVERY embed:
-  //   • YouTube / Vimeo expose a URL mute flag → reload the iframe muted (silent
-  //     playback keeps running). embedCanMute() === true.
-  //   • Everything else (archive.org / github.io games) has no such hook, so the
-  //     only way to silence it is to SUSPEND the iframe (unload), then resume on
-  //     unmute. embedCanMute() === false.
-  function embedCanMute(src) {
+  // #1447: a page cannot read or change a CROSS-ORIGIN iframe's audio (browser
+  // security). Only YouTube & Vimeo publish a player API (postMessage volume 0-100) —
+  // for those we offer a LIVE volume slider + mute (no reload, no pause). archive.org /
+  // github.io games expose nothing and the browser blocks all access (SecurityError),
+  // so their control is disabled (use the game's own volume, or mute the browser tab).
+  function embedCanControl(src) {
     try {
       const h = new URL(src, location.href).hostname;
       return /(^|\.)youtube(-nocookie)?\.com$/i.test(h) || /(^|\.)vimeo\.com$/i.test(h);
     } catch (_) { return false; }
   }
-  function withMute(src, muted) {
-    if (!muted) return src;
+  // YouTube only honors postMessage commands when the embed has enablejsapi=1 (+origin).
+  function withPlayerApi(src) {
     try {
       const u = new URL(src, location.href);
-      if (/(^|\.)youtube(-nocookie)?\.com$/i.test(u.hostname)) u.searchParams.set('mute', '1');
-      else if (/(^|\.)vimeo\.com$/i.test(u.hostname)) { u.searchParams.set('muted', '1'); u.searchParams.set('volume', '0'); }
-      else return src;
+      if (/(^|\.)youtube(-nocookie)?\.com$/i.test(u.hostname)) {
+        u.searchParams.set('enablejsapi', '1');
+        u.searchParams.set('origin', location.origin);
+      }
       return u.toString();
     } catch (_) { return src; }
   }
-  function syncMuteBtn(el) {
-    const b = el.querySelector('.fc-mute'); if (!b) return;
-    const inPlace = el._embed && embedCanMute(el._embed.src);
-    b.setAttribute('aria-pressed', el._muted ? 'true' : 'false');
-    b.textContent = el._muted ? '🔇' : '🔊';
-    const lbl = el._muted ? 'Unmute audio' : (inPlace ? 'Mute audio' : 'Mute (pauses this embed)');
-    b.setAttribute('aria-label', lbl); b.title = lbl;
+  function sendPlayerVolume(el, vol) {
+    const iframe = el.querySelector('.fc-frame iframe'); const e = el._embed;
+    if (!iframe || !iframe.contentWindow || !e) return;
+    try {
+      const h = new URL(e.src, location.href).hostname;
+      if (/(^|\.)youtube(-nocookie)?\.com$/i.test(h)) {
+        iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: vol === 0 ? 'mute' : 'unMute', args: [] }), '*');
+        iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'setVolume', args: [vol] }), '*');
+      } else if (/(^|\.)vimeo\.com$/i.test(h)) {
+        iframe.contentWindow.postMessage(JSON.stringify({ method: 'setVolume', value: vol / 100 }), '*');
+      }
+    } catch (_) {}
   }
-  // Universal mute: in-place flag-mute where the provider supports it, otherwise
-  // suspend the iframe (the only way to silence cross-origin audio) and resume on unmute.
-  function setEmbedMuted(el, muted) {
-    el._muted = muted; syncMuteBtn(el);
-    const e = el._embed; if (!e) return;
-    const playing = el.classList.contains('is-playing');
-    if (embedCanMute(e.src)) {
-      if (playing) activateEmbed(el);                                   // reload with/without the flag
-    } else if (muted) {
-      if (playing) { deactivateEmbed(el); el._mutedSuspended = true; }  // unload = silence
-    } else if (el._mutedSuspended) {
-      el._mutedSuspended = false; activateEmbed(el);                    // resume with sound
+  function syncAudioUI(el) {
+    const b = el.querySelector('.fc-mute'); const s = el.querySelector('.fc-volume');
+    const canControl = el._embed && embedCanControl(el._embed.src);
+    if (!canControl) {
+      if (s) s.hidden = true;
+      if (b) {
+        b.disabled = true; b.textContent = '🔊'; b.style.opacity = '0.4'; b.style.cursor = 'default';
+        b.setAttribute('aria-disabled', 'true');
+        b.title = "This game's audio can't be controlled by the page — use the game's own volume or mute the browser tab";
+        b.setAttribute('aria-label', b.title);
+      }
+      return;
     }
+    if (s) { s.hidden = false; if (typeof el._volume === 'number') s.value = el._volume; }
+    if (b) {
+      const muted = el._volume === 0;
+      b.setAttribute('aria-pressed', muted ? 'true' : 'false');
+      b.textContent = muted ? '🔇' : '🔊';
+      const lbl = muted ? 'Unmute audio' : 'Mute audio';
+      b.setAttribute('aria-label', lbl); b.title = lbl;
+    }
+  }
+  // Live volume (0-100) via the provider API — no reload, no pause.
+  function setEmbedVolume(el, vol) {
+    vol = Math.max(0, Math.min(100, vol | 0));
+    el._volume = vol;
+    syncAudioUI(el);
+    if (el.classList.contains('is-playing')) sendPlayerVolume(el, vol);
+  }
+  function setEmbedMuted(el, muted) {
+    if (muted) { el._lastVolume = el._volume || 100; setEmbedVolume(el, 0); }
+    else { setEmbedVolume(el, el._lastVolume || 100); }
   }
 
   function activateEmbed(el) {
     const e = el._embed; if (!e) return;
-    el._mutedSuspended = false;
-    // Providers we can't mute in-place: playing them means audio is on — reflect that.
-    if (el._muted && !embedCanMute(e.src)) el._muted = false;
-    syncMuteBtn(el);
     if (activeEmbed && activeEmbed !== el) deactivateEmbed(activeEmbed); // enforce single active
     const frame = el.querySelector('.fc-frame');
     frame.innerHTML =
-      '<iframe src="' + esc(withMute(e.src, el._muted)) + '" style="height:' + e.h + 'px" ' +
+      '<iframe src="' + esc(withPlayerApi(e.src)) + '" style="height:' + e.h + 'px" ' +
         'title="' + esc(e.title) + '" allow="autoplay; fullscreen; gamepad" allowfullscreen ' +
         'referrerpolicy="no-referrer" ' +
         'sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-pointer-lock"></iframe>';
@@ -1077,6 +1105,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const focusIt = () => { try { iframe.focus(); } catch (_) {} };
     iframe.addEventListener('load', focusIt);
     setTimeout(focusIt, 60);
+    // apply the stored volume once the player API is ready (YouTube/Vimeo only)
+    if (embedCanControl(e.src)) {
+      const applyVol = () => sendPlayerVolume(el, typeof el._volume === 'number' ? el._volume : 100);
+      iframe.addEventListener('load', () => setTimeout(applyVol, 500));
+    }
     el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     if (playObserver) playObserver.observe(el);      // stop it when scrolled away
   }
@@ -1161,6 +1194,7 @@ document.addEventListener('DOMContentLoaded', () => {
           '<span class="fc-embed-src">' + esc(c.source) + '</span>' +
           '<span class="fc-embed-ctl">' +
             '<button type="button" class="fc-mute" aria-label="Mute audio" aria-pressed="false" title="Mute audio">🔊</button>' +
+            '<input type="range" class="fc-volume" min="0" max="100" value="100" step="1" aria-label="Volume" title="Volume" hidden>' +
             '<button type="button" class="fc-fullscreen" aria-label="Fullscreen" aria-pressed="false" title="Fullscreen">⛶</button>' +
             '<button type="button" class="fc-dismiss" aria-label="Dismiss this card" title="Show less like this">✕</button>' +
           '</span>' +
@@ -1179,17 +1213,20 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!el.classList.contains('is-playing')) activateEmbed(el);
         toggleFullscreen(el);
       });
-      // #1447: universal per-embed mute — works on every medium. setEmbedMuted picks
-      // in-place flag-mute (YouTube/Vimeo) vs suspend-to-silence (games) by provider.
+      // #1447: audio control. Live volume slider + mute for YouTube/Vimeo (player API,
+      // no reload/pause); disabled with an explanation on cross-origin games (the
+      // browser blocks all access to their audio).
       const muteBtn = el.querySelector('.fc-mute');
-      if (muteBtn) {
-        el._muted = false;
-        syncMuteBtn(el);   // correct icon + capability-aware tooltip for this embed
-        muteBtn.addEventListener('click', (ev) => {
-          ev.preventDefault(); ev.stopPropagation();
-          setEmbedMuted(el, !el._muted);
-        });
-      }
+      const volSlider = el.querySelector('.fc-volume');
+      el._volume = 100; el._lastVolume = 100;
+      syncAudioUI(el);   // reveals slider for YT/Vimeo, disables control on games
+      if (muteBtn) muteBtn.addEventListener('click', (ev) => {
+        ev.preventDefault(); ev.stopPropagation();
+        setEmbedMuted(el, el._volume !== 0);   // toggle: mute if currently audible
+      });
+      if (volSlider) volSlider.addEventListener('input', (ev) => {
+        ev.stopPropagation(); setEmbedVolume(el, +ev.target.value);
+      });
       const open = el.querySelector('.fc-open');
       if (open) open.addEventListener('click', () => record(c.key, 'click', 0));
     } else {
