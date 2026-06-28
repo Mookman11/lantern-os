@@ -1,5 +1,8 @@
 # Changelog
 
+## [1.7.85] - 2026-06-27
+- fix(chat): repair the Keystone Desk quick-action chips. Three of the six starter chips fired `!ask <…>` — which forces a **web-grounded** answer — for questions that are about the **local system**, so "How's the system?" web-searched the phrase "explain the convergence router", "What needs doing?" web-searched "what work needs to be done", and "Get started" web-searched "how do I get started" (all returning generic, irrelevant results instead of using Keystone's own data). Rewired each to the correct local command: **What needs doing? → `!issues`** (the open backlog, each row one-click-runnable), **How's the system? → `!convergence`** (convergence loop + version + agent-fleet status), **Get started → `!help`** (the command list). The three consumer chips (Tell me a story / Teach me / Write code) were already correct and are unchanged. Verified in the running preview: `!help`, `!convergence`, and `!issues` each render their correct local output (command list / system status / live backlog), none triggers a web search.
+
 ## [1.7.84] - 2026-06-27
 - style(chat): render the "Keystone · debug route" reply signature in black. The route signature shares one class (`.msg-route-sig`, accent-colored) across all routes; added a `.route-debug` modifier (applied in both render paths when the label matches `debug route`) and a `.msg-route-sig.route-debug { color: #000 }` rule so only the debug-route label turns black — the normal "Keystone · chat" signature keeps its accent color. Verified in dev preview: computed color is `rgb(0,0,0)` for the debug sig, accent for the normal sig.
 
