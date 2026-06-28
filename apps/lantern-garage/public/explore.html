@@ -1011,10 +1011,13 @@ document.addEventListener('DOMContentLoaded', () => {
     if (activeEmbed === el) activeEmbed = null;
   }
 
-  // #1447: cross-origin iframes can't have their audio controlled from the parent,
-  // but YouTube/Vimeo honor a URL mute flag. For those we rebuild the src muted;
-  // archive.org / github.io games have no such flag (audio is in-frame only), so the
-  // button is disabled there rather than pretending to work.
+  // #1447 (universal mute): a page can't touch a CROSS-ORIGIN iframe's audio, so
+  // "mute" is provider-aware but works on EVERY embed:
+  //   • YouTube / Vimeo expose a URL mute flag → reload the iframe muted (silent
+  //     playback keeps running). embedCanMute() === true.
+  //   • Everything else (archive.org / github.io games) has no such hook, so the
+  //     only way to silence it is to SUSPEND the iframe (unload), then resume on
+  //     unmute. embedCanMute() === false.
   function embedCanMute(src) {
     try {
       const h = new URL(src, location.href).hostname;
@@ -1031,9 +1034,35 @@ document.addEventListener('DOMContentLoaded', () => {
       return u.toString();
     } catch (_) { return src; }
   }
+  function syncMuteBtn(el) {
+    const b = el.querySelector('.fc-mute'); if (!b) return;
+    const inPlace = el._embed && embedCanMute(el._embed.src);
+    b.setAttribute('aria-pressed', el._muted ? 'true' : 'false');
+    b.textContent = el._muted ? '🔇' : '🔊';
+    const lbl = el._muted ? 'Unmute audio' : (inPlace ? 'Mute audio' : 'Mute (pauses this embed)');
+    b.setAttribute('aria-label', lbl); b.title = lbl;
+  }
+  // Universal mute: in-place flag-mute where the provider supports it, otherwise
+  // suspend the iframe (the only way to silence cross-origin audio) and resume on unmute.
+  function setEmbedMuted(el, muted) {
+    el._muted = muted; syncMuteBtn(el);
+    const e = el._embed; if (!e) return;
+    const playing = el.classList.contains('is-playing');
+    if (embedCanMute(e.src)) {
+      if (playing) activateEmbed(el);                                   // reload with/without the flag
+    } else if (muted) {
+      if (playing) { deactivateEmbed(el); el._mutedSuspended = true; }  // unload = silence
+    } else if (el._mutedSuspended) {
+      el._mutedSuspended = false; activateEmbed(el);                    // resume with sound
+    }
+  }
 
   function activateEmbed(el) {
     const e = el._embed; if (!e) return;
+    el._mutedSuspended = false;
+    // Providers we can't mute in-place: playing them means audio is on — reflect that.
+    if (el._muted && !embedCanMute(e.src)) el._muted = false;
+    syncMuteBtn(el);
     if (activeEmbed && activeEmbed !== el) deactivateEmbed(activeEmbed); // enforce single active
     const frame = el.querySelector('.fc-frame');
     frame.innerHTML =
@@ -1150,29 +1179,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!el.classList.contains('is-playing')) activateEmbed(el);
         toggleFullscreen(el);
       });
-      // #1447: per-embed mute toggle. Cross-origin audio is only controllable on
-      // YouTube/Vimeo (URL flag); disable + explain elsewhere rather than fake it.
+      // #1447: universal per-embed mute — works on every medium. setEmbedMuted picks
+      // in-place flag-mute (YouTube/Vimeo) vs suspend-to-silence (games) by provider.
       const muteBtn = el.querySelector('.fc-mute');
       if (muteBtn) {
         el._muted = false;
-        if (!embedCanMute(embedSrc)) {
-          muteBtn.disabled = true;
-          muteBtn.title = 'Audio control unavailable for this embed';
-          muteBtn.setAttribute('aria-label', 'Audio control unavailable for this embed');
-          muteBtn.style.opacity = '0.4';
-          muteBtn.style.cursor = 'default';
-        } else {
-          muteBtn.addEventListener('click', (ev) => {
-            ev.preventDefault(); ev.stopPropagation();
-            el._muted = !el._muted;
-            muteBtn.setAttribute('aria-pressed', el._muted ? 'true' : 'false');
-            muteBtn.textContent = el._muted ? '🔇' : '🔊';
-            const lbl = el._muted ? 'Unmute audio' : 'Mute audio';
-            muteBtn.setAttribute('aria-label', lbl);
-            muteBtn.title = lbl;
-            if (el.classList.contains('is-playing')) activateEmbed(el); // reload with new mute state
-          });
-        }
+        syncMuteBtn(el);   // correct icon + capability-aware tooltip for this embed
+        muteBtn.addEventListener('click', (ev) => {
+          ev.preventDefault(); ev.stopPropagation();
+          setEmbedMuted(el, !el._muted);
+        });
       }
       const open = el.querySelector('.fc-open');
       if (open) open.addEventListener('click', () => record(c.key, 'click', 0));
