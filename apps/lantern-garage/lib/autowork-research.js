@@ -154,6 +154,11 @@ async function researchIssue(o) {
   const {
     workRoot, issueNumber, issueTitle = "", issueBody = "",
     onStep, runId = newRunId(issueNumber), maxFiles = 8, web = true,
+    // Wide grounding: fan out angled sub-queries and escalate low→high fidelity
+    // (lib/wide-search) instead of the single narrow query. ON by default for the
+    // whole fleet — set AUTOWORK_WIDE_SEARCH=0 to fall back to the narrow single
+    // query. Per-call `wide` overrides the env when provided.
+    wide = process.env.AUTOWORK_WIDE_SEARCH !== "0",
   } = o || {};
 
   // Single sink: forward to the caller's onStep AND persist to the run log so every
@@ -167,21 +172,49 @@ async function researchIssue(o) {
   const keywords = extractKeywords(issueFullText, 10);
   emit("research", "keywords", { keywords });
 
-  // Web grounding via the dependable client (MCP → DDG → Wikipedia) — fixes the
-  // "0 web sources" bug from the old Instant-Answer-only call.
+  // Web grounding. Two paths:
+  //   wide  → fan out angled sub-queries + escalate low→high fidelity (better recall,
+  //           a synthesized grounded summary, and per-source citations).
+  //   narrow→ the dependable single-query client (MCP → DDG → Wikipedia). Fixes the
+  //           old "0 web sources" Instant-Answer-only bug; kept as the cheap default.
   let webEvidence = [];
+  let webSummary = null;        // wide path only: synthesized grounded answer
+  let webConfidence = null;     // wide path only: 0..1
   if (web && keywords.length) {
-    const searchQuery = keywords.slice(0, 4).join(" ");
-    try {
-      const r = await webSearch(searchQuery, 3);
-      if (r && r.success && Array.isArray(r.results)) {
-        webEvidence = r.results.slice(0, 3).map((x) => ({ title: x.title, url: x.url, snippet: x.snippet }));
-        emit("research", "web_search", { query: searchQuery, source: r.source, results: webEvidence.length, sources: webEvidence.map((w) => w.url) });
-      } else {
-        emit("research", "web_search", { query: searchQuery, results: 0, reason: (r && r.error) || "no results" });
+    if (wide) {
+      try {
+        // Lazy require — wide-search requires THIS module for extractKeywords, so a
+        // top-level require here would be a cycle.
+        const { wideSearch } = require("./wide-search");
+        const wq = (issueTitle || keywords.slice(0, 6).join(" ")).slice(0, 200);
+        const r = await wideSearch({
+          query: wq,
+          breadth: 5,
+          perQuery: 3,
+          // Forward each wide-search sub-step under the research phase so the run log
+          // and any SSE caller see the fan-out / low-pass / high-pass ladder.
+          onStep: (stage, status, extra) => emit("research", `wide_${stage}_${status}`, extra),
+        });
+        webEvidence = (r.sources || []).slice(0, 5).map((s) => ({ title: s.title, url: s.url, snippet: s.snippet }));
+        webSummary = r.answer || null;
+        webConfidence = r.confidence != null ? r.confidence : null;
+        emit("research", "web_search", { mode: "wide", query: wq, results: webEvidence.length, confidence: webConfidence, sources: webEvidence.map((w) => w.url) });
+      } catch (e) {
+        emit("research", "web_search", { mode: "wide", skipped: true, reason: e.message });
       }
-    } catch (e) {
-      emit("research", "web_search", { skipped: true, reason: e.message });
+    } else {
+      const searchQuery = keywords.slice(0, 4).join(" ");
+      try {
+        const r = await webSearch(searchQuery, 3);
+        if (r && r.success && Array.isArray(r.results)) {
+          webEvidence = r.results.slice(0, 3).map((x) => ({ title: x.title, url: x.url, snippet: x.snippet }));
+          emit("research", "web_search", { mode: "narrow", query: searchQuery, source: r.source, results: webEvidence.length, sources: webEvidence.map((w) => w.url) });
+        } else {
+          emit("research", "web_search", { mode: "narrow", query: searchQuery, results: 0, reason: (r && r.error) || "no results" });
+        }
+      } catch (e) {
+        emit("research", "web_search", { mode: "narrow", skipped: true, reason: e.message });
+      }
     }
   }
 
@@ -190,16 +223,20 @@ async function researchIssue(o) {
   const researchContext = {
     keywords,
     scopeFiles: scopeFiles.slice(0, maxFiles),
-    webEvidence: webEvidence.slice(0, 3),
+    // Wide grounding returns up to 5 cited sources; narrow returns up to 3. Keep all
+    // returned evidence so the model sees the full grounded set.
+    webEvidence: webEvidence.slice(0, 5),
+    ...(webSummary ? { webSummary, webConfidence } : {}),
     timestamp: new Date().toISOString(),
   };
   emit("research", "done", {
     filesFound: scopeFiles.length,
     webSourcesFound: webEvidence.length,
+    webMode: wide ? "wide" : "narrow",
     context: researchContext,
   });
 
-  return { keywords, scopeFiles, webEvidence, researchContext, runId };
+  return { keywords, scopeFiles, webEvidence, webSummary, webConfidence, researchContext, runId };
 }
 
 module.exports = {
