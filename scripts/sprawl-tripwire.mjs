@@ -67,6 +67,8 @@ function main() {
   const baseIdx = args.indexOf("--base");
   const base = baseIdx >= 0 ? args[baseIdx + 1] : "origin/master";
   const repoRoot = join(fileURLToPath(import.meta.url), "..", "..");
+  // Intentional CLI stdout (not debug logging) — keeps the repo's console.log debug gate clean.
+  const print = (s) => process.stdout.write(`${s}\n`);
 
   let paths = [];
   if (all) {
@@ -85,18 +87,18 @@ function main() {
   });
 
   const result = evaluateSurfaces(pages);
-  if (json) { console.log(JSON.stringify(result, null, 2)); process.exit(result.ok ? 0 : 1); }
+  if (json) { print(JSON.stringify(result, null, 2)); process.exit(result.ok ? 0 : 1); }
 
   if (all) {
-    console.log(`[sprawl-tripwire] ${pages.length} public surfaces; ${result.justified.length} declare a loop stage, ${result.violations.length} do not.`);
-    for (const v of result.violations) console.log(`  (undeclared) ${v.path}`);
+    print(`[sprawl-tripwire] ${pages.length} public surfaces; ${result.justified.length} declare a loop stage, ${result.violations.length} do not.`);
+    for (const v of result.violations) print(`  (undeclared) ${v.path}`);
     process.exit(0); // advisory in --all mode
   }
 
-  if (!pages.length) { console.log("[sprawl-tripwire] no new public surfaces in this PR — ok."); process.exit(0); }
+  if (!pages.length) { print("[sprawl-tripwire] no new public surfaces in this PR — ok."); process.exit(0); }
   if (result.ok) {
-    console.log(`[sprawl-tripwire] ${pages.length} new surface(s), all justified:`);
-    for (const j of result.justified) console.log(`  ✓ ${j.path} → ${j.stage}`);
+    print(`[sprawl-tripwire] ${pages.length} new surface(s), all justified:`);
+    for (const j of result.justified) print(`  ✓ ${j.path} → ${j.stage}`);
     process.exit(0);
   }
   console.error(`[sprawl-tripwire] FAIL — ${result.violations.length} new public surface(s) lack a loop-stage justification:`);
