@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#06b6d4">
+  <link rel="stylesheet" href="/css/site.css">
+  <title>Family Vault — Keystone OS</title>
+  <style>
+    /* Family / shared memory vault (#1437). */
+    .w { max-width: 860px; margin: 0 auto; padding: 18px 16px 60px; }
+    h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; color: var(--text, #e5e7eb); }
+    .lede { margin: 0 0 14px; color: var(--muted, #9aa0aa); font-size: 13px; line-height: 1.5; }
+    .who { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; font-size: 13px; color: var(--muted, #9aa0aa); }
+    .who input { width: 160px; }
+    .card { background: var(--surface1, rgba(255,255,255,.03)); border: 1px solid var(--border, rgba(255,255,255,.10));
+      border-radius: 14px; padding: 16px; margin-bottom: 16px; }
+    h2 { font-size: 14px; color: var(--text, #e5e7eb); margin: 0 0 10px; }
+    label { font-size: 12px; color: var(--muted, #9aa0aa); display: block; margin-bottom: 3px; }
+    input, textarea, select { width: 100%; box-sizing: border-box; background: var(--surface2, rgba(255,255,255,.05)); color: var(--text, #e5e7eb);
+      border: 1px solid var(--border, rgba(255,255,255,.14)); border-radius: 9px; padding: 8px 10px; font-size: 14px; margin-bottom: 8px; }
+    textarea { min-height: 56px; resize: vertical; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .btn { background: var(--accent, #06b6d4); color: #06222a; border: none; border-radius: 9px; padding: 9px 16px; font-size: 14px; font-weight: 600; cursor: pointer; }
+    .searchbar { display: flex; gap: 8px; } .searchbar input { margin: 0; }
+    .entry { padding: 11px 0; border-bottom: 1px solid var(--border, rgba(255,255,255,.07)); }
+    .entry .t { font-size: 14px; color: var(--text, #e5e7eb); font-weight: 600; }
+    .entry .c { font-size: 13px; color: var(--text, #d8dce2); line-height: 1.5; margin: 3px 0; white-space: pre-wrap; }
+    .entry .m { font-size: 11px; color: var(--muted, #9aa0aa); }
+    .cat { display:inline-block;font-size:10px;border-radius:5px;padding:1px 6px;text-transform:uppercase;margin-right:6px;background:rgba(56,189,248,.12);color:#38bdf8; }
+    .vis { display:inline-block;font-size:10px;border-radius:5px;padding:1px 6px; }
+    .vis.everyone { color:#4ade80;background:rgba(74,222,128,.12);} .vis.private{color:#f59e0b;background:rgba(245,158,11,.12);} .vis.shared{color:#a78bfa;background:rgba(167,139,250,.12);}
+    .stat { display:inline-block;font-size:12px;color:var(--muted,#9aa0aa);margin-right:14px; } .stat b { color:var(--text,#e5e7eb); }
+    .empty { color: var(--muted, #9aa0aa); font-size: 13px; }
+  </style>
+</head>
+<body>
+  <nav class="site-nav">
+    <a class="nav-brand" href="/"><img src="/mandala.svg" alt="" aria-hidden="true" style="width:24px;height:24px;vertical-align:middle"><span style="font-size:18px;font-weight:600">Keystone OS</span></a>
+    <div class="nav-links">
+      <a href="/dream-chat.html">Chat</a>
+      <a href="/memory-decay.html">Memory</a>
+      <a href="/vault.html" class="active">Family</a>
+      <a href="/knowledgecenter.html">Help</a>
+    </div>
+    <button class="nav-btn" id="theme-toggle" title="Toggle light / dark mode" aria-label="Toggle theme" onclick="(function(){var h=document.documentElement;h.setAttribute('data-theme',h.getAttribute('data-theme')==='dark'?'light':'dark');})()">☀</button>
+  </nav>
+
+  <main class="w">
+    <h1>Family Vault</h1>
+    <p class="lede">The household's shared brain: recipes, allergies, the WiFi saga, when each password was last rotated. Each note is visible to <b>everyone</b>, kept <b>private</b>, or shared with specific people — so you share what you want and keep the rest yours. 🔒 Local, owned by the family.</p>
+
+    <div class="who">Viewing as <input id="member" value="alex" placeholder="your name"> <span id="statline"></span></div>
+
+    <div class="card">
+      <div class="searchbar"><input id="q" placeholder="Search the vault — e.g. wifi, allergy, lasagna"><button class="btn" id="go">Search</button></div>
+      <div id="entries" style="margin-top:12px"></div>
+    </div>
+
+    <div class="card">
+      <h2>Add a note</h2>
+      <input id="title" placeholder="Title — e.g. Guest WiFi password">
+      <div class="grid">
+        <div><label>Category</label><select id="category"><option>recipe</option><option>allergy</option><option>wifi</option><option>password</option><option>contact</option><option>household</option><option value="other" selected>other</option></select></div>
+        <div><label>Visible to</label><select id="visibility"><option value="everyone">everyone</option><option value="private">just me</option></select></div>
+      </div>
+      <textarea id="content" placeholder="The details (kept local). Tip: store *when* a password was rotated, not the password itself."></textarea>
+      <button class="btn" id="add">Save to vault</button>
+    </div>
+  </main>
+
+  <script>
+    var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]; }); };
+    function member() { return document.getElementById('member').value.trim() || 'household'; }
+    function visClass(v) { return v === 'private' ? 'private' : (Array.isArray(v) ? 'shared' : 'everyone'); }
+    function visLabel(v) { return v === 'private' ? 'private' : (Array.isArray(v) ? 'shared' : 'everyone'); }
+
+    function entryCard(e) {
+      return '<div class="entry"><div class="t"><span class="cat">' + esc(e.category) + '</span>' + esc(e.title)
+        + ' <span class="vis ' + visClass(e.visibility) + '">' + esc(visLabel(e.visibility)) + '</span></div>'
+        + (e.content ? '<div class="c">' + esc(e.content) + '</div>' : '')
+        + '<div class="m">by ' + esc(e.author) + ' · ' + esc((e.createdAt || '').slice(0, 10)) + '</div></div>';
+    }
+
+    async function load() {
+      var q = document.getElementById('q').value.trim();
+      var r = await fetch('/api/vault?member=' + encodeURIComponent(member()) + (q ? '&q=' + encodeURIComponent(q) : '')).then(function (x) { return x.json(); });
+      var s = r.stats || {};
+      document.getElementById('statline').textContent = s.totalCount != null ? ('· ' + s.visibleCount + ' of ' + s.totalCount + ' notes visible' + (s.privateHidden ? ' (' + s.privateHidden + ' private to others)' : '')) : '';
+      document.getElementById('entries').innerHTML = (r.entries && r.entries.length) ? r.entries.map(entryCard).join('') : '<div class="empty">Nothing here yet — add a note below.</div>';
+    }
+    async function add() {
+      var title = document.getElementById('title').value.trim(); if (!title) return;
+      await fetch('/api/vault', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: title, content: document.getElementById('content').value.trim(),
+          category: document.getElementById('category').value, visibility: document.getElementById('visibility').value, author: member() }) });
+      document.getElementById('title').value = ''; document.getElementById('content').value = '';
+      load();
+    }
+    document.getElementById('go').addEventListener('click', load);
+    document.getElementById('q').addEventListener('keydown', function (e) { if (e.key === 'Enter') load(); });
+    document.getElementById('member').addEventListener('change', load);
+    document.getElementById('add').addEventListener('click', add);
+    load();
+  </script>
+</body>
+</html>
