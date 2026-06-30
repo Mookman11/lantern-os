@@ -165,6 +165,28 @@ class TraderAgent {
   }
 
   /**
+   * Validate a ticker symbol is a real, tradable asset before adding it to the
+   * watchlist (#1624). Delegates to the Python engine (which holds the Alpaca
+   * creds). Returns { valid, tradable, symbol, name, asset_class, price?, reason }.
+   */
+  async validateSymbol(ticker) {
+    return this._callPython('validate_symbol', { ticker }, this.fastTimeout);
+  }
+
+  // All tradable Alpaca assets for the symbol-search popup (#1692). Big list, so
+  // cache it for an hour and filter per query in the route (not per-call Python).
+  async getAllAssets() {
+    const cacheKey = 'all_assets';
+    if (this.cache[cacheKey] && Date.now() - this.cache[cacheKey].time < 3600000) {
+      return this.cache[cacheKey].data;
+    }
+    const result = await this._callPython('list_assets', {}, 45000); // big call
+    const assets = (result && Array.isArray(result.assets)) ? result.assets : [];
+    if (assets.length) this.cache[cacheKey] = { data: assets, time: Date.now() };
+    return assets;
+  }
+
+  /**
    * Analyze a specific signal (enrich with ticker, confidence scoring)
    * Returns: { symbol, action, reason, confidence, timestamp }
    */
@@ -239,6 +261,25 @@ class TraderAgent {
    * Get open positions from Alpaca
    * Returns: { positions: [...], account: {...} }
    */
+  async getOrders(limit = 50) {
+    // Broker-truth order history from Alpaca (engine + manual). Cached 45s — it
+    // changes only when a trade fires, and the cold Python spawn + Alpaca call can
+    // run ~10s, so a short cache would re-spawn on every poll. 20s call timeout
+    // (fastTimeout's 7s is too tight for the cold spawn).
+    const cacheKey = 'orders';
+    if (this.cache[cacheKey] && Date.now() - this.cache[cacheKey].time < 45000) {
+      return this.cache[cacheKey].data;
+    }
+    try {
+      const result = await this._callPython('get_orders', { limit }, 20000);
+      this.cache[cacheKey] = { data: result, time: Date.now() };
+      return result;
+    } catch (error) {
+      console.error('[TraderAgent] Get orders failed:', error.message);
+      return this._staleOr(cacheKey, { orders: [], count: 0, error: error.message });
+    }
+  }
+
   async getPositions() {
     const cacheKey = 'positions';
     if (this.cache[cacheKey] && Date.now() - this.cache[cacheKey].time < 60000) { // 60s

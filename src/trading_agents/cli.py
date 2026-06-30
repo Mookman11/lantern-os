@@ -43,9 +43,11 @@ try:
         DEFAULT_WATCHLIST,
         ASSET_PROFILES,
         alpaca,
+        validate_symbol,
     )
 except ImportError as e:
     # agents.py not available — evaluate_* actions still work without it
+    validate_symbol = None
     scan_all = None
     get_portfolio_equity = None
     get_open_positions = None
@@ -57,6 +59,18 @@ except ImportError as e:
     ASSET_PROFILES = {}
     alpaca = None
     _agents_import_error = str(e)
+
+
+def action_validate_symbol(args):
+    """Validate a ticker symbol before it's added to the watchlist (#1624)."""
+    ticker = (args.get('ticker') or '').strip()
+    if not ticker:
+        return {'valid': False, 'reason': 'ticker required'}
+    if validate_symbol is None:
+        # Engine unavailable — don't hard-block the add, but flag it unverified.
+        return {'valid': True, 'tradable': None, 'symbol': ticker.upper(),
+                'reason': 'engine unavailable — not verified'}
+    return validate_symbol(ticker)
 
 
 def action_scan_market(args):
@@ -90,6 +104,10 @@ def action_scan_market(args):
         return {
             'signals': signals,
             'zones': zones,
+            # The engine's per-ticker decision log (why each ticker entered or was
+            # skipped) — so the UI can SHOW that it's actually looking for entries,
+            # not just report "0 signals". Newest last; capped in log_agent at 100.
+            'logs': list(agent_log),
             'timestamp': datetime.utcnow().isoformat() + 'Z',
             'watchlist_count': len(watchlist),
             'signals_count': len(signals)
@@ -198,15 +216,37 @@ def action_get_market_status(args):
         except:
             pass
 
+        # Honest day P&L from activity (#1691), not equity-vs-last_equity; and the
+        # market regime from SPY (the real market), not the account's frozen P&L.
+        import sqlite3 as _sql
+        unrealized = 0.0
+        try:
+            unrealized = sum(float(p.unrealized_pl) for p in alpaca.list_positions())
+        except Exception:
+            pass
+        realized_today = 0.0
+        try:
+            from agents import LESSONS_DB as _DB
+            _con = _sql.connect(_DB)
+            _row = _con.execute(
+                "SELECT COALESCE(SUM(pnl_usd),0) FROM trade_history "
+                "WHERE status='closed' AND pnl_usd IS NOT NULL AND ts LIKE ?",
+                (datetime.now().strftime('%Y-%m-%d') + '%',)).fetchone()
+            _con.close()
+            realized_today = float(_row[0] or 0)
+        except Exception:
+            pass
+        day_pnl_usd = round(unrealized + realized_today, 2)
+        day_pnl_pct = round(day_pnl_usd / equity * 100, 2) if equity else 0
         return {
             'market_open': market_open,
             'vix': vix,
             'vix_regime': vix_regime,
-            'market': 'BULLISH' if day_pnl_pct > 0 else 'BEARISH' if day_pnl_pct < 0 else 'NEUTRAL',
+            'market': 'BULLISH' if spy_1d > 0.1 else 'BEARISH' if spy_1d < -0.1 else 'NEUTRAL',
             'spy_1d': round(float(spy_1d), 2),
             'spy_5d': round(float(spy_5d), 2),
             'day_pnl_pct': day_pnl_pct,
-            'day_pnl_usd': equity - last_equity if 'last_equity' in locals() else 0,
+            'day_pnl_usd': day_pnl_usd,
             'equity': equity,
             'timestamp': datetime.utcnow().isoformat() + 'Z'
         }
@@ -321,13 +361,38 @@ def action_get_positions(args):
                 'pnl_pct': float(pos.unrealized_plpc) * 100,
             })
 
+        # Day P&L from ACTUAL trading activity, not Alpaca's equity-vs-last_equity
+        # (which freezes after-hours and shows phantom gains with zero positions —
+        # #1691): unrealized on open positions + realized on trades CLOSED TODAY.
+        # When flat with no trades today this is exactly $0.
+        import sqlite3 as _sql
+        from datetime import datetime as _dt
+        unrealized = sum(p['unrealized_pl'] for p in positions)
+        realized_today = 0.0
+        try:
+            from agents import LESSONS_DB as _DB
+            _con = _sql.connect(_DB)
+            _today = _dt.now().strftime('%Y-%m-%d')
+            _row = _con.execute(
+                "SELECT COALESCE(SUM(pnl_usd),0) FROM trade_history "
+                "WHERE status='closed' AND pnl_usd IS NOT NULL AND ts LIKE ?",
+                (_today + '%',)).fetchone()
+            _con.close()
+            realized_today = float(_row[0] or 0)
+        except Exception as _e:
+            log.warning("realized-today query failed: %s", _e)
+        equity = round(float(account.equity), 2)
+        day_pnl = round(unrealized + realized_today, 2)
         return {
             'positions': positions,
             'account': {
-                'equity': round(float(account.equity), 2),
+                'equity': equity,
                 'cash': round(float(account.cash), 2),
                 'buying_power': round(float(account.buying_power), 2),
-                'pnl_today': round(float(account.equity) - float(account.last_equity), 2),
+                'pnl_today': day_pnl,
+                'day_pnl_pct': round(day_pnl / equity * 100, 2) if equity else 0,
+                'realized_today': round(realized_today, 2),
+                'unrealized': round(unrealized, 2),
             }
         }
     except Exception as e:
@@ -342,6 +407,46 @@ def action_get_positions(args):
             },
             'error': str(e)
         }
+
+
+def action_get_orders(args):
+    """
+    Broker-truth order history straight from Alpaca — every order the account
+    submitted, autonomous (Σ₀ engine) or manual. Args: {limit?: int}.
+    Returns: {orders: [{id, symbol, side, qty, type, limit_price, status,
+              filled_avg_price, filled_at, submitted_at, created_at}], count}.
+    """
+    def _f(v):
+        try:
+            return float(v) if v is not None else None
+        except (TypeError, ValueError):
+            return None
+    try:
+        limit = int(args.get('limit', 50) or 50)
+        raw = alpaca.list_orders(status='all', limit=max(1, min(limit, 500)),
+                                 direction='desc', nested=False)
+        orders = []
+        for o in raw:
+            qty = _f(getattr(o, 'qty', None))
+            if not qty:
+                qty = _f(getattr(o, 'filled_qty', None)) or 0
+            orders.append({
+                'id':               str(getattr(o, 'id', '') or ''),
+                'symbol':           getattr(o, 'symbol', '') or '',
+                'side':             getattr(o, 'side', '') or '',
+                'qty':              qty,
+                'type':             getattr(o, 'type', None) or getattr(o, 'order_type', None) or 'market',
+                'limit_price':      _f(getattr(o, 'limit_price', None)),
+                'status':           getattr(o, 'status', '') or '',
+                'filled_avg_price': _f(getattr(o, 'filled_avg_price', None)),
+                'filled_at':        str(getattr(o, 'filled_at', '') or '') or None,
+                'submitted_at':     str(getattr(o, 'submitted_at', '') or '') or None,
+                'created_at':       str(getattr(o, 'created_at', '') or '') or None,
+            })
+        return {'orders': orders, 'count': len(orders)}
+    except Exception as e:
+        log.error(f"get_orders failed: {str(e)}")
+        return {'orders': [], 'count': 0, 'error': str(e)}
 
 
 def action_get_bars(args):
@@ -591,6 +696,35 @@ def action_get_bars_multi(args):
     return {'bars': result, 'timeframe': timeframe}
 
 
+def action_list_assets(args):
+    """All active, tradable Alpaca assets for the symbol-search popup (#1692).
+    Big list (~11k equities + crypto) — the Node bridge caches it and filters
+    per query, so this only runs ~once an hour."""
+    try:
+        raw = list(alpaca.list_assets(status='active'))
+        try:
+            raw += list(alpaca.list_assets(status='active', asset_class='crypto'))
+        except Exception:
+            pass
+        out = []
+        seen = set()
+        for a in raw:
+            sym = getattr(a, 'symbol', '')
+            if not sym or sym in seen or not getattr(a, 'tradable', False):
+                continue
+            seen.add(sym)
+            klass = a._raw.get('class', 'us_equity') if hasattr(a, '_raw') else 'us_equity'
+            out.append({
+                'symbol': sym,
+                'name': (getattr(a, 'name', '') or '')[:80],
+                'exchange': getattr(a, 'exchange', '') or '',
+                'class': klass,
+            })
+        return {'assets': out, 'count': len(out)}
+    except Exception as e:
+        log.error("list_assets failed: %s", e)
+        return {'assets': [], 'error': str(e)}
+
 
 def main():
     """Main CLI entry point"""
@@ -629,11 +763,14 @@ def main():
         'get_market_status': action_get_market_status,
         'get_watchlist_prices': action_get_watchlist_prices,
         'get_positions': action_get_positions,
+        'get_orders': action_get_orders,
         'get_bars': action_get_bars,
         'get_bars_multi': action_get_bars_multi,
         'place_order': action_place_order,
         'evaluate_asset': action_evaluate_asset,
         'evaluate_watchlist': action_evaluate_watchlist,
+        'validate_symbol': action_validate_symbol,
+        'list_assets': action_list_assets,
     }
 
     if action not in handlers:

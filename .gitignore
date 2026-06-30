@@ -448,6 +448,9 @@ apps/lantern-garage/public/assets/gage/**/*.webp
 apps/lantern-garage/public/assets/gage/**/*.png
 apps/lantern-garage/public/assets/gage/**/*.gif
 
+# Σ₀ scan cache (runtime state — reuses LLM reads across scans)
+data/lantern-garage/trading/scan-llm-cache.json
+data/lantern-garage/trading/llm-usage.json
 # Ingest staging (external-repo docs pulled via gh, not vendored)
 data/ingest-staging/
 # Memory recall benchmark — keep the fixture, ignore runtime output + real datasets

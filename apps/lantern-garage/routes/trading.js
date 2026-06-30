@@ -33,6 +33,55 @@ try {
   console.error('[Trading Routes] Failed to initialize TraderAgent:', e.message);
 }
 
+// ── Autonomous market scan loop (Σ₀ Observe stage) ───────────────────────────
+// Scan the watchlist every ~minute regardless of page activity, so signals,
+// entry/exit instructions, and (when enabled) auto-execution stay live even with
+// nobody watching the page. Self-RESCHEDULING — the next scan is queued only
+// after the previous finishes, so a slow 45-60s scan never overlaps itself.
+// The shared cache means page polls in the same minute reuse this scan rather
+// than triggering a second one. Kill-switch: TRADER_AUTOSCAN=0.
+const AUTOSCAN_MS = parseInt(process.env.TRADER_AUTOSCAN_MS || '60000');
+// Off-hours the only thing scanning is crypto (stocks are market-gated in the
+// engine) and it moves slowly — so back the cadence off to save API spend. The
+// engine still uses the authoritative Alpaca clock to decide what to trade; this
+// is cadence only. Kill-switch: set TRADER_AUTOSCAN_CLOSED_MS=60000 to disable.
+const AUTOSCAN_CLOSED_MS = parseInt(process.env.TRADER_AUTOSCAN_CLOSED_MS || '300000'); // 5 min
+function _isUsMarketHours() {
+  const et = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const day = et.getDay();                       // 0 Sun .. 6 Sat
+  if (day === 0 || day === 6) return false;
+  const mins = et.getHours() * 60 + et.getMinutes();
+  return mins >= 570 && mins < 960;              // 09:30 (570) .. 16:00 (960) ET
+}
+let _autoscanStopped = false;
+// Overnight (market-closed) scanning is OFF by default — off-hours the only thing
+// to scan is crypto, and the user mostly wants it idle overnight. Flip on via the
+// 🌙 toggle for after-hours crypto testing; it auto-resets at the next market open
+// so a forgotten toggle can't quietly burn tokens later. (#1714)
+let _scanWhenClosed = process.env.TRADER_SCAN_CLOSED === '1';
+async function _autoscanTick() {
+  if (_autoscanStopped || !traderAgent) return;
+  const marketHours = _isUsMarketHours();
+  if (marketHours && _scanWhenClosed) _scanWhenClosed = false;      // auto-reset at open
+  // Off-hours with overnight scanning off → skip the scan entirely: no Python
+  // spawn, no model call, zero tokens. The price collectors keep polling (free).
+  if (marketHours || _scanWhenClosed) {
+    try {
+      traderAgent.cache && (traderAgent.cache['market_scan'] = null); // force fresh each minute
+      const scan = await traderAgent.scanMarket();
+      const n = Array.isArray(scan && scan.signals) ? scan.signals.length : 0;
+      if (n) console.log(`[Trading] autoscan — ${n} signal(s)`);
+    } catch (e) {
+      console.error('[Trading] autoscan failed:', e.message);
+    }
+  }
+  if (!_autoscanStopped) setTimeout(_autoscanTick, marketHours ? AUTOSCAN_MS : AUTOSCAN_CLOSED_MS);
+}
+if (traderAgent && process.env.TRADER_AUTOSCAN !== '0') {
+  setTimeout(_autoscanTick, 5000); // first scan shortly after boot
+  console.log(`[Trading] autonomous scan loop started (every ${AUTOSCAN_MS}ms)`);
+}
+
 const AI_TRADER_HOST = process.env.AI_TRADER_HOST || '127.0.0.1';
 const AI_TRADER_PORT = process.env.AI_TRADER_PORT || 5555;
 
@@ -182,6 +231,31 @@ module.exports = async function tradingRoutes(req, res, url, deps) {
       const scan = cacheEntry.data;
       const signals = Array.isArray(scan.signals) ? scan.signals : [];
       if (!scan.error) {
+        // The engine's per-ticker decision log (#1623) — surface the REASONS each
+        // ticker entered or was skipped (Grok/Riley/Σ₀ EV/threshold), so the feed
+        // proves the scanner is actually evaluating every ticker, not just "0
+        // signals". Keep only the informative per-ticker lines (drop the engine's
+        // own scan-cycle banners, which the summary below already conveys).
+        // Keep the feed to the SIGNAL, not the firehose: the Σ₀ EV verdict per
+        // ticker (one line each) plus any executed trade / entry / error. Drop the
+        // Riley/backtest/break-retest/zone debug spam (~15 lines a scan) that was
+        // burying the actual decisions and trades.
+        const TRADE_RE = /→\s*ENTER|executed|order placed|placed order|filled|\bEXIT\b|closed.*p&l|trade taken|order failed|trade failed/i;
+        const engineLogs = Array.isArray(scan.logs) ? scan.logs : [];
+        const decisionLines = engineLogs
+          .filter((l) => {
+            if (!l || !l.body) return false;
+            const agent = String(l.agent || l.type || '').toLowerCase();
+            return agent === 'sigma0' || TRADE_RE.test(l.body);
+          })
+          .slice(-15)
+          .map((l, i) => ({
+            id: `scan_${scan.timestamp}_eng_${i}`,
+            agent: (l.agent || l.type || 'scanner').toString().toLowerCase(),
+            action: String(l.body).slice(0, 160),
+            symbol: '',
+            timestamp: scan.timestamp,
+          }));
         const logEntries = [
           {
             id: `scan_${scan.timestamp}_summary`,
@@ -190,6 +264,7 @@ module.exports = async function tradingRoutes(req, res, url, deps) {
             symbol: '',
             timestamp: scan.timestamp,
           },
+          ...decisionLines,
           ...signals.filter((s) => s && s.symbol).map((s) => ({
             id: `scan_${scan.timestamp}_${s.symbol}`,
             agent: s.agent || 'scanner',
@@ -331,24 +406,31 @@ module.exports = async function tradingRoutes(req, res, url, deps) {
   }
 
   // GET /api/trading/orders
-  // Real local paper-trade ledger — the SAME store that POST /api/trading/orders
-  // and /orders/place write to (tradingStore), so a placed order shows up here.
-  // Previously this read CSF memory, which surfaced a stale "shape-array" shape
-  // fixture and never reflected placed orders (#1228).
+  // Broker truth from Alpaca (#1714): every order the account submitted —
+  // autonomous (Σ₀ engine) AND manual — so the Orders / Order-history tabs
+  // reconcile with Positions and Realized P&L. The engine places straight to
+  // Alpaca and never wrote to the old local tradingStore ledger, which is why
+  // those tabs showed "None" while real positions and profit existed. Falls back
+  // to the local ledger only if the broker call fails.
   if (url.pathname === '/api/trading/orders' && req.method === 'GET') {
     try {
       const limitParam = parseInt(url.searchParams.get('limit') || '50', 10);
-      const stored = tradingStore.listOrders(limitParam > 0 ? { limit: limitParam } : {});
-      const orders = stored.slice().reverse().map((o) => ({
-        id: o.id || o.order_id || '',
-        symbol: o.symbol || o.ticker || '',
-        side: o.side || '',
-        qty: o.qty || 0,
-        type: o.type || o.order_type || 'market',
-        status: o.status || 'unknown',
-        filled_at: o.filled_at || o.submitted_at || '',
-        filled_avg: o.filled_avg || o.price || 0,
-      }));
+      let orders = [];
+      if (traderAgent) {
+        const r = await traderAgent.getOrders(limitParam > 0 ? limitParam : 50);
+        orders = (r && Array.isArray(r.orders)) ? r.orders : [];
+      }
+      if (!orders.length) {
+        // Fallback: local ledger (manual-only) if the broker returned nothing.
+        const stored = tradingStore.listOrders(limitParam > 0 ? { limit: limitParam } : {});
+        orders = stored.slice().reverse().map((o) => ({
+          id: o.id || o.order_id || '', symbol: o.symbol || o.ticker || '',
+          side: o.side || '', qty: o.qty || 0, type: o.type || o.order_type || 'market',
+          limit_price: o.limit_price || null, status: o.status || 'unknown',
+          filled_avg_price: o.filled_avg || o.price || 0,
+          filled_at: o.filled_at || o.submitted_at || '', created_at: o.created_at || '',
+        }));
+      }
       sendJson(res, orders, 200);
     } catch (error) {
       console.error('[Trading] /orders error:', error.message);
@@ -459,6 +541,150 @@ module.exports = async function tradingRoutes(req, res, url, deps) {
     return true;
   }
 
+  // GET /api/trading/symbols/search?q=SP — symbol-search popup (#1692). Filters the
+  // cached all-Alpaca-assets list by symbol/name, ranked (exact > prefix > contains).
+  if (url.pathname === '/api/trading/symbols/search' && req.method === 'GET') {
+    if (!traderAgent) { sendJson(res, { results: [], error: 'TraderAgent not initialized' }, 503); return true; }
+    const q = (url.searchParams.get('q') || '').trim().toUpperCase();
+    const klass = (url.searchParams.get('class') || '').trim();   // optional filter: us_equity | crypto
+    const limit = Math.min(60, parseInt(url.searchParams.get('limit'), 10) || 30);
+    try {
+      const assets = await traderAgent.getAllAssets();
+      let pool = klass ? assets.filter((a) => a.class === klass) : assets;
+      let results;
+      if (!q) {
+        results = pool.slice(0, limit);
+      } else {
+        const scored = [];
+        for (const a of pool) {
+          const sym = (a.symbol || '').toUpperCase();
+          const name = (a.name || '').toUpperCase();
+          let score = -1;
+          if (sym === q) score = 0;
+          else if (sym.startsWith(q)) score = 1;
+          else if (name.startsWith(q)) score = 2;
+          else if (sym.includes(q)) score = 3;
+          else if (name.includes(q)) score = 4;
+          if (score >= 0) scored.push([score, sym.length, a]);
+        }
+        scored.sort((x, y) => x[0] - y[0] || x[1] - y[1]);
+        results = scored.slice(0, limit).map((s) => s[2]);
+      }
+      sendJson(res, { results, total: pool.length, query: q }, 200);
+    } catch (error) {
+      sendJson(res, { results: [], error: error.message }, 200);
+    }
+    return true;
+  }
+
+  // GET/POST /api/trading/overnight-scan — read or flip overnight (market-closed)
+  // crypto scanning. ?set=on|off|toggle changes it; GET with no param just reads.
+  // Off = no off-hours model calls (0 tokens); auto-resets to off at market open. (#1714)
+  if (url.pathname === '/api/trading/overnight-scan') {
+    const set = (url.searchParams.get('set') || '').toLowerCase();
+    if (set === 'on') _scanWhenClosed = true;
+    else if (set === 'off') _scanWhenClosed = false;
+    else if (set === 'toggle') _scanWhenClosed = !_scanWhenClosed;
+    sendJson(res, { enabled: _scanWhenClosed, marketHours: _isUsMarketHours() }, 200);
+    return true;
+  }
+
+  // GET /api/trading/llm-usage — daily Σ₀ model-read tally (made vs saved by the
+  // scan cache + grounding pre-gate), so the API-spend reduction is observable.
+  if (url.pathname === '/api/trading/llm-usage' && req.method === 'GET') {
+    try {
+      const fs = require('fs');
+      const p = require('path').join(__dirname, '..', '..', '..', 'data', 'lantern-garage', 'trading', 'llm-usage.json');
+      const days = fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8') || '{}') : {};
+      const today = Object.keys(days).sort().slice(-1)[0] || null;
+      let totMade = 0, totSaved = 0;
+      for (const d of Object.values(days)) { totMade += d.reads_made || 0; totSaved += (d.saved_cache || 0) + (d.saved_pregate || 0); }
+      const pct = (totMade + totSaved) ? Math.round(100 * totSaved / (totMade + totSaved)) : 0;
+      sendJson(res, { days, today, totals: { reads_made: totMade, reads_saved: totSaved, pct_avoided: pct } }, 200);
+    } catch (error) {
+      sendJson(res, { days: {}, error: error.message }, 200);
+    }
+    return true;
+  }
+
+  // GET /api/trading/logo?symbol=SPY — brand-logo proxy. Prefers logo.dev (crisp,
+  // icon-style, high-res) when LOGODEV_TOKEN is set, else falls back to FMP. Served
+  // same-origin so the page can sample luminance without CORS taint. (#1713)
+  if (url.pathname === '/api/trading/logo' && req.method === 'GET') {
+    const sym = (url.searchParams.get('symbol') || '').trim().toUpperCase();
+    if (!sym || !/^[A-Z0-9.\-]{1,12}$/.test(sym)) { res.writeHead(400); res.end('bad symbol'); return true; }
+    const https = require('https');
+    const token = process.env.LOGODEV_TOKEN || '';
+    const fmpUrl = `https://financialmodelingprep.com/image-stock/${encodeURIComponent(sym)}.png`;
+    const ldUrl = token
+      ? `https://img.logo.dev/ticker/${encodeURIComponent(sym)}?token=${encodeURIComponent(token)}&size=128&format=png&retina=true`
+      : '';
+    const pipeFrom = (srcUrl, onFail) => {
+      const rq = https.get(srcUrl, (up) => {
+        const ct = up.headers['content-type'] || '';
+        if (up.statusCode >= 200 && up.statusCode < 300 && ct.startsWith('image')) {
+          res.writeHead(200, { 'Content-Type': ct, 'Cache-Control': 'public, max-age=86400', 'Access-Control-Allow-Origin': '*' });
+          up.pipe(res);
+        } else { up.resume(); onFail(); }
+      });
+      rq.on('error', onFail);
+      rq.setTimeout(8000, () => { rq.destroy(); onFail(); });
+    };
+    const sendFmp = () => pipeFrom(fmpUrl, () => { if (!res.headersSent) { res.writeHead(404); res.end(); } });
+    if (ldUrl) pipeFrom(ldUrl, sendFmp); else sendFmp();
+    return true;
+  }
+
+  // GET /api/trading/symbol-stats?ticker= — returns/volume/technicals from Yahoo
+  // daily bars, for the expanded info panel (#1711).
+  if (url.pathname === '/api/trading/symbol-stats' && req.method === 'GET') {
+    const ticker = (url.searchParams.get('ticker') || '').trim();
+    if (!ticker) { sendJson(res, { error: 'ticker required' }, 400); return true; }
+    try {
+      const yahoo = require('../lib/market-data-yahoo');
+      const data = await yahoo.getBars(ticker, '1d');
+      const bars = (data && Array.isArray(data.bars)) ? data.bars : [];
+      if (bars.length < 2) { sendJson(res, { ticker, returns: {}, available: false }, 200); return true; }
+      const closes = bars.map((b) => b.close);
+      const price = closes[closes.length - 1];
+      const retOver = (n) => { if (bars.length <= n) return null; const p0 = closes[bars.length - 1 - n]; return p0 ? +(((price - p0) / p0) * 100).toFixed(2) : null; };
+      const yr = new Date().getUTCFullYear();
+      const yi = bars.findIndex((b) => new Date(b.timestamp).getUTCFullYear() === yr);
+      const ytd = yi >= 0 && closes[yi] ? +(((price - closes[yi]) / closes[yi]) * 100).toFixed(2) : null;
+      const avgVol = Math.round(bars.slice(-30).reduce((s, b) => s + (b.volume || 0), 0) / Math.min(30, bars.length));
+      const sma = (n) => { const sl = closes.slice(-Math.min(n, closes.length)); return sl.reduce((s, c) => s + c, 0) / sl.length; };
+      const s20 = sma(20), s50 = sma(50), s200 = sma(200);
+      const bull = [s20, s50, s200].filter((s) => price > s).length;
+      const technical = bull >= 3 ? 'Strong Buy' : bull === 2 ? 'Buy' : bull === 1 ? 'Sell' : 'Strong Sell';
+      sendJson(res, {
+        ticker, price,
+        returns: { '1M': retOver(21), '3M': retOver(63), 'YTD': ytd, '1Y': retOver(252), '3Y': retOver(756) },
+        volume: bars[bars.length - 1].volume, avgVolume: avgVol,
+        technical, bullCount: bull,
+        sma20: +s20.toFixed(2), sma50: +s50.toFixed(2),
+        available: true,
+      }, 200);
+    } catch (error) {
+      sendJson(res, { error: error.message, returns: {} }, 200);
+    }
+    return true;
+  }
+
+  // GET /api/trading/symbol-info?ticker=AAPL — name/exchange/asset_class for the
+  // watchlist info panel (#1631). Read-only; reuses the Alpaca-backed validator.
+  if (url.pathname === '/api/trading/symbol-info' && req.method === 'GET') {
+    const ticker = (url.searchParams.get('ticker') || '').trim();
+    if (!ticker) { sendJson(res, { error: 'ticker required' }, 400); return true; }
+    if (!traderAgent) { sendJson(res, { error: 'TraderAgent not initialized' }, 503); return true; }
+    try {
+      const info = await traderAgent.validateSymbol(ticker);
+      sendJson(res, info || {}, 200);
+    } catch (error) {
+      sendJson(res, { error: error.message }, 200);
+    }
+    return true;
+  }
+
   // GET /api/trading/watchlist
   if (url.pathname === '/api/trading/watchlist' && req.method === 'GET') {
     if (!traderAgent) {
@@ -479,8 +705,20 @@ module.exports = async function tradingRoutes(req, res, url, deps) {
     try {
       const body = await collectRequestBody(req);
       const payload = body ? JSON.parse(body) : {};
-      const watchlist = traderAgent.addTicker(payload.ticker);
-      sendJson(res, { watchlist }, 200);
+      const sym = String(payload.ticker || '').trim();
+      if (!sym) { sendJson(res, { error: 'ticker required' }, 400); return true; }
+      // Validate the symbol is a real, tradable asset before adding (#1624) — via
+      // the Python bridge, which has the Alpaca creds. Don't store unverified
+      // tickers like "WALMART" that never get price data. Falls open only if the
+      // validator itself errors (so a bridge hiccup can't block every add).
+      let v = null;
+      try { v = await traderAgent.validateSymbol(sym); } catch (_e) { v = null; }
+      if (v && v.valid === false) {
+        sendJson(res, { error: `"${sym}" isn't a tradable symbol${v.reason ? ' — ' + v.reason : ''}`, valid: false }, 400);
+        return true;
+      }
+      const watchlist = traderAgent.addTicker((v && v.symbol) || sym);
+      sendJson(res, { watchlist, resolved: v || null }, 200);
     } catch (error) {
       sendJson(res, { error: error.message }, 400);
     }
@@ -1598,6 +1836,20 @@ module.exports = async function tradingRoutes(req, res, url, deps) {
       sendJson(res, { records, count: records.length }, 200);
     } catch (error) {
       sendJson(res, { error: 'News query failed', details: error.message, records: [] }, 500);
+    }
+    return true;
+  }
+
+  // GET /api/trading/sigma0/calibration
+  // Σ₀ council (Converge stage): Brier calibration + per-signal realized edge over
+  // the trader's graded convergence outcomes. The learning input for re-weighting
+  // the EV signals — which evidence actually predicted wins.
+  if (url.pathname === '/api/trading/sigma0/calibration' && req.method === 'GET') {
+    try {
+      const { council } = require('../lib/sigma0-trader-council');
+      sendJson(res, council(), 200);
+    } catch (error) {
+      sendJson(res, { error: 'calibration failed', details: error.message, graded: 0 }, 200);
     }
     return true;
   }

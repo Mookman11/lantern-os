@@ -29,6 +29,34 @@ CLAUDE_HAIKU  = "claude-haiku-4-5-20251001"
 
 
 grok   = OpenAI(api_key=os.getenv("XAI_API_KEY"), base_url="https://api.x.ai/v1")
+
+# Grok-with-fallback (#1701). Models are interchangeable (CLAUDE.md): when xAI is
+# down — out of credits, rate-limited, network — route the SAME analysis prompt to
+# Claude Haiku instead of letting every ticker default to NEUTRAL (which silently
+# halts all trading). One env flag (SCANNER_LLM_FALLBACK=0) disables it.
+def grok_chat(messages, max_tokens=2500, timeout=30):
+    """Return the model's text for an OpenAI-style `messages` list. Grok first;
+    on ANY failure, fall back to Claude Haiku (mapping the single prompt across
+    the Anthropic interface). Raises only if BOTH providers fail."""
+    try:
+        resp = grok.chat.completions.create(
+            model="grok-3-mini", messages=messages, max_tokens=max_tokens, timeout=timeout)
+        return resp.choices[0].message.content
+    except Exception as e:
+        if os.getenv("SCANNER_LLM_FALLBACK") == "0":
+            raise
+        log.warning("Grok unavailable (%s) — falling back to Claude Haiku", str(e)[:100])
+        log_agent("system", "LLM", f"Grok down ({str(e)[:40]}) → Claude Haiku fallback")
+        sys_txt = "\n".join(m["content"] for m in messages if m.get("role") == "system")
+        umsgs = [{"role": m["role"], "content": m["content"]}
+                 for m in messages if m.get("role") in ("user", "assistant")] \
+                or [{"role": "user", "content": messages[-1]["content"]}]
+        kw = {"model": CLAUDE_HAIKU, "max_tokens": max_tokens, "messages": umsgs}
+        if sys_txt:
+            kw["system"] = sys_txt
+        r = claude.messages.create(**kw)
+        return r.content[0].text if r.content else ""
+
 alpaca = tradeapi.REST(
     os.getenv("ALPACA_API_KEY"),
     os.getenv("ALPACA_SECRET_KEY"),
@@ -585,6 +613,11 @@ def close_trade_history(symbol: str, exit_price: float,
         con.close()
     except Exception as e:
         log.warning("Failed to close trade history: %s", e)
+    # Σ₀ Verify/Converge — grade this trade's convergence record against its P&L.
+    try:
+        _conv_grade_close(symbol, pnl_pct)
+    except Exception as e:
+        log.warning("sigma0 convergence grade failed %s: %s", symbol, e)
 
 def scan_for_new_tickers(current_watchlist: list) -> tuple:
     """
@@ -4100,13 +4133,7 @@ Return ONLY valid JSON:
   "key_reversal_level": "price level where reversal most likely",
   "action": "BUY|SELL|HOLD"
 }}"""
-    resp = grok.chat.completions.create(
-        model="grok-3-mini",
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=300,
-        timeout=25,
-    )
-    result = extract_json(resp.choices[0].message.content)
+    result = extract_json(grok_chat([{"role": "user", "content": prompt}], max_tokens=300, timeout=25))
     result["direction"]     = result.get("direction", "NEUTRAL").upper()
     result["action"]        = result.get("action", "HOLD").upper()
     result["news_velocity"] = news_velocity.get("velocity", "NORMAL")
@@ -7227,13 +7254,8 @@ Return ONLY valid JSON with this exact structure (keep all text fields under 12 
 
     log.info("[GROK_PROMPT] Ticker context sent to Grok:\n%s", ticker_lines.strip())
     try:
-        resp = grok.chat.completions.create(
-            model="grok-3-mini",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=2500,   # increased — 13 tickers need ~150 tokens each
-            timeout=30,
-        )
-        raw = resp.choices[0].message.content
+        # Grok-with-Claude-fallback so a dead xAI account doesn't NEUTRAL-out the scan.
+        raw = grok_chat([{"role": "user", "content": prompt}], max_tokens=2500)
         # Repair common Grok JSON issues before parsing:
         # smart quotes, trailing commas, apostrophes in values
         import re as _re
@@ -7303,6 +7325,190 @@ Return ONLY valid JSON with this exact structure (keep all text fields under 12 
                               "news_score": 50, "exhaustion_signal": "",
                               "key_reversal_level": "0"}
         return results
+
+
+# ── Σ₀ EV evidence helpers: cheap per-ticker win-rate + directional news ───────
+# Feed the convergence_ev scorer with LIVE base rate (realized win-rate) and news
+# sentiment, instead of the neutral defaults. Both are cheap (one SQLite read /
+# one tail-read of the shared news registry) and cached so a 1-min scan is light.
+_EV_NEWS_CACHE = {}
+_EV_NEWS_POS = ("surge", "rally", "beat", "beats", "record", "gain", "gains", "rise",
+                "rises", "jump", "jumps", "soar", "soars", "upgrade", "upgraded",
+                "bullish", "strong", "growth", "profit", "tops", "raises", "raised",
+                "outperform", "buy", "rebound", "wins", "approval", "expands")
+_EV_NEWS_NEG = ("drop", "drops", "fall", "falls", "plunge", "plunges", "crash", "miss",
+                "misses", "loss", "losses", "sink", "sinks", "slump", "downgrade",
+                "downgraded", "bearish", "weak", "cut", "cuts", "layoff", "layoffs",
+                "probe", "lawsuit", "warn", "warns", "warning", "investigation",
+                "recall", "slides", "tumble", "tumbles", "halts", "bankruptcy")
+
+
+def _ev_recent_win_rate(ticker: str):
+    """Realized win-rate in [0,1] for the EV base rate: last 10 closed trades for
+    this ticker, else portfolio-wide last 20. None when there isn't enough history
+    (the scorer then falls back to its 0.5 prior)."""
+    try:
+        con = sqlite3.connect(LESSONS_DB)
+        rows = con.execute(
+            "SELECT pnl_pct FROM trade_history WHERE symbol=? AND status='closed' "
+            "AND pnl_pct IS NOT NULL ORDER BY id DESC LIMIT 10", (ticker,)).fetchall()
+        if len(rows) < 5:
+            rows = con.execute(
+                "SELECT pnl_pct FROM trade_history WHERE status='closed' "
+                "AND pnl_pct IS NOT NULL ORDER BY id DESC LIMIT 20").fetchall()
+        con.close()
+        if len(rows) < 5:
+            return None
+        pnls = [r[0] for r in rows]
+        return len([p for p in pnls if p > 0]) / len(pnls)
+    except Exception:
+        return None
+
+
+def _ev_news_sentiment(ticker: str):
+    """Directional news sentiment in [-1,+1] for `ticker`, from the SHARED CSF news
+    registry (the same Alpaca-backed feed Explore/the trader news panel use):
+    impact-weighted keyword polarity over recent headlines that tag this ticker.
+    0.0 when there's no recent news. Cached 5 minutes."""
+    import time as _t
+    now = _t.time()
+    hit = _EV_NEWS_CACHE.get(ticker)
+    if hit and now - hit[0] < 300:
+        return hit[1]
+    score = 0.0
+    try:
+        path = os.path.join(os.path.dirname(__file__), "..", "..",
+                            "data", "lantern-garage", "trading", "news.jsonl")
+        if os.path.exists(path):
+            up = ticker.upper()
+            num = 0.0
+            wsum = 0.0
+            with open(path, "r", encoding="utf-8") as fh:
+                lines = fh.readlines()[-500:]   # recent tail only — cheap
+            for ln in lines:
+                try:
+                    rec = json.loads(ln)
+                except Exception:
+                    continue
+                if up not in [str(s).upper() for s in (rec.get("symbols") or [])]:
+                    continue
+                hl = (rec.get("headline") or "").lower()
+                pos = sum(1 for w in _EV_NEWS_POS if w in hl)
+                neg = sum(1 for w in _EV_NEWS_NEG if w in hl)
+                if pos == neg:
+                    continue
+                w = 0.5 + (rec.get("impact", 40) or 40) / 100.0    # weight by impact
+                num += (1.0 if pos > neg else -1.0) * w
+                wsum += w
+            if wsum > 0:
+                score = max(-1.0, min(1.0, num / wsum))
+    except Exception:
+        score = 0.0
+    _EV_NEWS_CACHE[ticker] = (now, score)
+    return score
+
+
+# ── Σ₀ convergence loop: emit a record on ENTER, grade it on close ─────────────
+# Closes Observe→Remember→Verify→Converge for the trader: every executed entry
+# becomes a ConvergenceRecord in the SHARED store (schema mirrors
+# lib/convergence-records.js / src/convergence/objects.py) so the council sees it;
+# on close we append a Brier-scored outcome (same rule as
+# convergence-outcome-grader.js) so realized edge can re-weight the EV signals.
+_CONV_RECORDS = os.path.join(os.path.dirname(__file__), "..", "..",
+                             "data", "convergence", "records.jsonl")
+_CONV_TRADER_OUTCOMES = os.path.join(os.path.dirname(__file__), "..", "..",
+                                     "data", "convergence", "trader-outcomes.jsonl")
+
+
+def _conv_append(path: str, obj: dict):
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(obj) + "\n")
+    except Exception as e:
+        log.warning("convergence append failed (%s): %s", path, e)
+
+
+def _conv_emit_entry(ticker: str, direction: str, order_id, ev: dict) -> str:
+    """Act stage: persist a ConvergenceRecord for an executed ENTER. Returns the
+    record id (stored on the position so close can grade it)."""
+    now = datetime.now().isoformat()
+    rid = f"cr-trade-{ticker}-{datetime.now().strftime('%Y%m%dT%H%M%S%f')}"
+    rec = {
+        "id": rid,
+        "hypothesis": f"{direction} {ticker} — Σ₀ EV {ev.get('ev_r')}R, p_win {ev.get('p_win')}",
+        "evidence_ids": [],
+        "result": {
+            "action": "ENTER", "ticker": ticker, "direction": direction,
+            "order_id": str(order_id) if order_id is not None else None,
+            "instruction": ev.get("instruction"), "signals": ev.get("signals"),
+            "ev_r": ev.get("ev_r"), "why": ev.get("why"),
+        },
+        "confidence": float(ev.get("p_win") or 0.5),
+        "reasoner": "trader-sigma0",
+        "timestamp": now,
+        "verified": False,
+        "verification_notes": None,
+        "source": f"convergence_ev:{ticker}:{order_id}",
+        "applied_evidence": [],
+        "grounding_signals": list(ev.get("why") or []),
+        "allowed_max_confidence": None,
+    }
+    _conv_append(_CONV_RECORDS, rec)
+    return rid
+
+
+def _conv_grade_close(ticker: str, pnl_pct):
+    """Verify/Converge: grade the open ENTER record for `ticker` against realized
+    P&L (Brier = (confidence − outcome)²), append to the trader outcomes log so the
+    council can recalibrate. No-op if the position had no Σ₀ record."""
+    info = _position_adjustments.get(ticker) or {}
+    rid = info.get("sigma0_record_id")
+    conf = info.get("sigma0_pwin")
+    if not rid or conf is None:
+        return
+    won = (pnl_pct or 0) > 0
+    outcome = 1 if won else 0
+    # Schema matches convergence-outcome-grader.js (passed + brier_score +
+    # confidence) so calibrationSummary() consumes it directly; outcome + signals
+    # are kept for the per-signal realized-edge aggregation.
+    _conv_append(_CONV_TRADER_OUTCOMES, {
+        "record_id": rid, "ticker": ticker,
+        "confidence": float(conf), "passed": won, "outcome": outcome,
+        "brier_score": round((float(conf) - outcome) ** 2, 4),
+        "pnl_pct": pnl_pct, "signals": info.get("sigma0_signals"),
+        "graded_at": datetime.now().isoformat(),
+    })
+
+
+def validate_symbol(ticker: str) -> dict:
+    """Validate a ticker is a REAL, tradable asset before it's added to the
+    watchlist (#1624) — via the Alpaca asset API for equities and a live price
+    probe for crypto. Runs Python-side because that's where the Alpaca creds live
+    (the Node server has none). Returns {valid, tradable, symbol, name, asset_class,
+    price?, reason}."""
+    t = (ticker or "").strip().upper()
+    if not t or not re.match(r"^[A-Z0-9.\-/]{1,12}$", t):
+        return {"valid": False, "tradable": False, "symbol": t, "reason": "invalid format"}
+    try:
+        if is_crypto(t):
+            price = fetch_ticker_price(t)
+            ok = bool(price and price > 0)
+            return {"valid": ok, "tradable": ok, "symbol": t, "name": t,
+                    "asset_class": "crypto", "price": price if ok else None,
+                    "reason": "" if ok else "no market data for crypto pair"}
+        asset = alpaca.get_asset(t)
+        tradable = bool(getattr(asset, "tradable", False))
+        return {"valid": True, "tradable": tradable,
+                "symbol": getattr(asset, "symbol", t),
+                "name": getattr(asset, "name", t),
+                "exchange": getattr(asset, "exchange", "") or "",
+                "asset_class": getattr(asset, "_raw", {}).get("class", "us_equity")
+                               if hasattr(asset, "_raw") else "us_equity",
+                "reason": "" if tradable else "asset exists but is not tradable"}
+    except Exception:
+        return {"valid": False, "tradable": False, "symbol": t,
+                "reason": "not a known symbol on Alpaca"}
 
 
 def fetch_ticker_price(ticker: str) -> float:
@@ -7658,6 +7864,81 @@ def scan_ticker(ticker: str, notify_fn=None, open_positions: dict = None,
         log_agent("system", "ROTATION",
             f"{ticker} sector {_sector_label} ({_sig_dir}) — "
             f"conf {old_conf}% → {conf}% ({_eff_adj:+d})")
+
+    # ── Σ₀ expected-value gate (convergence_ev) ───────────────────────────────
+    # Riley's detectors above (zone, 1-min structure, pattern, trend) become
+    # WEIGHTED EVIDENCE; the ENTER/SKIP call is made on expected value instead of
+    # the WAIT/GOOD/PERFECT discipline tiers Riley used for human error control.
+    # The convergence record is stashed on `analysis["sigma0"]` so the API/page
+    # can show the reasoning + a concrete entry/stop/target instruction. Active
+    # unless SIGMA0_EV=0 (kill-switch); when active a SKIP vetoes the trade and an
+    # ENTER is not allowed to be blocked by the legacy confidence threshold.
+    try:
+        from convergence_ev import score_convergence as _score_ev
+    except Exception:
+        _score_ev = None
+    if _score_ev:
+        _zone   = (riley.get("zone") or {}).get("nearest_zone") or {}
+        _struct = riley.get("structure") or {}
+        _pat    = {"PERFECT": "A", "GOOD": "B"}.get(riley.get("entry_quality"))
+        _tr     = abs(float(profile.get("tp", 8)) / float(profile.get("stop", -4) or -4))
+        _dir    = analysis.get("direction", "NEUTRAL")
+        # Live evidence (no longer neutral defaults): realized win-rate as the base
+        # rate, directional news sentiment from the shared feed, and higher-tf trend
+        # agreement from the consecutive-trend read computed upstream (if present).
+        # Base rate: prefer REALIZED win-rate (≥5 closed trades); otherwise fall
+        # back to the 90-day backtest hit-rate for this ticker+direction so the EV
+        # agrees with the downstream backtest filter instead of optimistically
+        # entering a historically-losing setup (#1623 — the SOLUSD case: realized
+        # was thin → EV used a 0.5 prior and said ENTER while the 90d backtest was
+        # 22%). run_backtest is cached, and it's called again downstream, so this
+        # is free. Only trust it with a meaningful sample (≥10 setups).
+        _wr = _ev_recent_win_rate(ticker)
+        if _wr is None:
+            try:
+                _bt0 = run_backtest(ticker, analysis.get("direction", "NEUTRAL"), profile)
+                if _bt0 and (_bt0.get("total_setups", 0) or 0) >= 10:
+                    _wr = float(_bt0.get("win_rate") or 0.5)
+            except Exception:
+                pass
+        _news   = _ev_news_sentiment(ticker)
+        _consec = locals().get("_consec") or {}
+        _hl, _lh = _consec.get("higher_lows", 0), _consec.get("lower_highs", 0)
+        _ev = _score_ev({
+            "direction":         _dir,
+            "llm_conf":          conf,
+            "in_zone":           bool((riley.get("zone") or {}).get("in_zone")),
+            "zone_strength":     _zone.get("strength", 0),
+            "zone_touches":      _zone.get("touches", 0),
+            "structure_shifted": bool(_struct.get("structure_shifted")),
+            "structure_conf":    _struct.get("confidence", 0),
+            "pattern_grade":     _pat,
+            "trend_aligned":     (_dir == "BULLISH" and _hl >= 3) or (_dir == "BEARISH" and _lh >= 3),
+            "trend_conflicts":   (_dir == "BULLISH" and _lh >= 3) or (_dir == "BEARISH" and _hl >= 3),
+            "news_sentiment":    _news,
+            "backtest_winrate":  _wr if _wr is not None else 0.5,
+            "target_r":          _tr,
+        })
+        _ev["instruction"] = {
+            "ticker": ticker, "direction": analysis.get("direction"),
+            "entry":  round(price, 4),
+            "stop":   round(price * (1 + float(profile.get("stop", -4)) / 100.0), 4),
+            "target": round(price * (1 + float(profile.get("tp", 8)) / 100.0), 4),
+            "rr":     round(_tr, 2),
+        }
+        analysis["sigma0"] = _ev
+        _side = analysis.get("direction", "NEUTRAL")
+        _sidelbl = "LONG" if _side == "BULLISH" else "SHORT" if _side == "BEARISH" else "FLAT"
+        log_agent("system", "SIGMA0",
+            f"{ticker} {_sidelbl} EV {_ev['ev_r']:+.2f}R p_win {_ev['p_win']:.2f} → {_ev['decision']} "
+            f"| {', '.join(_ev['why'])}")
+        if os.getenv("SIGMA0_EV", "1") != "0":
+            if _ev["decision"] == "SKIP":
+                return {"status": "skipped", "ticker": ticker,
+                        "reason": f"Σ₀ EV {_ev['ev_r']:+.2f}R / p_win {_ev['p_win']:.2f} below entry bar",
+                        "confidence": conf, "direction": analysis.get("direction"),
+                        "sigma0": _ev}
+            threshold = min(threshold, conf)   # EV approved → conf bar can't veto it
 
     if conf < threshold:
         reason = f"Confidence {conf}% < threshold {threshold}%"
@@ -8309,6 +8590,18 @@ def scan_ticker(ticker: str, notify_fn=None, open_positions: dict = None,
             "entry_price":    price,
             "peak_price":     price,
         }
+        # Σ₀ convergence record (Act) — emit + stash the id/p_win/signals so the
+        # close handler can grade this exact entry against its outcome.
+        _sig0 = analysis.get("sigma0")
+        if _sig0:
+            try:
+                _rid = _conv_emit_entry(ticker, analysis.get("direction"),
+                                        result.get("order_id") or result.get("id"), _sig0)
+                _position_adjustments[ticker]["sigma0_record_id"] = _rid
+                _position_adjustments[ticker]["sigma0_pwin"] = _sig0.get("p_win")
+                _position_adjustments[ticker]["sigma0_signals"] = _sig0.get("signals")
+            except Exception as _e:
+                log.warning("sigma0 convergence emit failed %s: %s", ticker, _e)
         save_position_state(ticker, _position_adjustments[ticker])  # persist
         log_agent("system", "LEVELS",
             f"{ticker} levels set: Stop ${levels['stop_price']:.4f} "
@@ -8358,7 +8651,155 @@ def scan_ticker(ticker: str, notify_fn=None, open_positions: dict = None,
         except Exception as e:
             log.warning("Telegram notify failed: %s", e)
 
+    # Carry the Σ₀ convergence record + entry/stop/target instruction onto the
+    # executed signal so the API/page can show WHAT was entered and why.
+    if isinstance(result, dict):
+        result.setdefault("ticker", ticker)
+        result.setdefault("direction", analysis.get("direction"))
+        if analysis.get("sigma0"):
+            result["sigma0"] = analysis["sigma0"]
     return result
+
+# ── Σ₀ scan cache (Remember-stage retrieval) ──────────────────────────────────
+# The batch Grok read is the recurring per-scan cost: it runs for every ticker
+# every minute, even when nothing moved. When a ticker's price is essentially
+# unchanged since its last read, the directional analysis is too — so reuse it
+# instead of paying for the model again. This is the convergence-router pattern:
+# retrieve the prior decision rather than recompute it. SAFE because the grounding
+# signals (zone / 1-min structure / pattern / EV) are still recomputed fresh
+# downstream every scan, and ENTER requires fresh grounding
+# (convergence_ev.has_evidence) — a reused read can never manufacture a trade. The
+# model is spent only when price actually moves. Kill-switch: SIGMA0_SCAN_CACHE=0.
+_SCAN_CACHE_ON   = os.getenv("SIGMA0_SCAN_CACHE", "1") != "0"
+_SCAN_CACHE_BAND = float(os.getenv("SIGMA0_SCAN_CACHE_BAND", "0.0015"))  # 0.15% price move = "unchanged"
+_SCAN_CACHE_TTL  = float(os.getenv("SIGMA0_SCAN_CACHE_TTL", "600"))      # re-read at least every 10 min
+# The engine is spawned as a fresh process per scan (see lib/trader-agent.js), so
+# module memory won't survive between scans — the cache lives on disk.
+_SCAN_CACHE_FILE = os.path.join(os.path.dirname(__file__), "..", "..",
+                                "data", "lantern-garage", "trading", "scan-llm-cache.json")
+
+
+def _scan_cache_load() -> dict:
+    """ticker -> [price, analysis, ts]. Missing/corrupt file → empty."""
+    if not _SCAN_CACHE_ON:
+        return {}
+    try:
+        with open(_SCAN_CACHE_FILE) as f:
+            return json.load(f) or {}
+    except Exception:
+        return {}
+
+
+def _scan_cache_save(cache: dict):
+    """Persist atomically, dropping entries older than 3×TTL to bound the file."""
+    if not _SCAN_CACHE_ON:
+        return
+    try:
+        now = datetime.now().timestamp()
+        cache = {t: v for t, v in cache.items()
+                 if isinstance(v, (list, tuple)) and len(v) == 3 and (now - v[2]) < _SCAN_CACHE_TTL * 3}
+        os.makedirs(os.path.dirname(_SCAN_CACHE_FILE), exist_ok=True)
+        tmp = _SCAN_CACHE_FILE + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(cache, f)
+        os.replace(tmp, _SCAN_CACHE_FILE)
+    except Exception:
+        pass
+
+
+def _scan_cache_partition(targets: list, prices: dict, cache: dict):
+    """Split targets into (fresh, cached_results). A ticker is served from cache
+    when its price moved < BAND since its cached read AND it is younger than TTL."""
+    if not _SCAN_CACHE_ON:
+        return list(targets), {}
+    now = datetime.now().timestamp()
+    fresh, cached = [], {}
+    for t in targets:
+        px = prices.get(t, 0) or 0
+        ent = cache.get(t)
+        if (ent and len(ent) == 3 and px > 0 and ent[0] > 0
+                and (now - ent[2]) < _SCAN_CACHE_TTL
+                and abs(px / ent[0] - 1.0) < _SCAN_CACHE_BAND):
+            cached[t] = dict(ent[1])       # reuse the prior directional read
+        else:
+            fresh.append(t)
+    return fresh, cached
+
+
+# ── Σ₀ grounding pre-gate (Reason-stage routing) ──────────────────────────────
+# Spend the model only on tickers that could actually produce a trade. ENTER
+# requires convergence_ev.has_evidence — ≥1 grounding signal (zone / 1-min
+# structure / pattern / trend / news). Riley short-circuits when far from a zone
+# (find_sr_zones), so zone/structure/pattern grounding can ONLY exist near a zone.
+# Therefore a ticker that is far from every zone AND has no multi-bar trend AND no
+# news lean is guaranteed to SKIP — calling the LLM for it is wasted. This gate is
+# deliberately CONSERVATIVE and direction-agnostic: near a zone → keep and let the
+# full flow decide; held positions always pass (they still need exit/flip scans);
+# any error → keep (fail-open). It can never drop a setup the full flow would take.
+# Kill-switch: SIGMA0_PREGATE=0.
+_PREGATE_ON        = os.getenv("SIGMA0_PREGATE", "1") != "0"
+_PREGATE_ZONE_PROX = float(os.getenv("SIGMA0_PREGATE_ZONE_PROX", "3.5"))  # % to a zone that still "counts"
+
+
+def _has_grounding(ticker: str, price: float, open_positions: dict = None) -> bool:
+    if not _PREGATE_ON:
+        return True
+    try:
+        if open_positions and get_position_side(ticker, open_positions) != "none":
+            return True                                   # never gate a held position
+        sr = find_sr_zones(ticker, price)
+        if sr.get("in_zone") or float(sr.get("dist_to_nearest", 99) or 99) <= _PREGATE_ZONE_PROX:
+            return True                                   # at/near a zone — let the full flow decide
+        _c = _riley_detect_consecutive_trend(ticker) or {}
+        if int(_c.get("higher_lows", 0) or 0) >= 3 or int(_c.get("lower_highs", 0) or 0) >= 3:
+            return True                                   # a real multi-bar trend can ground it
+        if abs(float(_ev_news_sentiment(ticker) or 0.0)) >= 0.2:
+            return True                                   # a real news lean can ground it
+        return False                                      # far from any zone, trendless, newsless → would SKIP
+    except Exception:
+        return True                                       # fail-open: never drop on error
+
+
+# ── Σ₀ LLM-usage counter (so the reduction is observable) ─────────────────────
+_LLM_USAGE_FILE = os.path.join(os.path.dirname(__file__), "..", "..",
+                               "data", "lantern-garage", "trading", "llm-usage.json")
+
+
+def _log_llm_usage(reads_made: int, saved_cache: int, saved_pregate: int, candidates: int):
+    """Tally Stage-2 model reads vs reads avoided (cache + pre-gate), per day, so
+    the API-spend reduction is visible in the feed and on disk. Never breaks a scan."""
+    try:
+        try:
+            with open(_LLM_USAGE_FILE) as f:
+                data = json.load(f) or {}
+        except Exception:
+            data = {}
+        day = datetime.now().strftime("%Y-%m-%d")
+        e = data.get(day) or {"reads_made": 0, "saved_cache": 0, "saved_pregate": 0,
+                              "candidates": 0, "scans": 0}
+        e["reads_made"]    += int(reads_made)
+        e["saved_cache"]   += int(saved_cache)
+        e["saved_pregate"] += int(saved_pregate)
+        e["candidates"]    += int(candidates)
+        e["scans"]         += 1
+        data[day] = e
+        for _old in sorted(data)[:-30]:                   # keep ~30 days
+            data.pop(_old, None)
+        os.makedirs(os.path.dirname(_LLM_USAGE_FILE), exist_ok=True)
+        tmp = _LLM_USAGE_FILE + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(data, f)
+        os.replace(tmp, _LLM_USAGE_FILE)
+        saved = e["saved_cache"] + e["saved_pregate"]
+        tot = e["reads_made"] + saved
+        pct = (100 * saved // tot) if tot else 0
+        log_agent("system", "SIGMA0",
+            f"LLM reads — this scan: {reads_made} made, {saved_cache + saved_pregate} saved "
+            f"({saved_cache} cache + {saved_pregate} pre-gate) | today: {e['reads_made']} made / "
+            f"{saved} saved ({pct}% avoided) over {e['scans']} scans")
+    except Exception:
+        pass
+
 
 # ── Main scan ─────────────────────────────────────────────────────────────────
 
@@ -8511,8 +8952,36 @@ def scan_all(watchlist: list, notify_fn=None) -> list:
         t1 = datetime.now()
         # Filter to tickers with valid prices
         valid_targets = [t for t in scan_targets if prices.get(t, 0) > 0]
+        _pregated = []
         if valid_targets:
-            grok_results = batch_grok_analysis(valid_targets, prices)
+            # Σ₀ cache: only re-read tickers whose price actually moved; reuse the
+            # rest. The expensive batch shrinks (or skips) when the tape is quiet.
+            _cache = _scan_cache_load()
+            fresh_targets, cached_results = _scan_cache_partition(valid_targets, prices, _cache)
+            # Σ₀ pre-gate: among the moved tickers, only spend the model on those
+            # that could actually ENTER; flat/featureless ones would SKIP regardless.
+            _pregated = []
+            if _PREGATE_ON and fresh_targets:
+                _grounded = [t for t in fresh_targets
+                             if _has_grounding(t, prices.get(t, 0), open_positions)]
+                _pregated = [t for t in fresh_targets if t not in _grounded]
+                if _pregated:
+                    log_agent("system", "SCANNER",
+                        f"Σ₀ pre-gate: skipped {len(_pregated)} flat/featureless ticker(s) "
+                        f"pre-LLM ({', '.join(_pregated)})")
+                fresh_targets = _grounded
+            grok_results = batch_grok_analysis(fresh_targets, prices) if fresh_targets else {}
+            _now_ts = datetime.now().timestamp()
+            for _t, _a in list(grok_results.items()):           # cache raw, pre-rotation
+                if prices.get(_t, 0) > 0 and isinstance(_a, dict):
+                    _cache[_t] = [prices[_t], _a, _now_ts]
+            _scan_cache_save(_cache)
+            grok_results.update(cached_results)
+            if cached_results:
+                log_agent("system", "SCANNER",
+                    f"Σ₀ cache: reused {len(cached_results)}/{len(valid_targets)} LLM "
+                    f"reads (price unchanged), {len(fresh_targets)} re-analyzed")
+            _log_llm_usage(len(fresh_targets), len(cached_results), len(_pregated), len(valid_targets))
         else:
             grok_results = {}
 
@@ -8554,10 +9023,16 @@ def scan_all(watchlist: list, notify_fn=None) -> list:
                     market_bias=market_bias,
                 )
 
-        with ThreadPoolExecutor(max_workers=max(1, min(len(valid_targets), 4)),
+        # Pre-gated tickers (flat + featureless, no LLM read) can't ENTER and hold
+        # no position — record as skipped, don't waste a Stage-3 pass on them.
+        _stage3_targets = [t for t in valid_targets if t not in _pregated]
+        for _pt in _pregated:
+            skipped.append({"ticker": _pt, "reason": "Σ₀ pre-gate — no grounding (flat, no zone/trend/news)"})
+
+        with ThreadPoolExecutor(max_workers=max(1, min(len(_stage3_targets), 4)),
                                 thread_name_prefix="claude") as ex:
             scan_futures = {ex.submit(scan_with_semaphore, t): t
-                           for t in valid_targets}
+                           for t in _stage3_targets}
             for fut in as_completed(scan_futures, timeout=90):  # 90s max per scan
                 t = scan_futures[fut]
                 try:
