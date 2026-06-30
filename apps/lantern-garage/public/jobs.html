@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#06b6d4">
+  <link rel="stylesheet" href="/css/site.css">
+  <title>Job Hunt — Keystone OS</title>
+  <style>
+    /* Job hunt that runs itself (#1431): recruiting funnel + next actions. */
+    .w { max-width: 880px; margin: 0 auto; padding: 18px 16px 60px; }
+    h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; color: var(--text, #e5e7eb); }
+    .lede { margin: 0 0 16px; color: var(--muted, #9aa0aa); font-size: 13px; line-height: 1.5; }
+    .card { background: var(--surface1, rgba(255,255,255,.03)); border: 1px solid var(--border, rgba(255,255,255,.10));
+      border-radius: 14px; padding: 16px; margin-bottom: 16px; }
+    h2 { font-size: 14px; color: var(--text, #e5e7eb); margin: 0 0 10px; }
+    label { font-size: 12px; color: var(--muted, #9aa0aa); display: block; margin-bottom: 3px; }
+    input, select { width: 100%; box-sizing: border-box; background: var(--surface2, rgba(255,255,255,.05)); color: var(--text, #e5e7eb);
+      border: 1px solid var(--border, rgba(255,255,255,.14)); border-radius: 9px; padding: 8px 10px; font-size: 14px; margin-bottom: 8px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .btn { background: var(--accent, #06b6d4); color: #06222a; border: none; border-radius: 9px; padding: 9px 16px; font-size: 14px; font-weight: 600; cursor: pointer; }
+    .funnel { display: flex; gap: 8px; align-items: flex-end; }
+    .stage { flex: 1; text-align: center; }
+    .stage .bar { background: linear-gradient(180deg,#38bdf8,#06b6d4); border-radius: 8px 8px 0 0; margin: 0 auto; width: 70%; min-height: 6px; }
+    .stage .n { font-size: 22px; font-weight: 700; color: var(--text, #e5e7eb); margin-top: 6px; }
+    .stage .l { font-size: 11px; color: var(--muted, #9aa0aa); text-transform: uppercase; letter-spacing: .04em; }
+    .stage .conv { font-size: 11px; color: #4ade80; }
+    .rates { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 14px; font-size: 12px; color: var(--muted, #9aa0aa); }
+    .rates b { color: var(--text, #e5e7eb); }
+    .pace { color: #4ade80; } .pace.low { color: #f59e0b; }
+    .app { padding: 11px 0; border-bottom: 1px solid var(--border, rgba(255,255,255,.07)); }
+    .app .t { font-size: 14px; color: var(--text, #e5e7eb); font-weight: 600; }
+    .app .m { font-size: 12px; color: var(--muted, #9aa0aa); }
+    .stagetag { display:inline-block;font-size:10px;border-radius:5px;padding:1px 6px;text-transform:uppercase;margin-right:6px; }
+    .st-applied{background:rgba(148,163,184,.15);color:#94a3b8;} .st-screen{background:rgba(56,189,248,.15);color:#38bdf8;}
+    .st-interview{background:rgba(167,139,250,.15);color:#a78bfa;} .st-offer{background:rgba(74,222,128,.15);color:#4ade80;}
+    .out-rejected{color:#f87171;} .out-accepted{color:#4ade80;} .out-ghosted{color:#f59e0b;}
+    .na { font-size: 12px; margin-top: 4px; }
+    .na.follow-up,.na.decide { color: #f59e0b; } .na.wait { color: var(--muted,#9aa0aa); } .na.learn,.na.celebrate { color: #38bdf8; } .na.move-on { color: #f87171; }
+    .actions { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+    .actions button { font-size: 11px; padding: 3px 8px; border-radius: 6px; border: 1px solid var(--border, rgba(255,255,255,.18)); background: transparent; color: var(--text,#e5e7eb); cursor: pointer; }
+    .empty { color: var(--muted, #9aa0aa); font-size: 13px; }
+  </style>
+</head>
+<body>
+  <nav class="site-nav">
+    <a class="nav-brand" href="/"><img src="/mandala.svg" alt="" aria-hidden="true" style="width:24px;height:24px;vertical-align:middle"><span style="font-size:18px;font-weight:600">Keystone OS</span></a>
+    <div class="nav-links">
+      <a href="/dream-chat.html">Chat</a>
+      <a href="/decisions.html">Decisions</a>
+      <a href="/jobs.html" class="active">Jobs</a>
+      <a href="/knowledgecenter.html">Help</a>
+    </div>
+    <button class="nav-btn" id="theme-toggle" title="Toggle light / dark mode" aria-label="Toggle theme" onclick="(function(){var h=document.documentElement;h.setAttribute('data-theme',h.getAttribute('data-theme')==='dark'?'light':'dark');})()">☀</button>
+  </nav>
+
+  <main class="w">
+    <h1>Job Hunt</h1>
+    <p class="lede">Track every application and watch it as a funnel: how many made it applied → screen → interview → offer, the conversion at each step, your response/ghost rates, and this week's pace. Each application also tells you the next move. 🔒 Local-only.</p>
+
+    <div class="card">
+      <h2>Funnel</h2>
+      <div class="funnel" id="funnel"></div>
+      <div class="rates" id="rates"></div>
+    </div>
+
+    <div class="card">
+      <h2>Log an application</h2>
+      <div class="grid">
+        <div><label>Company</label><input id="company" placeholder="e.g. Acme Corp"></div>
+        <div><label>Role</label><input id="role" placeholder="e.g. Senior Engineer"></div>
+        <div><label>Source</label><input id="source" placeholder="e.g. LinkedIn, referral"></div>
+        <div><label>Stage</label><select id="stage"><option>applied</option><option>screen</option><option>interview</option><option>offer</option></select></div>
+      </div>
+      <button class="btn" id="add">Add</button>
+    </div>
+
+    <div class="card">
+      <h2>Applications</h2>
+      <div id="apps"></div>
+    </div>
+  </main>
+
+  <script>
+    var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]; }); };
+    function pct(x) { return x == null ? '—' : Math.round(x * 100) + '%'; }
+
+    function renderFunnel(f) {
+      if (!f || f.status !== 'ok') { document.getElementById('funnel').innerHTML = '<div class="empty">No applications yet — log one below.</div>'; document.getElementById('rates').innerHTML = ''; return; }
+      var max = Math.max.apply(null, f.funnel.map(function (s) { return s.count; })) || 1;
+      document.getElementById('funnel').innerHTML = f.funnel.map(function (s) {
+        return '<div class="stage"><div class="bar" style="height:' + Math.max(6, Math.round(s.count / max * 110)) + 'px"></div>'
+          + '<div class="n">' + s.count + '</div><div class="l">' + esc(s.stage) + '</div>'
+          + (s.conversionFromPrev != null ? '<div class="conv">' + pct(s.conversionFromPrev) + ' ↑</div>' : '') + '</div>';
+      }).join('');
+      var paceCls = f.appliedThisWeek >= f.weeklyTarget ? '' : 'low';
+      document.getElementById('rates').innerHTML =
+        '<span>response rate <b>' + pct(f.responseRate) + '</b></span>'
+        + '<span>offer rate <b>' + pct(f.offerRate) + '</b></span>'
+        + '<span>ghost rate <b>' + pct(f.ghostRate) + '</b></span>'
+        + '<span>this week <b class="pace ' + paceCls + '">' + f.appliedThisWeek + ' / ' + f.weeklyTarget + '</b></span>';
+    }
+
+    function appCard(a) {
+      var na = a.nextAction || {};
+      var outcome = a.outcome && a.outcome !== 'pending' ? ' · <span class="out-' + esc(a.outcome) + '">' + esc(a.outcome) + '</span>' : '';
+      return '<div class="app"><div class="t"><span class="stagetag st-' + esc(a.stage) + '">' + esc(a.stage) + '</span>' + esc(a.role) + ' @ ' + esc(a.company) + outcome + '</div>'
+        + '<div class="m">' + esc(a.source || '') + ' · applied ' + esc((a.appliedAt || '').slice(0, 10)) + '</div>'
+        + '<div class="na ' + esc(na.action) + '">→ ' + esc(na.text) + '</div>'
+        + '<div class="actions"><button onclick="window._adv(\'' + a.id + '\')">Advance stage</button><button onclick="window._u(\'' + a.id + '\',\'outcome\',\'rejected\')">Rejected</button><button onclick="window._u(\'' + a.id + '\',\'outcome\',\'ghosted\')">Ghosted</button><button onclick="window._u(\'' + a.id + '\',\'outcome\',\'accepted\')">Offer ✓</button></div></div>';
+    }
+
+    var STAGES = ['applied', 'screen', 'interview', 'offer'];
+    window._adv = function (id) { var a = (window._apps || []).find(function (x) { return x.id === id; }); if (!a) return; var i = STAGES.indexOf(a.stage); window._u(id, 'stage', STAGES[Math.min(STAGES.length - 1, i + 1)]); };
+    window._u = async function (id, field, val) { var b = {}; b[field] = val; await fetch('/api/jobs/' + encodeURIComponent(id), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) }); load(); };
+
+    async function load() {
+      var r = await fetch('/api/jobs').then(function (x) { return x.json(); });
+      window._apps = r.apps || [];
+      renderFunnel(r.funnel);
+      document.getElementById('apps').innerHTML = (r.apps && r.apps.length) ? r.apps.map(appCard).join('') : '<div class="empty">No applications yet.</div>';
+    }
+    async function add() {
+      var company = document.getElementById('company').value.trim(), role = document.getElementById('role').value.trim();
+      if (!company || !role) return;
+      await fetch('/api/jobs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ company: company, role: role, source: document.getElementById('source').value.trim(), stage: document.getElementById('stage').value }) });
+      document.getElementById('company').value = ''; document.getElementById('role').value = ''; document.getElementById('source').value = '';
+      load();
+    }
+    document.getElementById('add').addEventListener('click', add);
+    load();
+  </script>
+</body>
+</html>
