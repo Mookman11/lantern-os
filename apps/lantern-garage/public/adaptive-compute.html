@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#06b6d4">
+  <link rel="stylesheet" href="/css/site.css">
+  <title>Adaptive Compute — Keystone OS</title>
+  <style>
+    /* Adaptive-compute coder with a visible thinking budget (#1423). */
+    .w { max-width: 940px; margin: 0 auto; padding: 18px 16px 60px; }
+    h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; color: var(--text, #e5e7eb); }
+    .lede { margin: 0 0 16px; color: var(--muted, #9aa0aa); font-size: 13px; line-height: 1.5; }
+    textarea { width: 100%; box-sizing: border-box; min-height: 150px; background: var(--surface2, rgba(255,255,255,.05)); color: var(--text, #e5e7eb);
+      border: 1px solid var(--border, rgba(255,255,255,.14)); border-radius: 10px; padding: 11px 12px; font: 13px/1.4 ui-monospace, Menlo, Consolas, monospace; resize: vertical; }
+    .btn { background: var(--accent, #06b6d4); color: #06222a; border: none; border-radius: 9px; padding: 9px 18px; font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 8px; }
+    .card { background: var(--surface1, rgba(255,255,255,.03)); border: 1px solid var(--border, rgba(255,255,255,.10)); border-radius: 14px; padding: 16px; margin-top: 16px; }
+    .meters { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
+    .meter { flex: 1; min-width: 150px; }
+    .meter .v { font-size: 28px; font-weight: 700; color: var(--text, #e5e7eb); }
+    .meter .v.saved { color: #4ade80; } .meter .v.fid { color: #38bdf8; }
+    .meter .l { font-size: 11px; color: var(--muted, #9aa0aa); text-transform: uppercase; letter-spacing: .04em; }
+    table { width: 100%; border-collapse: collapse; font: 12px/1.3 ui-monospace, Menlo, Consolas, monospace; }
+    td { padding: 2px 6px; vertical-align: middle; white-space: pre; }
+    td.n { color: var(--muted, #6b7280); text-align: right; width: 34px; user-select: none; }
+    td.code { color: var(--text, #cbd5e1); overflow: hidden; text-overflow: ellipsis; max-width: 520px; }
+    td.depth { width: 120px; }
+    .bar { height: 9px; border-radius: 4px; background: rgba(255,255,255,.07); position: relative; }
+    .bar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: linear-gradient(90deg,#22d3ee,#f59e0b); }
+    td.dn { color: var(--muted, #9aa0aa); width: 64px; text-align: right; }
+    .note { font-size: 11px; color: var(--muted, #9aa0aa); margin-top: 10px; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <nav class="site-nav">
+    <a class="nav-brand" href="/"><img src="/mandala.svg" alt="" aria-hidden="true" style="width:24px;height:24px;vertical-align:middle"><span style="font-size:18px;font-weight:600">Keystone OS</span></a>
+    <div class="nav-links">
+      <a href="/dream-chat.html">Chat</a>
+      <a href="/metrics.html">Metrics</a>
+      <a href="/adaptive-compute.html" class="active">Compute</a>
+      <a href="/knowledgecenter.html">Help</a>
+    </div>
+    <button class="nav-btn" id="theme-toggle" title="Toggle light / dark mode" aria-label="Toggle theme" onclick="(function(){var h=document.documentElement;h.setAttribute('data-theme',h.getAttribute('data-theme')==='dark'?'light':'dark');})()">☀</button>
+  </nav>
+
+  <main class="w">
+    <h1>Adaptive Compute</h1>
+    <p class="lede">Like Ouro's Q-exit gate: the coder spends more recurrent <b>depth</b> on hard lines and exits early on boilerplate. Paste code to see the per-line depth budget and how much recurrent compute the Q-exit saves vs running every line to full depth.</p>
+    <textarea id="code" spellcheck="false">function classify(xs) {
+  // boilerplate exits early
+  const out = [];
+  for (const x of xs) {
+    if (x > 0 &amp;&amp; x % 2 === 0) {
+      out.push(Math.sqrt(x) * weight(x, bias));
+    } else {
+      out.push(0);
+    }
+  }
+  return out;
+}</textarea>
+    <button class="btn" id="run">Analyze budget</button>
+
+    <div class="card" id="result" style="display:none">
+      <div class="meters">
+        <div class="meter"><div class="v saved" id="saved">—</div><div class="l">recurrent compute saved</div></div>
+        <div class="meter"><div class="v fid" id="fid">—</div><div class="l">est. fidelity (mean confidence)</div></div>
+        <div class="meter"><div class="v" id="spent">—</div><div class="l">depth spent / baseline</div></div>
+      </div>
+      <table id="rows"></table>
+      <p class="note" id="note"></p>
+    </div>
+  </main>
+
+  <script>
+    var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]; }); };
+    async function run() {
+      var code = document.getElementById('code').value;
+      var r = await fetch('/api/adaptive-compute/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: code }) }).then(function (x) { return x.json(); });
+      if (!r.ok) return;
+      var a = r.analysis;
+      document.getElementById('result').style.display = 'block';
+      document.getElementById('saved').textContent = a.computeSaved == null ? '—' : Math.round(a.computeSaved * 100) + '%';
+      document.getElementById('fid').textContent = a.fidelity == null ? '—' : Math.round(a.fidelity * 100) + '%';
+      document.getElementById('spent').textContent = a.computeSpent + ' / ' + a.computeBaseline;
+      document.getElementById('rows').innerHTML = a.rows.map(function (row) {
+        if (!row.text.trim()) return '<tr><td class="n">' + row.n + '</td><td class="code"></td><td class="depth"></td><td class="dn"></td></tr>';
+        var w = Math.round(row.depth / a.maxDepth * 100);
+        return '<tr><td class="n">' + row.n + '</td><td class="code">' + esc(row.text) + '</td>'
+          + '<td class="depth"><div class="bar"><i style="width:' + w + '%"></i></div></td>'
+          + '<td class="dn">d' + row.depth + '/' + a.maxDepth + '</td></tr>';
+      }).join('');
+      document.getElementById('note').textContent = 'Estimator, not the trained gate: per-line depth is derived from surface features (control-flow, operators, nesting), and "saved" is the fraction of recurrent steps the Q-exit avoids vs a fixed ' + a.maxDepth + '-step baseline for this input.';
+    }
+    document.getElementById('run').addEventListener('click', run);
+    run();
+  </script>
+</body>
+</html>
