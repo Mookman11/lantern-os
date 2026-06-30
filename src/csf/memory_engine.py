@@ -24,6 +24,7 @@ Promotion flow:
 import asyncio
 import hashlib
 import json
+import math
 import os
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -164,6 +165,7 @@ class MemoryEngine:
         self._keyword_index: Dict[str, Set[str]] = defaultdict(set)
         self._entity_index: Dict[str, Set[str]] = defaultdict(set)
         self._index_path = self.base / "_index.json"
+        self._doc_count_cache: Optional[int] = None  # distinct docs in keyword index (IDF, #1689)
         self._load_index()
 
     def _path(self, record: MemoryRecord) -> Path:
@@ -227,6 +229,7 @@ class MemoryEngine:
 
     def _update_index(self, record: MemoryRecord) -> None:
         """Add a record to keyword/entity indexes."""
+        self._doc_count_cache = None  # index changed → recompute IDF doc count lazily
         for kw in record.keywords:
             kw_lower = kw.lower()
             # Skip index update if already at max size
@@ -263,6 +266,7 @@ class MemoryEngine:
                     data = json.load(f)
                 self._keyword_index = defaultdict(set, {k: set(v) for k, v in data.get("keywords", {}).items()})
                 self._entity_index = defaultdict(set, {k: set(v) for k, v in data.get("entities", {}).items()})
+                self._doc_count_cache = None
                 return
             except Exception:
                 pass
@@ -272,6 +276,7 @@ class MemoryEngine:
         """Full scan of all registries to rebuild indexes."""
         self._keyword_index.clear()
         self._entity_index.clear()
+        self._doc_count_cache = None
         for part in CubePartition:
             reg = self._registry_path(part)
             if not reg.exists():
@@ -319,8 +324,20 @@ class MemoryEngine:
             return False
         return True
 
-    def _indexed_candidates(self, keywords: Optional[List[str]], entities: Optional[List[str]]) -> Optional[Set[str]]:
-        """Return candidate memory_ids from indexes, or None for full scan."""
+    def _indexed_candidates(
+        self,
+        keywords: Optional[List[str]],
+        entities: Optional[List[str]],
+        union: bool = False,
+    ) -> Optional[Set[str]]:
+        """Return candidate memory_ids from indexes, or None for full scan.
+
+        Default is INTERSECTION (a record must contain every requested keyword/entity) —
+        the strict filter semantics used by plain queries. With ``union=True`` (used by
+        multi-signal retrieval) a record matching ANY requested term is a candidate, so the
+        IDF-weighted scorer can actually rank partial matches — a turn matching one rare,
+        distinctive word should surface even if it misses the common ones (#1689).
+        """
         if not keywords and not entities:
             return None
         candidate_sets: List[Set[str]] = []
@@ -332,10 +349,12 @@ class MemoryEngine:
                 candidate_sets.append(self._entity_index.get(ent.lower(), set()))
         if not candidate_sets:
             return None
-        # Intersection across all provided keywords and entities
         result = candidate_sets[0].copy()
         for s in candidate_sets[1:]:
-            result &= s
+            if union:
+                result |= s
+            else:
+                result &= s
         return result
 
     def query(
@@ -362,7 +381,9 @@ class MemoryEngine:
         """
         results: List[MemoryRecord] = []
         scored: List[tuple[float, MemoryRecord]] = []
-        candidate_ids = self._indexed_candidates(keywords, entities)
+        # Multi-signal ranking wants partial matches in the candidate pool (union) so IDF
+        # can discriminate; plain filtering keeps strict intersection semantics.
+        candidate_ids = self._indexed_candidates(keywords, entities, union=use_multi_signal)
 
         if candidate_ids is not None:
             # Index path: load only candidates
@@ -425,30 +446,62 @@ class MemoryEngine:
                 return False
         return True
 
-    @staticmethod
+    def _doc_count(self) -> int:
+        """Distinct documents in the keyword index (the N for IDF). Cached; invalidated
+        whenever the index changes."""
+        if self._doc_count_cache is None:
+            ids: Set[str] = set()
+            for s in self._keyword_index.values():
+                ids |= s
+            self._doc_count_cache = max(len(ids), 1)
+        return self._doc_count_cache
+
+    def _idf(self, term: str) -> float:
+        """Smoothed inverse document frequency: a term in few records is more
+        discriminative than a common one. Always > 0 (BM25-style +1 smoothing)."""
+        N = self._doc_count()
+        df = len(self._keyword_index.get(term.lower(), ()))
+        return math.log((N + 1) / (df + 1)) + 1.0
+
     def _multi_signal_score(
+        self,
         rec: MemoryRecord,
         query_keywords: List[str],
         query_entities: List[str],
     ) -> float:
-        """Fused retrieval score: semantic 0.5 + keyword 0.3 + entity 0.2.
+        """Fused retrieval score with IDF-weighted lexical matching (#1689).
 
-        Semantic component falls back to record confidence when no external
-        vector similarity is available.
+        The old scorer added ``semantic = rec.confidence`` at weight 0.5 — but traces
+        are all confidence 1.0, so that term was a flat 0.5 offset on EVERY candidate,
+        carrying zero ranking signal (half the score wasted), and the keyword term was a
+        flat matched/total count that ignored how discriminative each matched word is.
+
+        Now matched keywords are weighted by IDF (rare distinctive words outrank common
+        ones — BM25-lite, deterministic, offline). When no real vector embedding is
+        available, lexical+entity carry the full score instead of the constant offset;
+        confidence is kept only as a negligible deterministic tiebreaker.
         """
-        semantic = rec.confidence if rec.confidence else 0.5
         keyword_score = 0.0
-        entity_score = 0.0
-
         if query_keywords and rec.keywords:
-            matched = sum(1 for kw in query_keywords if kw.lower() in [k.lower() for k in rec.keywords])
-            keyword_score = matched / max(len(query_keywords), 1)
+            rec_kw = {k.lower() for k in rec.keywords}
+            total_idf = sum(self._idf(kw) for kw in query_keywords) or 1.0
+            matched_idf = sum(self._idf(kw) for kw in query_keywords if kw.lower() in rec_kw)
+            keyword_score = matched_idf / total_idf
 
+        entity_score = 0.0
         if query_entities and rec.entities:
-            matched = sum(1 for ent in query_entities if ent.lower() in [e.lower() for e in rec.entities])
+            rec_ent = {e.lower() for e in rec.entities}
+            matched = sum(1 for ent in query_entities if ent.lower() in rec_ent)
             entity_score = matched / max(len(query_entities), 1)
 
-        return semantic * 0.5 + keyword_score * 0.3 + entity_score * 0.2
+        # When a real vector similarity is wired in later, fuse it as the semantic term.
+        semantic = getattr(rec, "vector_similarity", None)
+        if semantic is not None:
+            return semantic * 0.5 + keyword_score * 0.3 + entity_score * 0.2
+
+        # No embedding: lexical + entity carry the score; confidence is a tiny tiebreaker
+        # only (so equal-lexical candidates fall back to confidence, deterministically).
+        return keyword_score * 0.7 + entity_score * 0.3 + rec.confidence * 0.001
 
     def promote(
         self,
