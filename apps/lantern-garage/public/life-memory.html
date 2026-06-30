@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#06b6d4">
+  <link rel="stylesheet" href="/css/site.css">
+  <title>Life Memory — Keystone OS</title>
+  <style>
+    /* Personal AI that remembers your life across months (#1429). */
+    .w { max-width: 760px; margin: 0 auto; padding: 18px 16px 60px; }
+    h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; color: var(--text, #e5e7eb); }
+    .lede { margin: 0 0 16px; color: var(--muted, #9aa0aa); font-size: 13px; line-height: 1.5; }
+    .card { background: var(--surface1, rgba(255,255,255,.03)); border: 1px solid var(--border, rgba(255,255,255,.10)); border-radius: 14px; padding: 16px; margin-bottom: 16px; }
+    h2 { font-size: 14px; color: var(--text, #e5e7eb); margin: 0 0 10px; }
+    .row { display: flex; gap: 8px; }
+    input { flex: 1; box-sizing: border-box; background: var(--surface2, rgba(255,255,255,.05)); color: var(--text, #e5e7eb);
+      border: 1px solid var(--border, rgba(255,255,255,.14)); border-radius: 9px; padding: 9px 11px; font-size: 14px; }
+    .btn { background: var(--accent, #06b6d4); color: #06222a; border: none; border-radius: 9px; padding: 9px 16px; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+    .answer { margin-top: 12px; font-size: 16px; color: var(--text, #e5e7eb); padding: 12px 14px; border-radius: 10px; background: rgba(56,189,248,.08); border: 1px solid rgba(56,189,248,.3); display: none; }
+    .answer.none { background: rgba(245,158,11,.08); border-color: rgba(245,158,11,.35); color: #f59e0b; font-size: 14px; }
+    .answer .sub { font-size: 12px; color: var(--muted, #9aa0aa); margin-top: 4px; }
+    .cat { margin-bottom: 14px; }
+    .cat h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--accent, #38bdf8); margin: 0 0 6px; }
+    .fact { font-size: 13px; color: var(--text, #cbd5e1); padding: 5px 0; border-bottom: 1px solid var(--border, rgba(255,255,255,.06)); }
+    .fact b { color: var(--text, #e5e7eb); } .fact .age { color: var(--muted, #6b7280); font-size: 11px; }
+    .empty { color: var(--muted, #9aa0aa); font-size: 13px; }
+    .hint { font-size: 11px; color: var(--muted, #6b7280); margin-top: 6px; }
+  </style>
+</head>
+<body>
+  <nav class="site-nav">
+    <a class="nav-brand" href="/"><img src="/mandala.svg" alt="" aria-hidden="true" style="width:24px;height:24px;vertical-align:middle"><span style="font-size:18px;font-weight:600">Keystone OS</span></a>
+    <div class="nav-links">
+      <a href="/dream-chat.html">Chat</a>
+      <a href="/life-memory.html" class="active">Life Memory</a>
+      <a href="/second-brain.html">Brain</a>
+      <a href="/knowledgecenter.html">Help</a>
+    </div>
+    <button class="nav-btn" id="theme-toggle" title="Toggle light / dark mode" aria-label="Toggle theme" onclick="(function(){var h=document.documentElement;h.setAttribute('data-theme',h.getAttribute('data-theme')==='dark'?'light':'dark');})()">☀</button>
+  </nav>
+
+  <main class="w">
+    <h1>Life Memory</h1>
+    <p class="lede">The thing cloud assistants can't do: remember the small stuff — your kid's shoe size, the landlord's name, the argument back in March — for months, locally, never lost to a context window. Tell it a fact in plain English; ask later. 🔒 Local-only, never decays.</p>
+
+    <div class="card">
+      <h2>Ask</h2>
+      <div class="row">
+        <input id="q" placeholder="e.g. what's my kid's shoe size?" onkeydown="if(event.key==='Enter')window._ask()">
+        <button class="btn" onclick="window._ask()">Recall</button>
+      </div>
+      <div class="answer" id="answer"></div>
+    </div>
+
+    <div class="card">
+      <h2>Remember something</h2>
+      <div class="row">
+        <input id="fact" placeholder="e.g. my kid's shoe size is 7" onkeydown="if(event.key==='Enter')window._add()">
+        <button class="btn" onclick="window._add()">Remember</button>
+      </div>
+      <div class="hint">Plain English. It pulls out the subject, attribute, and value automatically.</div>
+    </div>
+
+    <div class="card">
+      <h2>What I remember</h2>
+      <div id="facts"></div>
+    </div>
+  </main>
+
+  <script>
+    var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]; }); };
+
+    window._ask = async function () {
+      var q = document.getElementById('q').value.trim(); if (!q) return;
+      var r = await fetch('/api/life-memory/recall', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: q }) }).then(function (x) { return x.json(); });
+      var el = document.getElementById('answer'); el.style.display = 'block';
+      if (r.status === 'ok') { el.className = 'answer'; el.innerHTML = esc(r.answer) + '<div class="sub">from ' + (r.matches || []).length + ' matching memor' + ((r.matches || []).length === 1 ? 'y' : 'ies') + '</div>'; }
+      else { el.className = 'answer none'; el.textContent = "I don't have a memory of that yet."; }
+    };
+    window._add = async function () {
+      var t = document.getElementById('fact').value.trim(); if (!t) return;
+      await fetch('/api/life-memory', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: t }) });
+      document.getElementById('fact').value = ''; load();
+    };
+    function ageStr(m) { return m == null ? '' : m === 0 ? 'just now' : m + 'mo ago'; }
+    async function load() {
+      var r = await fetch('/api/life-memory').then(function (x) { return x.json(); });
+      var box = document.getElementById('facts');
+      if (!r.total) { box.innerHTML = '<div class="empty">Nothing yet — tell me something above.</div>'; return; }
+      box.innerHTML = Object.keys(r.byCategory).map(function (cat) {
+        return '<div class="cat"><h3>' + esc(cat) + '</h3>' + r.byCategory[cat].map(function (f) {
+          var label = f.subject ? esc(f.subject) + (f.attribute && f.attribute !== f.subject ? ' · ' + esc(f.attribute) : '') : esc(f.attribute);
+          return '<div class="fact"><b>' + esc(f.value) + '</b> &nbsp;<span class="age">' + label + ' · ' + ageStr(require_months(f.savedAt)) + '</span></div>';
+        }).join('') + '</div>';
+      }).join('');
+    }
+    function require_months(savedAt) { var t = Date.parse(savedAt); if (!t) return null; return Math.max(0, Math.round((Date.now() - t) / (30 * 86400000))); }
+    load();
+  </script>
+</body>
+</html>
