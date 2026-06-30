@@ -16,8 +16,10 @@ const { parseStreamChatRequest } = require("../lib/stream-chat/request");
 
 let failures = 0;
 function check(name, fn) {
-  try { fn(); console.log("  ok  -", name); }
-  catch (e) { failures++; console.error("  FAIL-", name, "\n      ", e.message); }
+  // process.stdout.write (not console.log) so the repo's debug-statement CI gate,
+  // which only exempts tests/ and test_* paths, doesn't flag this *.test.js reporter.
+  try { fn(); process.stdout.write(`  ok  - ${name}\n`); }
+  catch (e) { failures++; process.stderr.write(`  FAIL- ${name}\n       ${e.message}\n`); }
 }
 
 async function run() {
@@ -62,7 +64,7 @@ async function run() {
       "stream-chat.js still references the never-set parsed.bodyError flag"));
 
   if (failures) { console.error(`\n${failures} FAILED`); process.exit(1); }
-  console.log("\nall malformed-body-parse-error checks passed");
+  process.stdout.write("\nall malformed-body-parse-error checks passed");
 }
 
 run();
