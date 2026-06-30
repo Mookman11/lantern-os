@@ -172,6 +172,7 @@ const routes = [
   require("./routes/discover-feeds"),  // Explore: curated discovery rail (RSS/Atom, cached)
   require("./routes/explore"),         // Explore: single-pane PCSF-ranked feed + interaction logging (#1211)
   require("./routes/convergence-dispatch"),
+  require("./routes/preferences"),      // #1426: retrieval-based personal preference model
   require("./routes/memory"),
   require("./routes/research-repo"),    // Research Team: repo→Convergence-Memory learning
   require("./routes/flourishing"),
