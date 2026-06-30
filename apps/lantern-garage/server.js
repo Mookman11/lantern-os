@@ -300,8 +300,14 @@ const server = http.createServer((req, res) => {
 
 server.on("error", (error) => {
   if (error.code === "EADDRINUSE") {
-    console.error(`Lantern Garage port ${port} is already in use. Open http://127.0.0.1:${port} or choose another port.`);
-    process.exitCode = 1;
+    // Name the owning PID + the exact command to free the port, instead of a bare
+    // "already in use" — the deploy/boot EADDRINUSE wedge was hard to clear because you
+    // couldn't tell which stale instance held the port (#1549).
+    const { findPortOwner, eaddrinuseHelp } = require("./lib/port-guard");
+    findPortOwner(port)
+      .then((owner) => console.error(`[lantern-garage] ${eaddrinuseHelp(port, owner)}`))
+      .catch(() => console.error(`[lantern-garage] Port ${port} is already in use.`))
+      .finally(() => { process.exitCode = 1; });
     return;
   }
   throw error;
