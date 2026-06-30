@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#06b6d4">
+  <link rel="stylesheet" href="/css/site.css">
+  <title>Distillation Flywheel — Keystone OS</title>
+  <style>
+    /* Self-distillation flywheel observability (#1421). */
+    .w { max-width: 880px; margin: 0 auto; padding: 18px 16px 60px; }
+    h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; color: var(--text, #e5e7eb); }
+    .lede { margin: 0 0 16px; color: var(--muted, #9aa0aa); font-size: 13px; line-height: 1.5; }
+    .verdict { font-size: 14px; line-height: 1.5; padding: 12px 14px; border-radius: 12px; margin-bottom: 16px;
+      background: rgba(56,189,248,.08); border: 1px solid rgba(56,189,248,.35); color: var(--text, #e5e7eb); }
+    .card { background: var(--surface1, rgba(255,255,255,.03)); border: 1px solid var(--border, rgba(255,255,255,.10));
+      border-radius: 14px; padding: 16px; margin-bottom: 16px; }
+    h2 { font-size: 14px; color: var(--text, #e5e7eb); margin: 0 0 4px; }
+    .sub { font-size: 11px; color: var(--muted, #9aa0aa); margin: 0 0 10px; }
+    .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+    .tile { text-align: center; padding: 12px; border-radius: 12px; background: var(--surface2, rgba(255,255,255,.04)); }
+    .tile .n { font-size: 24px; font-weight: 700; color: var(--text, #e5e7eb); }
+    .tile .l { font-size: 11px; color: var(--muted, #9aa0aa); text-transform: uppercase; letter-spacing: .04em; }
+    .pos { color: #4ade80; } .neg { color: #f87171; }
+    .chart { position: relative; }
+    .chart svg { width: 100%; height: 200px; display: block; }
+    .gapbar { height: 12px; border-radius: 6px; background: var(--surface2, rgba(255,255,255,.08)); overflow: hidden; margin-top: 8px; position: relative; }
+    .gapbar > i { display: block; height: 100%; background: linear-gradient(90deg,#38bdf8,#4ade80); }
+    .gapbar .tgt { position: absolute; top: -4px; bottom: -4px; width: 2px; background: #f59e0b; }
+    .legend { font-size: 11px; color: var(--muted, #9aa0aa); margin-top: 6px; }
+  </style>
+</head>
+<body>
+  <nav class="site-nav">
+    <a class="nav-brand" href="/"><img src="/mandala.svg" alt="" aria-hidden="true" style="width:24px;height:24px;vertical-align:middle"><span style="font-size:18px;font-weight:600">Keystone OS</span></a>
+    <div class="nav-links">
+      <a href="/dream-chat.html">Chat</a>
+      <a href="/metrics.html">Metrics</a>
+      <a href="/flywheel.html" class="active">Flywheel</a>
+      <a href="/knowledgecenter.html">Help</a>
+    </div>
+    <button class="nav-btn" id="theme-toggle" title="Toggle light / dark mode" aria-label="Toggle theme" onclick="(function(){var h=document.documentElement;h.setAttribute('data-theme',h.getAttribute('data-theme')==='dark'?'light':'dark');})()">☀</button>
+  </nav>
+
+  <main class="w">
+    <h1>Distillation Flywheel</h1>
+    <p class="lede">Every local→cloud escalation is a gap the local model couldn't close. Mine those into a training corpus, retrain, and the local model closes more of the gap over time. This is that loop, made observable: capability trajectory, gap closed, corpus mined, escalations trending.</p>
+
+    <div class="verdict" id="verdict">Loading…</div>
+    <div class="card"><div class="tiles" id="tiles"></div></div>
+
+    <div class="card">
+      <h2>Local capability over time</h2>
+      <div class="sub">pass@1 of the local model across logged eval runs — the flywheel should bend upward</div>
+      <div class="chart"><svg id="chart" viewBox="0 0 600 200" preserveAspectRatio="none"></svg></div>
+    </div>
+
+    <div class="card">
+      <h2>Gap to target</h2>
+      <div class="sub">how far the local model is from the capability target (amber line)</div>
+      <div class="gapbar" id="gapbar"><i id="gapfill"></i><span class="tgt" id="tgt"></span></div>
+      <div class="legend" id="gaplegend"></div>
+    </div>
+  </main>
+
+  <script>
+    function pct(x) { return x == null ? '—' : Math.round(x * 100) + '%'; }
+    function drawChart(series, target) {
+      var svg = document.getElementById('chart');
+      if (!series || series.length < 2) { svg.innerHTML = '<text x="300" y="100" fill="#9aa0aa" font-size="12" text-anchor="middle">not enough eval runs yet</text>'; return; }
+      var max = Math.max(target, Math.max.apply(null, series.map(function (s) { return s.pass1; })), 0.1);
+      var pts = series.map(function (s, i) {
+        var x = series.length > 1 ? i / (series.length - 1) * 580 + 10 : 300;
+        var y = 190 - (s.pass1 / max) * 180;
+        return [x, y];
+      });
+      var ty = 190 - (target / max) * 180;
+      var pathd = pts.map(function (p, i) { return (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1); }).join(' ');
+      svg.innerHTML = '<line x1="10" y1="' + ty.toFixed(1) + '" x2="590" y2="' + ty.toFixed(1) + '" stroke="#f59e0b" stroke-width="1" stroke-dasharray="4 4"/>'
+        + '<text x="586" y="' + (ty - 4).toFixed(1) + '" fill="#f59e0b" font-size="10" text-anchor="end">target ' + Math.round(target * 100) + '%</text>'
+        + '<path d="' + pathd + '" fill="none" stroke="#38bdf8" stroke-width="2"/>'
+        + pts.map(function (p) { return '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="2.5" fill="#38bdf8"/>'; }).join('');
+    }
+
+    async function load() {
+      var r = await fetch('/api/flywheel').then(function (x) { return x.json(); });
+      var f = (r && r.flywheel) || {};
+      document.getElementById('verdict').textContent = f.verdict || '—';
+      var imp = f.improvement;
+      document.getElementById('tiles').innerHTML =
+        tile(pct(f.localNow), 'local pass@1 now')
+        + tile((imp == null ? '—' : (imp > 0 ? '+' : '') + Math.round(imp * 100) + ' pts'), 'since first eval', imp > 0 ? 'pos' : (imp < 0 ? 'neg' : ''))
+        + tile(pct(f.gapClosedPct), 'of gap closed')
+        + tile(f.corpusSize, 'corpus candidates')
+        + tile(f.corpusThisWeek + ' · ' + (f.escalationTrend || ''), 'mined this week');
+      drawChart(f.series, f.target || 0.7);
+      var cur = f.localNow || 0, tgt = f.target || 0.7;
+      document.getElementById('gapfill').style.width = Math.min(100, Math.round(cur / tgt * 100)) + '%';
+      document.getElementById('tgt').style.left = '100%';
+      document.getElementById('gaplegend').textContent = 'local ' + pct(cur) + ' · target ' + pct(tgt) + ' · remaining gap ' + pct(f.remainingGap);
+    }
+    function tile(n, l, cls) { return '<div class="tile"><div class="n ' + (cls || '') + '">' + n + '</div><div class="l">' + l + '</div></div>'; }
+    load();
+  </script>
+</body>
+</html>
