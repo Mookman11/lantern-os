@@ -33,6 +33,7 @@ const { defaultRings } = require("./grounding-rings");
 const { route: converganceRoute, buildBehaviorPreamble } = require("./convergance-os/model-router");
 const { THREE_DOORS_PREAMBLE } = require("./convergance-os/profiles");
 const { generateDoorSceneImage } = require("./image-generation");
+const { analyzeImage } = require("./vision");
 const { webSearchMcp, formatGroundingContext, needsGrounding, extractSearchQuery } = require("./web-search-client");
 const { chatDilation, groundingPolicy, isGroundingDue, GROUNDING_TICK_MS } = require("./grounding-policy");
 // #1012 boiling-frog defense: ms epoch of the last mandatory external-grounding tick.
@@ -249,6 +250,27 @@ async function handleStreamChat(req, url, res) {
   });
   let { message, user, requestedAgent, requestedProvider, history, mcpFlag, routeIntent } = parsed;
   const attachments = Array.isArray(parsed.attachments) ? parsed.attachments : [];
+  // Image attachments (#1606): every downstream consumer on this path treats an attachment
+  // as TEXT, so an uploaded image (which carries no extractable text) used to vanish silently
+  // and the model would honestly report it received "0 files". Resolve each image to a text
+  // description via the provider-portable vision helper so the chat can actually SEE and act
+  // on the picture. Runs once per turn, bounded to the (≤4) attachments parse already capped.
+  for (const a of attachments) {
+    if (a && typeof a.image === "string" && a.image.trim() && !(a.text && a.text.trim())) {
+      try {
+        const v = await analyzeImage(
+          "Describe this image in detail for a reasoning assistant: transcribe any visible text verbatim, and note objects, layout, colours, charts, and anything notable so the assistant can answer questions or act on it.",
+          a.image,
+          { mimeType: a.mimeType },
+        );
+        a.text = v && v.ok && v.text
+          ? `[image "${a.name}" — visual description from vision model below]\n${v.text}`
+          : `[image "${a.name}" — could not be analyzed: ${(v && v.error) || "vision unavailable"}]`;
+      } catch (e) {
+        a.text = `[image "${a.name}" — vision error: ${e && e.message ? e.message : String(e)}]`;
+      }
+    }
+  }
   // "Ground this" retry (groundedness canary loop): force the web-search grounding
   // Prepend attachment content to the user's message if available.
   if (attachments.length > 0) {
@@ -1036,7 +1058,9 @@ async function handleStreamChat(req, url, res) {
   // primary evidence: read, quote, summarize, or act on them, and ground answers in their content.
   let attachmentBlock = "";
   if (attachments.length) {
-    const blocks = attachments.map((a) => `--- Attached file: ${a.name} (${a.text.length} chars) ---\n${a.text}`).join("\n\n");
+    const blocks = attachments
+      .filter((a) => a && a.text)
+      .map((a) => `--- Attached file: ${a.name} (${a.text.length} chars) ---\n${a.text}`).join("\n\n");
     attachmentBlock = `\n\nAttached files for this turn (the user uploaded these — treat them as the primary evidence; quote/summarize/act on them and cite the filename):\n${blocks}`;
   }
 
@@ -1258,6 +1282,28 @@ async function handleStreamChat(req, url, res) {
             `[canary_ungrounded] risk=${grounded.risk} source=${source} ` +
             `provider=${signature.provider} signals=${JSON.stringify(grounded.signals)}`
           );
+        }
+        // #1733 honest abstention + manufactured negative: we FORCED a grounding pass
+        // (a "Ground this" / auto-verify retry) and the reply is STILL confident-but-
+        // unanchored with no grounding context found. Fail closed — flag it so the UI
+        // says "couldn't verify" instead of re-badging ungrounded — and append the
+        // verified "could not ground" example to the convergence corpus the ADR-0010
+        // distillation draws on (the positive/grounded half is emitClaimDraft below).
+        if (forceGround && grounded.ungrounded && !groundingContext) {
+          signature.abstained = true;
+          try {
+            const { appendConvergenceRecord } = require("./dream-chat");
+            appendConvergenceRecord({
+              hypothesis: String(message || "").slice(0, 500),
+              evidence: [],
+              result: "unverified",
+              confidence: { groundedness: Number((1 - grounded.risk).toFixed(2)) },
+              source: "groundedness-canary:forced-grounding-empty",
+              surface: "dream-chat",
+              provider: signature.provider,
+              risk: grounded.risk,
+            });
+          } catch { /* corpus logging must never break a reply */ }
         }
       }
     } catch { /* canaries must never break a reply */ }
