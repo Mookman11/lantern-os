@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#06b6d4">
+  <link rel="stylesheet" href="/css/site.css">
+  <title>Admin Co-pilot — Keystone OS</title>
+  <style>
+    /* Negotiation & life-admin co-pilot (#1432). */
+    .w { max-width: 860px; margin: 0 auto; padding: 18px 16px 60px; }
+    h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; color: var(--text, #e5e7eb); }
+    .lede { margin: 0 0 16px; color: var(--muted, #9aa0aa); font-size: 13px; line-height: 1.5; }
+    .card { background: var(--surface1, rgba(255,255,255,.03)); border: 1px solid var(--border, rgba(255,255,255,.10));
+      border-radius: 14px; padding: 16px; margin-bottom: 16px; }
+    h2 { font-size: 14px; color: var(--text, #e5e7eb); margin: 0 0 10px; }
+    label { font-size: 12px; color: var(--muted, #9aa0aa); display: block; margin-bottom: 3px; }
+    input, textarea, select { width: 100%; box-sizing: border-box; background: var(--surface2, rgba(255,255,255,.05)); color: var(--text, #e5e7eb);
+      border: 1px solid var(--border, rgba(255,255,255,.14)); border-radius: 9px; padding: 8px 10px; font-size: 14px; margin-bottom: 8px; }
+    textarea { min-height: 48px; resize: vertical; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .btn { background: var(--accent, #06b6d4); color: #06222a; border: none; border-radius: 9px; padding: 9px 16px; font-size: 14px; font-weight: 600; cursor: pointer; }
+    .btn.ghost { background: transparent; border: 1px solid var(--border, rgba(255,255,255,.2)); color: var(--text, #e5e7eb); }
+    .draft { white-space: pre-wrap; font-size: 13px; line-height: 1.55; color: var(--text, #d8dce2); background: var(--surface2, rgba(255,255,255,.04));
+      border-radius: 10px; padding: 14px; border: 1px solid var(--border, rgba(255,255,255,.1)); }
+    .subj { font-weight: 600; color: var(--text, #e5e7eb); margin-bottom: 8px; }
+    .case { padding: 10px 0; border-bottom: 1px solid var(--border, rgba(255,255,255,.07)); }
+    .case .t { font-size: 14px; color: var(--text, #e5e7eb); font-weight: 600; }
+    .case .m { font-size: 12px; color: var(--muted, #9aa0aa); }
+    .na { font-size: 12px; margin-top: 4px; }
+    .na.send { color: #38bdf8; } .na.escalate { color: #f87171; } .na.wait { color: #f59e0b; } .na.closed, .na.follow-up { color: #4ade80; }
+    .typetag { display:inline-block;font-size:10px;border-radius:5px;padding:1px 6px;background:rgba(167,139,250,.12);color:#a78bfa;text-transform:uppercase;margin-right:6px; }
+    .stat { display:inline-block; font-size:12px; color:var(--muted,#9aa0aa); margin-right:14px; } .stat b { color: var(--text,#e5e7eb); }
+    .empty { color: var(--muted, #9aa0aa); font-size: 13px; }
+    .actions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+    .actions button { font-size: 11px; padding: 4px 9px; border-radius: 7px; border: 1px solid var(--border, rgba(255,255,255,.18)); background: transparent; color: var(--text,#e5e7eb); cursor: pointer; }
+  </style>
+</head>
+<body>
+  <nav class="site-nav">
+    <a class="nav-brand" href="/"><img src="/mandala.svg" alt="" aria-hidden="true" style="width:24px;height:24px;vertical-align:middle"><span style="font-size:18px;font-weight:600">Keystone OS</span></a>
+    <div class="nav-links">
+      <a href="/dream-chat.html">Chat</a>
+      <a href="/finance.html">Money</a>
+      <a href="/admin.html" class="active">Admin</a>
+      <a href="/knowledgecenter.html">Help</a>
+    </div>
+    <button class="nav-btn" id="theme-toggle" title="Toggle light / dark mode" aria-label="Toggle theme" onclick="(function(){var h=document.documentElement;h.setAttribute('data-theme',h.getAttribute('data-theme')==='dark'?'light':'dark');})()">☀</button>
+  </nav>
+
+  <main class="w">
+    <h1>Admin Co-pilot</h1>
+    <p class="lede">Hate phone calls and paperwork? Describe the dispute — a refund, an insurance claim, a landlord repair, a wrong bill — and it drafts a firm, structured email with a real deadline and the escalation path, then tracks the case and tells you the next move. 🔒 Local-only.</p>
+
+    <div class="card">
+      <h2>New case</h2>
+      <div class="grid">
+        <div><label>Type</label><select id="type"><option value="refund">refund</option><option value="insurance">insurance</option><option value="landlord">landlord</option><option value="bill">bill</option><option value="subscription">subscription</option><option value="other">other</option></select></div>
+        <div><label>Who (company / person)</label><input id="counterparty" placeholder="e.g. Acme Store"></div>
+        <div><label>Account / ref (optional)</label><input id="account" placeholder="e.g. #12345"></div>
+        <div><label>Your name</label><input id="name" placeholder="e.g. Alex Place"></div>
+      </div>
+      <label>What happened</label><textarea id="summary" placeholder="e.g. I returned a faulty blender 3 weeks ago and haven't been refunded."></textarea>
+      <label>What you want</label><input id="desiredOutcome" placeholder="e.g. refund the full $89 to my card">
+      <label>Policy clause to cite (optional)</label><input id="policyClause" placeholder="e.g. your 30-day returns policy">
+      <div style="margin-top:8px"><button class="btn" id="create">Draft the email</button> <label style="display:inline;margin-left:8px"><input type="checkbox" id="polish" style="width:auto;margin:0"> polish tone with local model</label></div>
+    </div>
+
+    <div class="card" id="draftCard" style="display:none">
+      <h2>Drafted email <button class="btn ghost" id="copy" style="float:right;padding:5px 12px;font-size:12px">Copy</button></h2>
+      <div class="subj" id="draftSubj"></div>
+      <div class="draft" id="draftBody"></div>
+    </div>
+
+    <div class="card">
+      <h2>Your cases</h2>
+      <div id="stats" style="margin-bottom:10px"></div>
+      <div id="cases"></div>
+    </div>
+  </main>
+
+  <script>
+    var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]; }); };
+    function val(id) { return document.getElementById(id).value.trim(); }
+    function caseBody() { return { type: val('type'), counterparty: val('counterparty'), account: val('account'), name: val('name'), summary: val('summary'), desiredOutcome: val('desiredOutcome'), policyClause: val('policyClause') }; }
+
+    function showDraft(d) {
+      document.getElementById('draftCard').style.display = '';
+      document.getElementById('draftSubj').textContent = 'Subject: ' + d.subject;
+      document.getElementById('draftBody').textContent = d.body;
+    }
+    async function create() {
+      var b = caseBody(); if (!b.summary) return;
+      if (document.getElementById('polish').checked) {
+        // create the case, then re-draft with polish
+        await fetch('/api/admin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
+        var d = await fetch('/api/admin/draft', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ polish: true }, b)) }).then(function (x) { return x.json(); });
+        showDraft(d.draft);
+      } else {
+        var r = await fetch('/api/admin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) }).then(function (x) { return x.json(); });
+        showDraft(r.draft);
+      }
+      load();
+    }
+    async function setStatus(id, status, outcome) {
+      await fetch('/api/admin/' + encodeURIComponent(id) + '/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: status, outcome: outcome }) });
+      load();
+    }
+    async function load() {
+      var r = await fetch('/api/admin').then(function (x) { return x.json(); });
+      var s = r.stats || {};
+      document.getElementById('stats').innerHTML = s.total ? ('<span class="stat"><b>' + s.open + '</b> open</span><span class="stat"><b>' + s.sent + '</b> sent</span><span class="stat"><b>' + s.escalated + '</b> escalated</span><span class="stat"><b>' + s.resolved + '</b> resolved</span>' + (s.winRate != null ? '<span class="stat"><b>' + Math.round(s.winRate * 100) + '%</b> win rate</span>' : '')) : '';
+      document.getElementById('cases').innerHTML = (r.cases && r.cases.length) ? r.cases.map(function (c) {
+        var na = c.nextAction || {};
+        return '<div class="case"><div class="t"><span class="typetag">' + esc(c.type) + '</span>' + esc(c.counterparty || 'case') + (c.account ? ' · ' + esc(c.account) : '') + '</div>'
+          + '<div class="m">' + esc(c.summary.slice(0, 100)) + ' · <b>' + esc(c.status) + '</b></div>'
+          + '<div class="na ' + esc(na.action) + '">→ ' + esc(na.text) + '</div>'
+          + '<div class="actions"><button onclick="window._s(\'' + c.id + '\',\'sent\')">Mark sent</button><button onclick="window._s(\'' + c.id + '\',\'escalated\')">Escalated</button><button onclick="window._s(\'' + c.id + '\',\'resolved\',\'won\')">Resolved ✓</button><button onclick="window._s(\'' + c.id + '\',\'resolved\',\'lost\')">Resolved ✕</button></div></div>';
+      }).join('') : '<div class="empty">No cases yet.</div>';
+    }
+    window._s = setStatus;
+    document.getElementById('create').addEventListener('click', create);
+    document.getElementById('copy').addEventListener('click', function () {
+      var t = 'Subject: ' + document.getElementById('draftSubj').textContent.replace(/^Subject: /, '') + '\n\n' + document.getElementById('draftBody').textContent;
+      navigator.clipboard && navigator.clipboard.writeText(t); this.textContent = 'Copied';
+    });
+    load();
+  </script>
+</body>
+</html>
